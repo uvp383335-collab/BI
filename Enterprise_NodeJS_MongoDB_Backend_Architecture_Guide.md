@@ -166,7 +166,11 @@ Worker processes for long-running tasks.
 
 12. External Integrations
 
-One integration module per provider (HubSpot, Salesforce, etc.).
+One integration module per provider (HubSpot, Salesforce, QuickBooks, etc.).
+
+Keep provider connectors separate at the code/module level, with shared infrastructure for HTTP clients, retries, and circuit breakers.
+
+Separate deployed services only when independent scaling, release cycles, or operational isolation are required.
 
 Shared HTTP client.
 
