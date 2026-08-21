@@ -1,0 +1,176 @@
+@import 'tailwindcss';
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@theme {
+  --animate-fade-in: fade-in 0.25s ease-out;
+
+  /* Dark app-shell palette, matched to the approved dashboard reference. */
+  --color-surface: #0a0d14;
+  --color-surface-2: #0f1320;
+  --color-surface-3: #141929;
+  --color-surface-4: #1a2035;
+  --color-line: rgba(255, 255, 255, 0.07);
+  --color-line-strong: rgba(255, 255, 255, 0.13);
+  --color-ink: #e8ecf4;
+  --color-ink-2: #8b93a8;
+  --color-ink-3: #828ba0;
+  --color-brand: #3d7fff;
+  --color-brand-2: #2563eb;
+  --color-success: #22c55e;
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+  --color-violet: #a855f7;
+  --color-teal: #14b8a6;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  -webkit-font-smoothing: antialiased;
+  background-color: var(--color-surface);
+}
+
+@layer components {
+  .auth-logo {
+    @apply h-11 w-11 rounded-xl bg-brand text-white flex items-center justify-center text-lg font-bold shadow-md select-none;
+  }
+
+  .auth-card {
+    @apply w-full animate-fade-in;
+  }
+
+  .auth-title {
+    @apply text-3xl font-semibold text-ink mb-2;
+  }
+
+  .auth-subtitle {
+    @apply text-base text-ink-2 mb-8;
+  }
+
+  .form-label {
+    @apply block text-sm font-medium text-ink-2 mb-1;
+  }
+
+  .form-input {
+    @apply w-full rounded-lg border border-line-strong bg-surface-3 px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand;
+  }
+
+  .form-input-error {
+    @apply border-danger focus:ring-danger/40 focus:border-danger;
+  }
+
+  .form-error {
+    @apply text-sm text-danger mt-1;
+  }
+
+  .btn-primary {
+    @apply w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand text-white py-2.5 text-sm font-medium shadow-sm transition-colors duration-150 hover:bg-brand-2 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:ring-offset-2 focus:ring-offset-surface-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-outline {
+    @apply w-full text-left border border-line-strong bg-surface-3 rounded-lg px-4 py-3 text-ink transition-colors duration-150 hover:border-brand/40 hover:bg-surface-4 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .auth-link {
+    @apply text-brand hover:text-brand-2 hover:underline transition-colors duration-150;
+  }
+
+  .spinner {
+    @apply h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin;
+  }
+
+  /* Dark app-shell primitives (dashboard, connect, invitations — authenticated pages).
+     Fixed to the viewport height (not min-h-screen) so the sidebar footer (org switcher)
+     never scrolls off-screen — the nav list and the main content area scroll independently
+     inside it instead of the whole page scrolling. */
+  .app-shell {
+    @apply h-screen overflow-hidden bg-surface text-ink;
+  }
+
+  .card {
+    @apply rounded-xl border border-line bg-surface-2;
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-ink-2 transition-colors duration-150 hover:bg-surface-3 hover:text-ink;
+  }
+
+  .sidebar-link-active {
+    @apply bg-brand/10 text-brand hover:bg-brand/10 hover:text-brand;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .btn-outline-dark {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line-strong bg-surface-3 px-4 py-2 text-sm font-medium text-ink transition-colors duration-150 hover:bg-surface-4 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .form-input-dark {
+    @apply rounded-lg border border-line-strong bg-surface-3 px-3 py-2 text-sm text-ink transition-colors duration-150 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/40;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* react-day-picker theming — the library ships variables + bare class names
+   (no default colors baked into layout rules), so this is the whole job. */
+.dashboard-daypicker .rdp-root {
+  --rdp-accent-color: var(--color-brand);
+  --rdp-accent-background-color: color-mix(in srgb, var(--color-brand) 22%, var(--color-surface-2));
+  --rdp-day-width: 36px;
+  --rdp-day-height: 36px;
+  --rdp-day_button-width: 32px;
+  --rdp-day_button-height: 32px;
+  --rdp-range_middle-background-color: color-mix(in srgb, var(--color-brand) 22%, var(--color-surface-2));
+  --rdp-range_middle-color: var(--color-ink);
+  --rdp-range_start-color: white;
+  --rdp-range_end-color: white;
+  --rdp-today-color: var(--color-brand);
+  --rdp-nav_button-width: 28px;
+  --rdp-nav_button-height: 28px;
+  --rdp-months-gap: 1.5rem;
+  color: var(--color-ink);
+  font-family: inherit;
+}
+
+.dashboard-daypicker .rdp-weekday {
+  color: var(--color-ink-3);
+}
+
+.dashboard-daypicker .rdp-month_caption {
+  color: var(--color-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.dashboard-daypicker .rdp-day_button:hover:not(:disabled) {
+  background-color: var(--color-surface-3);
+}
+
+.dashboard-daypicker .rdp-button_previous,
+.dashboard-daypicker .rdp-button_next {
+  color: var(--color-ink-2);
+  border-radius: 0.5rem;
+}
+
+.dashboard-daypicker .rdp-button_previous:hover:not(:disabled),
+.dashboard-daypicker .rdp-button_next:hover:not(:disabled) {
+  background-color: var(--color-surface-3);
+}
+
+.dashboard-daypicker .rdp-chevron {
+  fill: var(--color-ink-2);
+}
+
+.dashboard-daypicker .rdp-outside {
+  opacity: 0.35;
+}
