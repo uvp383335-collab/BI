@@ -8,6 +8,8 @@ export const metricsRouter = Router()
 
 const guards = [requireAuth, requireOrgContext, validateQuery(getMetricQuerySchema)] as const
 
+metricsRouter.get('/trend/:id', requireAuth, requireOrgContext, metricsController.getMetricTrend)
+
 metricsRouter.get('/vc-01', ...guards, metricsController.getVC01)
 metricsRouter.get('/vc-02', ...guards, metricsController.getVC02)
 metricsRouter.get('/vc-03', ...guards, metricsController.getVC03)

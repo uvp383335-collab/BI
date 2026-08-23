@@ -26,12 +26,13 @@ import { useIntegrationsStatus } from '../../integrations/hooks/useIntegrations'
 import { IntegrationProvider } from '../../integrations/api/integrationsApi'
 import { useEntityCounts, useFunnels, usePipelines, useStartSync, useSyncStatus } from '../hooks/useSync'
 import { FunnelsResponse } from '../api/syncApi'
-import { useMetric } from '../hooks/useMetrics'
+import { useMetric, useMetricTrend } from '../hooks/useMetrics'
 import { useAuthContext } from '../../../shared/context/AuthContext'
 import { StatsCard } from '../components/StatsCard'
 import { MetricCard } from '../components/MetricCard'
 import { SyncProgressBanner } from '../components/SyncProgressBanner'
 import { FunnelChart } from '../components/FunnelChart'
+import { MetricTrendChart } from '../components/MetricTrendChart'
 import { DateRangeFilter } from '../components/DateRangeFilter'
 import { Banner } from '../../../shared/components/Banner'
 import { AppShell } from '../../../widgets/AppShell'
@@ -202,6 +203,9 @@ export const CrmDashboardPage: React.FC = () => {
   const { data: vc07, isLoading: isVc07Loading } = useMetric('vc-07', quickbooksExtraMetricsEnabled)
   const { data: vc09, isLoading: isVc09Loading } = useMetric('vc-09', quickbooksMetricsEnabled)
   const { data: vc10, isLoading: isVc10Loading } = useMetric('vc-10', quickbooksMetricsEnabled)
+  const { data: vc04Trend, isLoading: isVc04TrendLoading } = useMetricTrend('vc-04', quickbooksMetricsEnabled)
+  const { data: vc09Trend, isLoading: isVc09TrendLoading } = useMetricTrend('vc-09', quickbooksMetricsEnabled)
+  const { data: vc10Trend, isLoading: isVc10TrendLoading } = useMetricTrend('vc-10', quickbooksMetricsEnabled)
   const { data: vc12, isLoading: isVc12Loading } = useMetric('vc-12', quickbooksExtraMetricsEnabled)
   const { data: vc13, isLoading: isVc13Loading } = useMetric('vc-13', quickbooksExtraMetricsEnabled)
   const { data: vc14, isLoading: isVc14Loading } = useMetric('vc-14', quickbooksExtraMetricsEnabled)
@@ -427,9 +431,33 @@ export const CrmDashboardPage: React.FC = () => {
                     <MetricCard id="VC-03" title="New-Logo Revenue Growth" description="Growth of revenue from brand-new customers" icon={<Rocket className="h-5 w-5" />} metric={vc03} isLoading={isVc03Loading} />
                   </>
                 )}
-                <MetricCard id="VC-04" title="COGS %" description="Direct delivery cost as a share of revenue" icon={<PieChart className="h-5 w-5" />} metric={vc04} isLoading={isVc04Loading} />
-                <MetricCard id="VC-09" title="G&A % of Revenue" description="Back-office cost as a share of revenue" icon={<Wallet className="h-5 w-5" />} metric={vc09} isLoading={isVc09Loading} />
-                <MetricCard id="VC-10" title="EBITDA Margin" description="EBITDA as a share of revenue" icon={<BarChart3 className="h-5 w-5" />} metric={vc10} isLoading={isVc10Loading} />
+                <MetricCard
+                  id="VC-04"
+                  title="COGS %"
+                  description="Direct delivery cost as a share of revenue"
+                  icon={<PieChart className="h-5 w-5" />}
+                  metric={vc04}
+                  isLoading={isVc04Loading}
+                  trend={<MetricTrendChart embedded title="COGS %" description="" color="var(--color-brand)" points={vc04Trend?.points ?? []} isLoading={isVc04TrendLoading} />}
+                />
+                <MetricCard
+                  id="VC-09"
+                  title="G&A % of Revenue"
+                  description="Back-office cost as a share of revenue"
+                  icon={<Wallet className="h-5 w-5" />}
+                  metric={vc09}
+                  isLoading={isVc09Loading}
+                  trend={<MetricTrendChart embedded title="G&A %" description="" color="var(--color-violet)" points={vc09Trend?.points ?? []} isLoading={isVc09TrendLoading} />}
+                />
+                <MetricCard
+                  id="VC-10"
+                  title="EBITDA Margin"
+                  description="EBITDA as a share of revenue"
+                  icon={<BarChart3 className="h-5 w-5" />}
+                  metric={vc10}
+                  isLoading={isVc10Loading}
+                  trend={<MetricTrendChart embedded title="EBITDA Margin %" description="" color="var(--color-teal)" points={vc10Trend?.points ?? []} isLoading={isVc10TrendLoading} />}
+                />
                 {SHOW_ALL_METRICS && (
                   <>
                     <MetricCard

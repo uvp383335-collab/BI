@@ -51,3 +51,22 @@ export async function getMetricRequest(id: MetricId, period?: string, provider?:
   const res = await httpClient.get<ApiEnvelope<MetricResult>>(`/metrics/${id}`, { params: { period, provider } })
   return res.data.data
 }
+
+export type TrendMetricId = 'vc-04' | 'vc-09' | 'vc-10'
+
+export interface TrendPoint {
+  month: string
+  value: number | null
+}
+
+export interface MetricTrend {
+  id: TrendMetricId
+  unit: MetricUnit
+  points: TrendPoint[]
+}
+
+/** Monthly series from January of the current year through the latest closed month. */
+export async function getMetricTrendRequest(id: TrendMetricId): Promise<MetricTrend> {
+  const res = await httpClient.get<ApiEnvelope<MetricTrend>>(`/metrics/trend/${id}`)
+  return res.data.data
+}

@@ -8,3 +8,11 @@ export function useMetric(id: metricsApi.MetricId, enabled: boolean, provider?: 
     enabled
   })
 }
+
+export function useMetricTrend(id: metricsApi.TrendMetricId, enabled: boolean) {
+  return useQuery({
+    queryKey: ['metrics', 'trend', id],
+    queryFn: () => metricsApi.getMetricTrendRequest(id),
+    enabled
+  })
+}

@@ -15,6 +15,8 @@ interface MetricCardProps {
   isLoading: boolean
   /** Small supporting facts shown below the headline value (e.g. CAC/LTV:CAC alongside VC-06's Payback) — only rendered once the metric is computable. */
   extras?: MetricCardExtra[]
+  /** An embedded trend chart (see MetricTrendChart's `embedded` mode) shown below the value/extras, inside this same card. */
+  trend?: React.ReactNode
 }
 
 const FLAG_LABEL: Record<'watch' | 'act_now', string> = {
@@ -46,7 +48,7 @@ function formatValue(value: number, unit: MetricResult['unit']): string {
   }
 }
 
-export const MetricCard: React.FC<MetricCardProps> = ({ id, title, description, icon, metric, isLoading, extras }) => {
+export const MetricCard: React.FC<MetricCardProps> = ({ id, title, description, icon, metric, isLoading, extras, trend }) => {
   const borderClass = !metric?.flag ? 'border-t-brand' : metric.flag.level === 'act_now' ? 'border-t-danger' : 'border-t-warning'
 
   return (
@@ -85,6 +87,8 @@ export const MetricCard: React.FC<MetricCardProps> = ({ id, title, description, 
           {FLAG_LABEL[metric.flag.level]} — {metric.flag.reason}
         </span>
       )}
+
+      {trend && <div className="mt-3 border-t border-line pt-3">{trend}</div>}
     </div>
   )
 }
