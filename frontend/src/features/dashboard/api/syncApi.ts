@@ -24,6 +24,8 @@ export interface SyncJob {
   entities: {
     contacts: EntityProgress
     deals: EntityProgress
+    customers: EntityProgress
+    invoices: EntityProgress
   }
   error?: string
   startedAt?: string
@@ -35,12 +37,17 @@ export interface SyncJob {
 export interface EntityCounts {
   contacts: number
   deals: number
+  customers: number
+  invoices: number
 }
 
 export interface FunnelStage {
   rawStage: string
   label: string
+  /** Rank-based cumulative count: reached this stage or any later one. Drives the bar. */
   count: number
+  /** Records with an explicit recorded event for this exact stage — no rank inference. */
+  literalCount: number
   isClosed: boolean
   isWon: boolean
 }

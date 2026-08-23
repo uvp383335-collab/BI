@@ -28,7 +28,7 @@ export const ConnectPage: React.FC = () => {
 
   const canManageIntegrations = organization?.role === 'owner' || organization?.role === 'admin'
 
-  // The HubSpot OAuth flow now redirects successes straight to /dashboard/:provider,
+  // The HubSpot OAuth flow now redirects successes straight to /dashboard,
   // so a status here means the connection attempt failed (or params were missing) —
   // including the two "this HubSpot account is already connected elsewhere" cases.
   useEffect(() => {

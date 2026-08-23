@@ -1,5 +1,8 @@
+import crypto from 'crypto'
 import { integrationsRepository } from '../repository/integrations.repository'
 import { HubSpotService } from './hubspot.service'
+import { SalesforceService } from './salesforce.service'
+import { QuickBooksService, QUICKBOOKS_SCOPES } from './quickbooks.service'
 import { signIntegrationState, verifyIntegrationState } from '../../../shared/utils/jwt'
 import { AppError } from '../../../shared/utils/AppError'
 import { IntegrationProvider } from '../model/Integration.model'
@@ -8,7 +11,7 @@ import { membershipsRepository } from '../../organizations/repository/membership
 import { organizationsRepository } from '../../organizations/repository/organizations.repository'
 
 export const SUPPORTED_PROVIDERS: IntegrationProvider[] = ['hubspot', 'salesforce', 'quickbooks']
-const IMPLEMENTED_PROVIDERS: IntegrationProvider[] = ['hubspot']
+const IMPLEMENTED_PROVIDERS: IntegrationProvider[] = ['hubspot', 'salesforce', 'quickbooks']
 
 function assertProvider(provider: string): asserts provider is IntegrationProvider {
   if (!SUPPORTED_PROVIDERS.includes(provider as IntegrationProvider)) {
@@ -36,10 +39,21 @@ export async function getAuthorizationUrl(orgId: string, userId: string, provide
   assertProvider(provider)
   assertImplemented(provider)
 
-  const state = signIntegrationState({ userId, orgId, provider })
+  if (provider === 'salesforce') {
+    // PKCE: the verifier can't be kept server-side across a stateless OAuth
+    // redirect, so it rides along inside the signed state JWT instead.
+    const codeVerifier = crypto.randomBytes(32).toString('base64url')
+    const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url')
+    const state = signIntegrationState({ userId, orgId, provider, codeVerifier })
+    return SalesforceService.getAuthorizationUrl(state, codeChallenge)
+  }
 
+  const state = signIntegrationState({ userId, orgId, provider })
   if (provider === 'hubspot') {
     return HubSpotService.getAuthorizationUrl(state)
+  }
+  if (provider === 'quickbooks') {
+    return QuickBooksService.getAuthorizationUrl(state)
   }
   throw AppError.badRequest(`${provider} is not available yet`, 'PROVIDER_NOT_IMPLEMENTED')
 }
@@ -90,8 +104,85 @@ async function assertHubSpotAccountUsable(hubId: string, targetOrgId: string, us
   }
 }
 
-/** Handles the OAuth redirect callback: verifies state, exchanges the code, and persists the connection. */
-export async function handleCallback(provider: string, code: string, state: string): Promise<{ orgId: string }> {
+/** Same collision-guard contract as assertHubSpotAccountUsable above, for Salesforce's org id. */
+async function assertSalesforceAccountUsable(orgIdentifier: string, targetOrgId: string, userId: string): Promise<void> {
+  const byAccount = await ProviderConnectionIndexModel.findOne({ provider: 'salesforce', externalAccountId: orgIdentifier })
+  if (byAccount && byAccount.orgId.toString() !== targetOrgId) {
+    const otherOrgId = byAccount.orgId.toString()
+    const membership = await membershipsRepository.findByUserAndOrg(userId, otherOrgId)
+
+    if (membership && membership.status === 'active') {
+      const otherOrg = await organizationsRepository.findById(otherOrgId)
+      throw new AppError(
+        'This Salesforce account is already connected to another organization you belong to',
+        409,
+        'SALESFORCE_ALREADY_CONNECTED_SWITCH',
+        { orgId: otherOrgId, orgName: otherOrg?.name, orgSlug: otherOrg?.slug }
+      )
+    }
+
+    throw new AppError(
+      'This Salesforce account is already connected to another workspace',
+      409,
+      'SALESFORCE_ALREADY_CONNECTED_REQUEST_ACCESS'
+    )
+  }
+
+  const byOrg = await ProviderConnectionIndexModel.findOne({ provider: 'salesforce', orgId: targetOrgId })
+  if (byOrg && byOrg.externalAccountId !== orgIdentifier) {
+    throw new AppError(
+      'This organization is already connected to a different Salesforce account. Create a new organization to connect a different account.',
+      409,
+      'SALESFORCE_ORG_LOCKED_TO_ACCOUNT'
+    )
+  }
+}
+
+/** Same collision-guard contract as assertHubSpotAccountUsable above, for QuickBooks' company id (realmId). */
+async function assertQuickBooksAccountUsable(realmId: string, targetOrgId: string, userId: string): Promise<void> {
+  const byAccount = await ProviderConnectionIndexModel.findOne({ provider: 'quickbooks', externalAccountId: realmId })
+  if (byAccount && byAccount.orgId.toString() !== targetOrgId) {
+    const otherOrgId = byAccount.orgId.toString()
+    const membership = await membershipsRepository.findByUserAndOrg(userId, otherOrgId)
+
+    if (membership && membership.status === 'active') {
+      const otherOrg = await organizationsRepository.findById(otherOrgId)
+      throw new AppError(
+        'This QuickBooks company is already connected to another organization you belong to',
+        409,
+        'QUICKBOOKS_ALREADY_CONNECTED_SWITCH',
+        { orgId: otherOrgId, orgName: otherOrg?.name, orgSlug: otherOrg?.slug }
+      )
+    }
+
+    throw new AppError(
+      'This QuickBooks company is already connected to another workspace',
+      409,
+      'QUICKBOOKS_ALREADY_CONNECTED_REQUEST_ACCESS'
+    )
+  }
+
+  const byOrg = await ProviderConnectionIndexModel.findOne({ provider: 'quickbooks', orgId: targetOrgId })
+  if (byOrg && byOrg.externalAccountId !== realmId) {
+    throw new AppError(
+      'This organization is already connected to a different QuickBooks company. Create a new organization to connect a different one.',
+      409,
+      'QUICKBOOKS_ORG_LOCKED_TO_ACCOUNT'
+    )
+  }
+}
+
+/**
+ * Handles the OAuth redirect callback: verifies state, exchanges the code, and persists the connection.
+ * `realmId` is QuickBooks-only — Intuit appends the connected company id directly onto the redirect query
+ * string, so the controller passes it through unchanged for that provider.
+ */
+export async function handleCallback(
+  provider: string,
+  code: string,
+  state: string,
+  realmId?: string
+): Promise<{ orgId: string }> {
   assertProvider(provider)
   assertImplemented(provider)
 
@@ -131,6 +222,70 @@ export async function handleCallback(provider: string, code: string, state: stri
     }
   }
 
+  if (provider === 'salesforce') {
+    if (!payload.codeVerifier) {
+      throw AppError.badRequest('Missing PKCE code verifier in OAuth state', 'SALESFORCE_MISSING_CODE_VERIFIER')
+    }
+
+    const tokenData = await SalesforceService.exchangeCodeForToken(code, payload.codeVerifier)
+    const expiresAt = new Date(Date.now() + tokenData.expiresIn * 1000)
+
+    if (tokenData.externalAccountId) {
+      await assertSalesforceAccountUsable(tokenData.externalAccountId, payload.orgId, payload.userId)
+    }
+
+    await integrationsRepository.upsert(payload.orgId, provider, {
+      accessToken: tokenData.accessToken,
+      refreshToken: tokenData.refreshToken,
+      expiresAt,
+      scope: tokenData.scope,
+      connectedBy: payload.userId,
+      accountId: tokenData.externalAccountId || null,
+      accountDomain: tokenData.instanceUrl,
+      instanceUrl: tokenData.instanceUrl
+    })
+
+    if (tokenData.externalAccountId) {
+      await ProviderConnectionIndexModel.findOneAndUpdate(
+        { provider, externalAccountId: tokenData.externalAccountId },
+        {
+          provider,
+          externalAccountId: tokenData.externalAccountId,
+          externalAccountLabel: tokenData.instanceUrl,
+          orgId: payload.orgId
+        },
+        { upsert: true, new: true }
+      )
+    }
+  }
+
+  if (provider === 'quickbooks') {
+    if (!realmId) {
+      throw AppError.badRequest('Missing QuickBooks company id (realmId) in OAuth callback', 'QUICKBOOKS_MISSING_REALM_ID')
+    }
+
+    const tokenData = await QuickBooksService.exchangeCodeForToken(code)
+    const expiresAt = new Date(Date.now() + tokenData.expiresIn * 1000)
+
+    await assertQuickBooksAccountUsable(realmId, payload.orgId, payload.userId)
+
+    await integrationsRepository.upsert(payload.orgId, provider, {
+      accessToken: tokenData.accessToken,
+      refreshToken: tokenData.refreshToken,
+      expiresAt,
+      scope: QUICKBOOKS_SCOPES,
+      connectedBy: payload.userId,
+      accountId: realmId,
+      accountDomain: null
+    })
+
+    await ProviderConnectionIndexModel.findOneAndUpdate(
+      { provider, externalAccountId: realmId },
+      { provider, externalAccountId: realmId, externalAccountLabel: null, orgId: payload.orgId },
+      { upsert: true, new: true }
+    )
+  }
+
   return { orgId: payload.orgId }
 }
 
@@ -144,6 +299,8 @@ export async function getStatus(orgId: string): Promise<Record<IntegrationProvid
   const byProvider = new Map(integrations.map((i) => [i.provider, i]))
 
   const hubspot = byProvider.get('hubspot')
+  const salesforce = byProvider.get('salesforce')
+  const quickbooks = byProvider.get('quickbooks')
 
   return {
     hubspot: hubspot
@@ -155,8 +312,24 @@ export async function getStatus(orgId: string): Promise<Record<IntegrationProvid
           lastSyncedAt: hubspot.lastSyncedAt ? hubspot.lastSyncedAt.toISOString() : null
         }
       : { connected: false },
-    salesforce: { connected: false, comingSoon: true },
-    quickbooks: { connected: false, comingSoon: true }
+    salesforce: salesforce
+      ? {
+          connected: true,
+          connectedAt: salesforce.createdAt.toISOString(),
+          accountId: salesforce.accountId,
+          accountDomain: salesforce.accountDomain,
+          lastSyncedAt: salesforce.lastSyncedAt ? salesforce.lastSyncedAt.toISOString() : null
+        }
+      : { connected: false },
+    quickbooks: quickbooks
+      ? {
+          connected: true,
+          connectedAt: quickbooks.createdAt.toISOString(),
+          accountId: quickbooks.accountId,
+          accountDomain: quickbooks.accountDomain,
+          lastSyncedAt: quickbooks.lastSyncedAt ? quickbooks.lastSyncedAt.toISOString() : null
+        }
+      : { connected: false }
   }
 }
 
@@ -191,6 +364,20 @@ export async function getValidAccessToken(orgId: string, provider: string): Prom
 
   if (provider === 'hubspot') {
     const refreshed = await HubSpotService.refreshAccessToken(integration.refreshToken)
+    const expiresAt = new Date(Date.now() + refreshed.expiresIn * 1000)
+    await integrationsRepository.updateAccessToken(orgId, provider, refreshed.accessToken, expiresAt)
+    return refreshed.accessToken
+  }
+
+  if (provider === 'salesforce') {
+    const refreshed = await SalesforceService.refreshAccessToken(integration.refreshToken)
+    const expiresAt = new Date(Date.now() + refreshed.expiresIn * 1000)
+    await integrationsRepository.updateAccessToken(orgId, provider, refreshed.accessToken, expiresAt)
+    return refreshed.accessToken
+  }
+
+  if (provider === 'quickbooks') {
+    const refreshed = await QuickBooksService.refreshAccessToken(integration.refreshToken)
     const expiresAt = new Date(Date.now() + refreshed.expiresIn * 1000)
     await integrationsRepository.updateAccessToken(orgId, provider, refreshed.accessToken, expiresAt)
     return refreshed.accessToken

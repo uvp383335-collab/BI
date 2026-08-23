@@ -28,6 +28,17 @@ export interface DealDocument extends Document {
   ownerId?: string
   contactIds: string[]
   dealStageHistory: DealStageHistoryEntry[]
+  /** Salesforce-only (`Opportunity.Type`/`LeadSource`/`CampaignId`/`AccountId`) — undefined for HubSpot deals. Used by VC-03/VC-06/CM-02 (metrics guide). */
+  type?: string
+  leadSource?: string
+  campaignId?: string
+  accountId?: string
+  /** The CRM's own deal-creation date (HubSpot `createdate`) — distinct from `createdAt` below, which is when *this app* first synced the row. CM-05 needs "pipeline created this period," which means the former. Salesforce-undefined for now (Opportunity `CreatedDate` isn't pulled). */
+  dealCreatedAt?: Date
+  /** Salesforce-only, 'field' mode — value of the org's configured competitor field (Organization.settings.salesforceCompetitorField), pulled dynamically since the field name varies per org. Undefined for HubSpot deals and for Salesforce orgs with no competitor field configured. CM-03. */
+  competitor?: string
+  /** Salesforce-only, 'junction' mode — every named competitor from the standard `OpportunityCompetitor` object (a deal can name several at once, unlike `competitor` above). Mutually exclusive with `competitor` in practice — which one gets populated depends on `Organization.settings.salesforceCompetitorSource`. CM-03 (gap G-24). */
+  competitors?: string[]
   createdAt: Date
   updatedAt: Date
 }
@@ -52,7 +63,14 @@ const dealSchema = new Schema<DealDocument>(
     dealstage: { type: String },
     ownerId: { type: String, index: true },
     contactIds: { type: [String], default: [] },
-    dealStageHistory: { type: [stageHistorySchema], default: [] }
+    dealStageHistory: { type: [stageHistorySchema], default: [] },
+    type: { type: String },
+    leadSource: { type: String },
+    campaignId: { type: String },
+    accountId: { type: String, index: true },
+    dealCreatedAt: { type: Date, index: true },
+    competitor: { type: String, index: true },
+    competitors: { type: [String], default: undefined }
   },
   { timestamps: true }
 )

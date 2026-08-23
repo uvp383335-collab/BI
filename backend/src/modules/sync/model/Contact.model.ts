@@ -23,6 +23,8 @@ export interface ContactDocument extends Document {
   lastname?: string
   lifecycleStage?: string
   leadStatus?: string
+  /** HubSpot-only (`hs_analytics_source`) — original-source channel attribution. Undefined for Salesforce leads. Used by CM-05/CM-07 (metrics guide). */
+  analyticsSource?: string
   lifecycleStageHistory: LifecycleStageHistoryEntry[]
   createdAt: Date
   updatedAt: Date
@@ -46,6 +48,7 @@ const contactSchema = new Schema<ContactDocument>(
     lastname: { type: String },
     lifecycleStage: { type: String },
     leadStatus: { type: String },
+    analyticsSource: { type: String },
     lifecycleStageHistory: { type: [stageHistorySchema], default: [] }
   },
   { timestamps: true }

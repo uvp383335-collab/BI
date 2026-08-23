@@ -1,8 +1,9 @@
 import { Router } from 'express'
 import * as organizationsController from '../controller/organizations.controller'
-import { requireAuth } from '../../../middleware/auth'
+import { requireAuth, requireOrgContext } from '../../../middleware/auth'
+import { requireRole } from '../../../middleware/rbac'
 import { validateBody } from '../../../middleware/validate'
-import { createOrganizationSchema } from '../validator/organizations.validator'
+import { createOrganizationSchema, updateOrganizationSettingsSchema } from '../validator/organizations.validator'
 import { createOrgRateLimiter } from '../../../middleware/rateLimit'
 
 export const organizationsRouter = Router()
@@ -16,4 +17,17 @@ organizationsRouter.post(
   createOrgRateLimiter,
   validateBody(createOrganizationSchema),
   organizationsController.createOrganization
+)
+
+// Any org member can view settings (CM-03 needs to read the configured
+// competitor field to render "not computable" correctly); only owners/admins
+// can change them — same role split as sync's manual-trigger endpoint.
+organizationsRouter.get('/settings', requireAuth, requireOrgContext, organizationsController.getSettings)
+organizationsRouter.patch(
+  '/settings',
+  requireAuth,
+  requireOrgContext,
+  requireRole('owner', 'admin'),
+  validateBody(updateOrganizationSettingsSchema),
+  organizationsController.updateSettings
 )

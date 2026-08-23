@@ -9,6 +9,7 @@ export interface ContactUpsertInput {
   lastname?: string
   lifecycleStage?: string
   leadStatus?: string
+  analyticsSource?: string
   lifecycleStageHistory: { value: string; timestamp: Date }[]
 }
 
@@ -36,5 +37,11 @@ export const contactRepository = {
       }
     }))
     await ContactModel.bulkWrite(operations, { ordered: false })
+  },
+
+  /** Just id + original-source per contact — CM-05/CM-07's channel-attribution join key. */
+  async findSourcesByProvider(orgId: string | Types.ObjectId, provider: string) {
+    const ContactModel = await modelForOrg(orgId)
+    return ContactModel.find({ orgId, provider }, { providerRecordId: 1, analyticsSource: 1 }).lean()
   }
 }

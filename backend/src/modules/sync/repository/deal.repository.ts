@@ -12,6 +12,13 @@ export interface DealUpsertInput {
   ownerId?: string
   contactIds: string[]
   dealStageHistory: { value: string; timestamp: Date }[]
+  type?: string
+  leadSource?: string
+  campaignId?: string
+  accountId?: string
+  dealCreatedAt?: Date
+  competitor?: string
+  competitors?: string[]
 }
 
 /** Resolves the Deal model bound to the given org's own tenant database. */
@@ -54,8 +61,21 @@ export const dealRepository = {
     return DealModel.distinct('pipeline', { orgId, provider, pipeline: { $ne: null } })
   },
 
-  async distinctOwnerIds(orgId: string | Types.ObjectId, provider: string) {
+  /** Deals closing within a date range, across every pipeline — CM-03/CM-04/CM-05's raw material (qualified/won-lost/competitor filtering happens in the metric, joined against PipelineStageDefinition). */
+  async findByCloseDateRange(orgId: string | Types.ObjectId, provider: string, from: Date, to: Date) {
     const DealModel = await modelForOrg(orgId)
-    return DealModel.distinct('ownerId', { orgId, provider, ownerId: { $ne: null } })
+    return DealModel.find(
+      { orgId, provider, closedate: { $gte: from, $lte: to } },
+      { pipeline: 1, dealstage: 1, amount: 1, closedate: 1, contactIds: 1, competitor: 1, competitors: 1 }
+    ).lean()
+  },
+
+  /** Deals created within a date range — CM-05's "qualified pipeline created this period" input, distinct from findByCloseDateRange (creation, not expected/actual close). */
+  async findByCreateDateRange(orgId: string | Types.ObjectId, provider: string, from: Date, to: Date) {
+    const DealModel = await modelForOrg(orgId)
+    return DealModel.find(
+      { orgId, provider, dealCreatedAt: { $gte: from, $lte: to } },
+      { pipeline: 1, dealstage: 1, amount: 1, contactIds: 1 }
+    ).lean()
   }
 }

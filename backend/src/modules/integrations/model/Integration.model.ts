@@ -14,6 +14,8 @@ export interface IntegrationDocument extends Document {
   accountId?: string | null
   /** Provider-side account domain/label (e.g. HubSpot's hub domain), for display only. */
   accountDomain?: string | null
+  /** Per-account API base URL (e.g. Salesforce's instance_url) — required for providers whose API host varies per connected account, unlike HubSpot's fixed api.hubapi.com. Null for providers that don't need it. */
+  instanceUrl?: string | null
   /** When the last sync job for this connection completed successfully; drives incremental syncs and UI display. */
   lastSyncedAt?: Date | null
   connectedBy: Types.ObjectId
@@ -31,6 +33,7 @@ export const integrationSchema = new Schema<IntegrationDocument>(
     scope: { type: [String], default: [] },
     accountId: { type: String, default: null },
     accountDomain: { type: String, default: null },
+    instanceUrl: { type: String, default: null },
     lastSyncedAt: { type: Date, default: null },
     connectedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }
   },

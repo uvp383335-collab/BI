@@ -2,7 +2,6 @@ import React from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { AuthProvider } from '../shared/context/AuthContext'
 import { ProtectedRoute } from './routes/ProtectedRoute'
-import { RootRedirect } from './routes/RootRedirect'
 import {
   SignupPage,
   LoginPage,
@@ -30,7 +29,7 @@ const App: React.FC = () => {
           path="/"
           element={
             <ProtectedRoute>
-              <RootRedirect />
+              <CrmDashboardPage />
             </ProtectedRoute>
           }
         />
@@ -42,8 +41,9 @@ const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
+        {/* Kept as an alias of "/" — the OAuth-callback redirect (backend integrations.controller.ts) lands here. */}
         <Route
-          path="/dashboard/:provider"
+          path="/dashboard"
           element={
             <ProtectedRoute>
               <CrmDashboardPage />

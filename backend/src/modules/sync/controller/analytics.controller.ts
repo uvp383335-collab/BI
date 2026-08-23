@@ -25,10 +25,3 @@ export const getPipelines = asyncHandler(async (req: Request, res: Response): Pr
   const pipelines = await analyticsService.getPipelines(orgId, provider)
   sendSuccess(res, pipelines)
 })
-
-export const getOwnerIds = asyncHandler(async (req: Request, res: Response): Promise<void> => {
-  const provider = String(req.params.provider)
-  const orgId = req.auth!.orgId!
-  const ownerIds = await analyticsService.getOwnerIds(orgId, provider)
-  sendSuccess(res, ownerIds)
-})

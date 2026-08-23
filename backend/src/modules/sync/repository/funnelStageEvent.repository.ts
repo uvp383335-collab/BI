@@ -93,6 +93,38 @@ export const funnelStageEventRepository = {
   },
 
   /**
+   * Each distinct record's full set of raw stages it has ever had an event
+   * for, per pipeline — the raw material funnel.service.ts needs to build a
+   * genuinely monotonic funnel. A literal "count of records with an event for
+   * exactly stage N" undercounts stage N whenever a record was created
+   * directly at a later stage (e.g. a HubSpot contact created straight at
+   * "Marketing Qualified Lead", with no recorded "Lead" transition) — that's
+   * what let both a stage's "% of total" and a later stage's raw count read
+   * as though more people reached it than the ones before it. The caller
+   * resolves each record's highest-ranked touched stage (via
+   * PipelineStageDefinition.displayOrder) and counts it toward every
+   * earlier-or-equal stage too, the same way HubSpot's own native funnel
+   * reports treat "currently at Customer" as implying "was a Lead at some
+   * point" even without an explicit logged transition for each hop.
+   */
+  async getRecordStageSets(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    entityType: 'lead' | 'deal',
+    recordIds?: string[]
+  ): Promise<{ providerRecordId: string; pipeline: string; stages: string[] }[]> {
+    const FunnelStageEventModel = await modelForOrg(orgId)
+    const match: Record<string, unknown> = { orgId: new Types.ObjectId(orgId), provider, entityType }
+    if (recordIds) match.providerRecordId = { $in: recordIds }
+
+    const rows = await FunnelStageEventModel.aggregate<{ _id: { providerRecordId: string; pipeline: string }; stages: string[] }>([
+      { $match: match },
+      { $group: { _id: { providerRecordId: '$providerRecordId', pipeline: '$pipeline' }, stages: { $addToSet: '$rawStage' } } }
+    ])
+    return rows.map((row) => ({ providerRecordId: row._id.providerRecordId, pipeline: row._id.pipeline, stages: row.stages }))
+  },
+
+  /**
    * Records of `entityType` whose *first-ever* stage-entry event falls inside
    * `dateRange` — the "acquired in this window" cohort. Deliberately not "any
    * event in range": a per-stage count of in-range events isn't monotonic (a
@@ -115,5 +147,27 @@ export const funnelStageEventRepository = {
       { $match: dateFieldMatch('firstEnteredAt', dateRange) }
     ])
     return rows.map((row) => row._id)
+  },
+
+  /**
+   * Counts distinct records whose *event* for `rawStage` (not their overall
+   * first-ever event — see getCohortRecordIds) falls inside `dateRange` —
+   * CM-08's "MQLs generated this period" input. Deliberately not
+   * cohort-scoped: CM-08 asks "how many crossed the MQL line this month",
+   * not "of the leads who started this month, how many became MQLs" (that
+   * second question is CM-06's).
+   */
+  async countRecordsEnteringStage(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    entityType: 'lead' | 'deal',
+    rawStage: string,
+    dateRange: DateRange
+  ): Promise<number> {
+    const FunnelStageEventModel = await modelForOrg(orgId)
+    const match: Record<string, unknown> = { orgId: new Types.ObjectId(orgId), provider, entityType, rawStage }
+    const dateMatch = dateFieldMatch('enteredAt', dateRange)
+    const ids = await FunnelStageEventModel.distinct('providerRecordId', { ...match, ...dateMatch })
+    return ids.length
   }
 }

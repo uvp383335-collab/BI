@@ -192,6 +192,11 @@ export class HubSpotService {
       "lastname",
       "lifecyclestage",
       "hs_lead_status",
+      // Original-source channel attribution — CM-05/CM-07 (metrics guide) classify
+      // this into marketing- vs. sales-originated. Writable-but-usually-computed
+      // property; not customizable per-portal like a deal stage, so its enum
+      // values (ORGANIC_SEARCH, PAID_SEARCH, ...) are trusted as a fixed set.
+      "hs_analytics_source",
     ];
     try {
       if (since) {
@@ -317,6 +322,9 @@ export class HubSpotService {
       "pipeline",
       "dealstage",
       "hubspot_owner_id",
+      // CM-05's "qualified pipeline created this period" needs a creation
+      // timestamp distinct from closedate.
+      "createdate",
     ];
     try {
       if (since) {

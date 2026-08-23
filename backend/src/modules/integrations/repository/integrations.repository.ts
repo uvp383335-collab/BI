@@ -10,6 +10,7 @@ export interface UpsertIntegrationInput {
   connectedBy: string | Types.ObjectId
   accountId?: string | null
   accountDomain?: string | null
+  instanceUrl?: string | null
 }
 
 /** Resolves the Integration model bound to the given org's own tenant database. */
@@ -40,6 +41,7 @@ export const integrationsRepository = {
       existing.connectedBy = new Types.ObjectId(data.connectedBy)
       existing.accountId = data.accountId ?? existing.accountId
       existing.accountDomain = data.accountDomain ?? existing.accountDomain
+      existing.instanceUrl = data.instanceUrl ?? existing.instanceUrl
       return existing.save()
     }
     return IntegrationModel.create({ orgId, provider, ...data })

@@ -24,3 +24,19 @@ export const createOrganization = asyncHandler(async (req: Request, res: Respons
   setRefreshCookie(res, result.refreshToken)
   return sendSuccess(res, { accessToken: result.accessToken, organization: result.organization }, 201)
 })
+
+export const getSettings = asyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.auth!.orgId!
+  const settings = await organizationsService.getOrgSettings(orgId)
+  return sendSuccess(res, settings)
+})
+
+export const updateSettings = asyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.auth!.orgId!
+  const { salesforceCompetitorSource, salesforceCompetitorField } = req.body as {
+    salesforceCompetitorSource: 'field' | 'junction' | null
+    salesforceCompetitorField: string | null
+  }
+  const settings = await organizationsService.updateOrgSettings(orgId, { salesforceCompetitorSource, salesforceCompetitorField })
+  return sendSuccess(res, settings)
+})

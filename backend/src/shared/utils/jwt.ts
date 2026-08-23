@@ -54,6 +54,8 @@ export interface IntegrationStatePayload {
   userId: string
   orgId: string
   provider: string
+  /** PKCE verifier for providers requiring it (e.g. Salesforce) — carried through the redirect since it can't be kept server-side across a stateless OAuth callback. */
+  codeVerifier?: string
 }
 
 /**

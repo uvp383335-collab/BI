@@ -1,6 +1,10 @@
 import { organizationsRepository } from '../repository/organizations.repository'
 import { membershipsRepository } from '../repository/memberships.repository'
 import { issueTokenPair } from '../../auth/service/tokenIssuer'
+import { AppError } from '../../../shared/utils/AppError'
+import { OrganizationSettings } from '../model/Organization.model'
+import { integrationsRepository } from '../../integrations/repository/integrations.repository'
+import { syncService } from '../../sync/service/sync.service'
 
 /** Lowercases, strips non-alphanumerics to hyphens, trims leading/trailing hyphens. */
 function slugify(name: string): string {
@@ -46,4 +50,34 @@ export async function createOrganizationForUser(userId: string, name: string) {
     ...tokens,
     organization: { id: org._id.toString(), name: org.name, slug: org.slug, role: 'owner' as const }
   }
+}
+
+export async function getOrgSettings(orgId: string): Promise<OrganizationSettings> {
+  const org = await organizationsRepository.findById(orgId)
+  if (!org) throw AppError.notFound('Organization not found', 'ORGANIZATION_NOT_FOUND')
+  return org.settings ?? {}
+}
+
+export async function updateOrgSettings(
+  orgId: string,
+  settings: { salesforceCompetitorSource: 'field' | 'junction' | null; salesforceCompetitorField: string | null }
+): Promise<OrganizationSettings> {
+  const org = await organizationsRepository.updateSalesforceCompetitorSettings(orgId, settings)
+  if (!org) throw AppError.notFound('Organization not found', 'ORGANIZATION_NOT_FOUND')
+
+  // This setting changes what Salesforce sync actually pulls (which field, or the
+  // OpportunityCompetitor object) — an already-connected org's existing Opportunities
+  // won't have that data yet, and an ordinary incremental sync would never revisit
+  // them (it only re-fetches records that changed in Salesforce, not ones affected by
+  // a *local* config change). A forced full resync is the only way to backfill it.
+  // Fire-and-forget, same pattern as the OAuth-callback's post-connect sync kickoff —
+  // this settings save shouldn't block on however long a full Salesforce sync takes.
+  const salesforceConnected = await integrationsRepository.findByOrgAndProvider(orgId, 'salesforce')
+  if (salesforceConnected) {
+    syncService.startSync(orgId, 'salesforce', { force: true }).catch(() => {
+      // Sync failures surface via the job status endpoint, not this settings save.
+    })
+  }
+
+  return org.settings ?? {}
 }

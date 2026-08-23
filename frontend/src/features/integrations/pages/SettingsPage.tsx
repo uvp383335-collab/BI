@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, ArrowUpRight } from 'lucide-react'
 import { useAuthContext } from '../../../shared/context/AuthContext'
 import { useIntegrationsStatus } from '../hooks/useIntegrations'
+import { useOrganizationSettings, useUpdateOrganizationSettings } from '../hooks/useOrganizationSettings'
 import { useStartSync, useSyncStatus } from '../../dashboard/hooks/useSync'
 import { IntegrationProvider, ProviderStatus } from '../api/integrationsApi'
 import { AppShell } from '../../../widgets/AppShell'
@@ -114,6 +115,111 @@ const ProviderRow: React.FC<ProviderRowProps> = ({ provider, status, canManage, 
   )
 }
 
+const SALESFORCE_FIELD_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_]*$/
+type CompetitorModeChoice = 'none' | 'field' | 'junction'
+
+/**
+ * CM-03's per-org config (metrics guide gap G-11/G-24): Salesforce has no
+ * single standard way to record "which competitor was in the deal" — it's
+ * either a custom Opportunity field (commonly `Competitor__c`, one
+ * competitor per deal) or the standard `OpportunityCompetitor` object
+ * (several competitors per deal). Only shown once Salesforce is connected;
+ * only owners/admins can change it.
+ */
+const CompetitorFieldSettings: React.FC<{ canManage: boolean; onError: (message: string) => void }> = ({ canManage, onError }) => {
+  const { data: settings, isLoading } = useOrganizationSettings()
+  const updateSettings = useUpdateOrganizationSettings()
+  const [mode, setMode] = useState<CompetitorModeChoice>('none')
+  const [fieldName, setFieldName] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    setMode(settings?.salesforceCompetitorSource ?? 'none')
+    setFieldName(settings?.salesforceCompetitorField ?? '')
+  }, [settings?.salesforceCompetitorSource, settings?.salesforceCompetitorField])
+
+  const trimmed = fieldName.trim()
+  const isValid = mode !== 'field' || SALESFORCE_FIELD_NAME_REGEX.test(trimmed)
+
+  const handleSave = async () => {
+    if (!isValid) return
+    setSaved(false)
+    try {
+      await updateSettings.mutateAsync({
+        source: mode === 'none' ? null : mode,
+        field: mode === 'field' && trimmed !== '' ? trimmed : null
+      })
+      setSaved(true)
+    } catch (err: any) {
+      onError(err?.response?.data?.error?.message || 'Could not save competitor tracking settings')
+    }
+  }
+
+  return (
+    <div className="card p-6">
+      <h2 className="text-lg font-semibold text-ink">Competitor tracking (Salesforce)</h2>
+      <p className="mt-1 text-sm text-ink-2">
+        How your team records the named competitor on a deal — powers CM-03 (win rate vs. named competitors).
+      </p>
+
+      {isLoading ? (
+        <p className="mt-4 text-sm text-ink-3">Loading…</p>
+      ) : canManage ? (
+        <div className="mt-4 flex flex-col gap-3">
+          <select
+            className="form-input-dark w-full sm:max-w-xs"
+            value={mode}
+            onChange={(e) => {
+              setMode(e.target.value as CompetitorModeChoice)
+              setSaved(false)
+            }}
+          >
+            <option value="none">Not tracked</option>
+            <option value="field">Custom Opportunity field (one competitor per deal)</option>
+            <option value="junction">Standard "Competitors" related list (multiple per deal)</option>
+          </select>
+
+          {mode === 'field' && (
+            <input
+              type="text"
+              className="form-input-dark w-full sm:max-w-xs"
+              placeholder="Competitor__c"
+              value={fieldName}
+              onChange={(e) => {
+                setFieldName(e.target.value)
+                setSaved(false)
+              }}
+            />
+          )}
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="btn-primary w-auto px-4 py-2 text-sm"
+              onClick={handleSave}
+              disabled={!isValid || updateSettings.isPending}
+            >
+              {updateSettings.isPending ? 'Saving…' : 'Save'}
+            </button>
+            {saved && <span className="text-xs text-success">Saved — takes effect on the next Salesforce sync.</span>}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-4 text-sm text-ink-3">
+          {settings?.salesforceCompetitorSource === 'junction'
+            ? 'Configured: standard Competitors related list'
+            : settings?.salesforceCompetitorField
+              ? `Configured: ${settings.salesforceCompetitorField}`
+              : 'Not configured'}
+        </p>
+      )}
+      {mode === 'field' && !isValid && (
+        <p className="mt-2 text-xs text-danger">Must be a valid Salesforce field API name (letters, digits, underscores).</p>
+      )}
+    </div>
+  )
+}
+
 /**
  * Read-mostly integrations management screen: every provider at a glance with
  * its connection state, last-synced time, and a "Sync now" trigger. Connect/
@@ -145,6 +251,8 @@ export const SettingsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {status?.salesforce?.connected && <CompetitorFieldSettings canManage={canManage} onError={setError} />}
     </AppShell>
   )
 }

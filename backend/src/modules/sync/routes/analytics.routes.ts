@@ -14,4 +14,3 @@ analyticsRouter.get(
   analyticsController.getFunnels
 )
 analyticsRouter.get('/:provider/pipelines', requireAuth, requireOrgContext, analyticsController.getPipelines)
-analyticsRouter.get('/:provider/owners', requireAuth, requireOrgContext, analyticsController.getOwnerIds)
