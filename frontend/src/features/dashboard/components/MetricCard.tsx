@@ -1,5 +1,8 @@
 import React from 'react'
-import { MetricResult } from '../api/metricsApi'
+import { Download } from 'lucide-react'
+import { MetricResult, TrendPoint } from '../api/metricsApi'
+import { formatMetricValue } from '../utils/formatMetricValue'
+import { exportMetricToExcel } from '../utils/exportMetricToExcel'
 
 interface MetricCardExtra {
   label: string
@@ -17,6 +20,8 @@ interface MetricCardProps {
   extras?: MetricCardExtra[]
   /** An embedded trend chart (see MetricTrendChart's `embedded` mode) shown below the value/extras, inside this same card. */
   trend?: React.ReactNode
+  /** Raw points backing `trend` (if any) — included as their own sheet in the Excel export, alongside the chart. */
+  trendPoints?: TrendPoint[]
 }
 
 const FLAG_LABEL: Record<'watch' | 'act_now', string> = {
@@ -29,26 +34,7 @@ const FLAG_CLASSES: Record<'watch' | 'act_now', string> = {
   act_now: 'bg-danger/15 text-danger'
 }
 
-function formatValue(value: number, unit: MetricResult['unit']): string {
-  switch (unit) {
-    case 'percent':
-      return `${value.toFixed(1)}%`
-    case 'months':
-      return `${value.toFixed(1)} mo`
-    case 'multiple':
-      return `${value.toFixed(2)}x`
-    case 'usd':
-      return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-    case 'days':
-      return `${value.toFixed(1)} days`
-    case 'count':
-      return value.toLocaleString()
-    default:
-      return value.toFixed(1)
-  }
-}
-
-export const MetricCard: React.FC<MetricCardProps> = ({ id, title, description, icon, metric, isLoading, extras, trend }) => {
+export const MetricCard: React.FC<MetricCardProps> = ({ id, title, description, icon, metric, isLoading, extras, trend, trendPoints }) => {
   const borderClass = !metric?.flag ? 'border-t-brand' : metric.flag.level === 'act_now' ? 'border-t-danger' : 'border-t-warning'
 
   return (
@@ -57,7 +43,22 @@ export const MetricCard: React.FC<MetricCardProps> = ({ id, title, description, 
         <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">
           {id} · {title}
         </p>
-        <div className="text-brand">{icon}</div>
+        <div className="flex items-center gap-2">
+          {metric && (
+            <button
+              type="button"
+              onClick={() => {
+                exportMetricToExcel({ id, title, description, metric, trendPoints }).catch((err) => console.error('Failed to export metric to Excel', err))
+              }}
+              className="rounded-md p-1 text-ink-3 transition-colors hover:bg-surface-3 hover:text-brand"
+              aria-label={`Export ${id} to Excel`}
+              title="Export to Excel for AI analysis"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          )}
+          <div className="text-brand">{icon}</div>
+        </div>
       </div>
 
       {isLoading ? (
@@ -65,7 +66,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({ id, title, description, 
       ) : !metric || !metric.computable || metric.value === null ? (
         <p className="mt-3 text-lg font-medium text-ink-3">Not computable</p>
       ) : (
-        <p className="mt-3 text-3xl font-semibold text-ink">{formatValue(metric.value, metric.unit)}</p>
+        <p className="mt-3 text-3xl font-semibold text-ink">{formatMetricValue(metric.value, metric.unit)}</p>
       )}
 
       <p className="mt-1 text-xs text-ink-2">

@@ -469,6 +469,7 @@ export const CrmDashboardPage: React.FC = () => {
                   metric={vc04}
                   isLoading={isVc04Loading}
                   trend={<MetricTrendChart embedded title="COGS %" description="" color="var(--color-brand)" points={vc04Trend?.points ?? []} isLoading={isVc04TrendLoading} />}
+                  trendPoints={vc04Trend?.points}
                 />
                 <MetricCard
                   id="VC-09"
@@ -478,6 +479,7 @@ export const CrmDashboardPage: React.FC = () => {
                   metric={vc09}
                   isLoading={isVc09Loading}
                   trend={<MetricTrendChart embedded title="G&A %" description="" color="var(--color-violet)" points={vc09Trend?.points ?? []} isLoading={isVc09TrendLoading} />}
+                  trendPoints={vc09Trend?.points}
                 />
                 <MetricCard
                   id="VC-10"
@@ -487,6 +489,7 @@ export const CrmDashboardPage: React.FC = () => {
                   metric={vc10}
                   isLoading={isVc10Loading}
                   trend={<MetricTrendChart embedded title="EBITDA Margin %" description="" color="var(--color-teal)" points={vc10Trend?.points ?? []} isLoading={isVc10TrendLoading} />}
+                  trendPoints={vc10Trend?.points}
                 />
                 <MetricCard
                   id="VC-06"
