@@ -19,6 +19,7 @@ export interface DealUpsertInput {
   dealCreatedAt?: Date
   competitor?: string
   competitors?: string[]
+  productIds: string[]
 }
 
 /** Resolves the Deal model bound to the given org's own tenant database. */
@@ -48,10 +49,11 @@ export const dealRepository = {
   },
 
   /** Deals that have at least one associated contact — the raw material for the lead-to-deal conversion funnel. */
-  async findContactAssociationsForFunnel(orgId: string | Types.ObjectId, provider: string, pipeline?: string) {
+  async findContactAssociationsForFunnel(orgId: string | Types.ObjectId, provider: string, pipeline?: string, productId?: string) {
     const DealModel = await modelForOrg(orgId)
     const query: Record<string, unknown> = { orgId, provider, 'contactIds.0': { $exists: true } }
     if (pipeline) query.pipeline = pipeline
+    if (productId) query.productIds = productId
 
     return DealModel.find(query, { pipeline: 1, dealstage: 1, contactIds: 1 }).lean()
   },
@@ -59,6 +61,12 @@ export const dealRepository = {
   async distinctPipelines(orgId: string | Types.ObjectId, provider: string) {
     const DealModel = await modelForOrg(orgId)
     return DealModel.distinct('pipeline', { orgId, provider, pipeline: { $ne: null } })
+  },
+
+  /** Deal providerRecordIds carrying the given product — funnel.service.ts intersects this against a cohort to scope the deal-stage/lead-to-deal funnels by product. */
+  async findIdsByProduct(orgId: string | Types.ObjectId, provider: string, productId: string): Promise<string[]> {
+    const DealModel = await modelForOrg(orgId)
+    return DealModel.distinct('providerRecordId', { orgId, provider, productIds: productId })
   },
 
   /** Deals closing within a date range, across every pipeline — CM-03/CM-04/CM-05's raw material (qualified/won-lost/competitor filtering happens in the metric, joined against PipelineStageDefinition). */

@@ -69,6 +69,12 @@ export interface FunnelFilters {
   /** ISO date strings (YYYY-MM-DD), inclusive. */
   from?: string
   to?: string
+  productId?: string
+}
+
+export interface Product {
+  id: string
+  name: string
 }
 
 export async function startSyncRequest(provider: IntegrationProvider): Promise<{ jobId: string }> {
@@ -98,5 +104,10 @@ export async function getFunnelsRequest(
 
 export async function getPipelinesRequest(provider: IntegrationProvider): Promise<string[]> {
   const res = await httpClient.get<ApiEnvelope<string[]>>(`/analytics/${provider}/pipelines`)
+  return res.data.data
+}
+
+export async function getProductsRequest(provider: IntegrationProvider): Promise<Product[]> {
+  const res = await httpClient.get<ApiEnvelope<Product[]>>(`/analytics/${provider}/products`)
   return res.data.data
 }

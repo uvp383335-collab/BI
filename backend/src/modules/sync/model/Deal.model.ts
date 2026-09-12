@@ -39,6 +39,8 @@ export interface DealDocument extends Document {
   competitor?: string
   /** Salesforce-only, 'junction' mode — every named competitor from the standard `OpportunityCompetitor` object (a deal can name several at once, unlike `competitor` above). Mutually exclusive with `competitor` in practice — which one gets populated depends on `Organization.settings.salesforceCompetitorSource`. CM-03 (gap G-24). */
   competitors?: string[]
+  /** Provider product ids from this deal's line items (HubSpot `line_items` -> `hs_product_id`; Salesforce `OpportunityLineItem.Product2Id`). Empty when the deal has no line items. Powers the funnel product filter — see Product.model.ts. */
+  productIds: string[]
   createdAt: Date
   updatedAt: Date
 }
@@ -70,7 +72,8 @@ const dealSchema = new Schema<DealDocument>(
     accountId: { type: String, index: true },
     dealCreatedAt: { type: Date, index: true },
     competitor: { type: String, index: true },
-    competitors: { type: [String], default: undefined }
+    competitors: { type: [String], default: undefined },
+    productIds: { type: [String], default: [] }
   },
   { timestamps: true }
 )
@@ -78,6 +81,9 @@ const dealSchema = new Schema<DealDocument>(
 // Every tenant database only ever holds this one org's deals, but orgId is
 // kept in the unique key as a safety net, same rationale as Integration.model.ts.
 dealSchema.index({ orgId: 1, provider: 1, providerRecordId: 1 }, { unique: true })
+
+// Funnel product filter's main query shape: find every deal carrying a given product.
+dealSchema.index({ orgId: 1, provider: 1, productIds: 1 })
 
 // Cache one compiled model per tenant connection so repeated calls within the
 // same request/process don't re-register (and error on) the model.

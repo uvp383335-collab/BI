@@ -15,7 +15,7 @@ async function main() {
   const db = connection.db
   if (!db) throw new Error('tenant db not ready')
 
-  for (const collection of ['contacts', 'deals', 'funnelstageevents', 'pipelinestagedefinitions']) {
+  for (const collection of ['contacts', 'deals', 'funnelstageevents', 'pipelinestagedefinitions', 'products']) {
     const result = await db.collection(collection).deleteMany({})
     console.log(`cleared ${collection}: ${result.deletedCount} docs`)
   }

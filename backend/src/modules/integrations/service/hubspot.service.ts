@@ -10,7 +10,16 @@ export const HUBSPOT_SCOPES = [
   "crm.objects.contacts.read",
   "crm.objects.contacts.write",
   "crm.objects.deals.read",
-  "crm.objects.deals.write"
+  "crm.objects.deals.write",
+  // Line items + the product catalog they reference — powers the funnel
+  // product filter (Deal.productIds). The app itself only ever reads these;
+  // write scopes are here for the same reason contacts/deals.write are —
+  // the crmSeed scripts create test products/line items through this same
+  // connection.
+  "crm.objects.line_items.read",
+  "crm.objects.line_items.write",
+  "crm.objects.products.read",
+  "crm.objects.products.write"
 ];
 
 export interface HubSpotTokenResponse {
@@ -62,6 +71,11 @@ export interface HubSpotDeal {
   propertiesWithHistory?: {
     dealstage?: { value: string; timestamp: string }[];
   };
+}
+
+export interface HubSpotProduct {
+  id: string;
+  properties: { name?: string };
 }
 
 /**
@@ -423,6 +437,89 @@ export class HubSpotService {
       throw AppError.badRequest(
         "Failed to fetch deal-contact associations from HubSpot",
         "HUBSPOT_ASSOCIATIONS_FETCH_FAILED",
+      );
+    }
+  }
+
+  /**
+   * Batch-resolves deal -> associated line-item ids for a whole page of
+   * deals in one call — same v4 associations batch-read shape as
+   * getDealContactAssociations. A line item's own `hs_product_id` (fetched
+   * separately via getLineItemProducts) is what actually identifies the
+   * product; this call only gets from deal to line item.
+   */
+  static async getDealLineItemAssociations(
+    accessToken: string,
+    dealIds: string[],
+  ): Promise<Record<string, string[]>> {
+    if (dealIds.length === 0) return {};
+    try {
+      const response = await axios.post(
+        "https://api.hubapi.com/crm/v4/associations/deals/line_items/batch/read",
+        { inputs: dealIds.map((id) => ({ id })) },
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      const map: Record<string, string[]> = {};
+      for (const result of response.data?.results ?? []) {
+        map[String(result.from.id)] = (result.to ?? []).map((to: { toObjectId: string | number }) =>
+          String(to.toObjectId),
+        );
+      }
+      return map;
+    } catch {
+      throw AppError.badRequest(
+        "Failed to fetch deal-line item associations from HubSpot",
+        "HUBSPOT_LINE_ITEM_ASSOCIATIONS_FETCH_FAILED",
+      );
+    }
+  }
+
+  /** Batch-reads `hs_product_id` for a page's worth of line items — the second hop from deal to product (deal -> line item -> product). */
+  static async getLineItemProducts(
+    accessToken: string,
+    lineItemIds: string[],
+  ): Promise<Record<string, string>> {
+    if (lineItemIds.length === 0) return {};
+    try {
+      const response = await axios.post(
+        "https://api.hubapi.com/crm/v3/objects/line_items/batch/read",
+        { properties: ["hs_product_id"], inputs: lineItemIds.map((id) => ({ id })) },
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      const map: Record<string, string> = {};
+      for (const result of response.data?.results ?? []) {
+        const productId = result.properties?.hs_product_id;
+        if (productId) map[String(result.id)] = String(productId);
+      }
+      return map;
+    } catch {
+      throw AppError.badRequest(
+        "Failed to fetch line item products from HubSpot",
+        "HUBSPOT_LINE_ITEM_PRODUCTS_FETCH_FAILED",
+      );
+    }
+  }
+
+  /** Paginates the portal's full product catalog (id + name only) — labels for the funnel product-filter dropdown, refreshed once per sync job like the pipeline/lifecycle metadata. */
+  static async getProducts(accessToken: string): Promise<HubSpotProduct[]> {
+    const products: HubSpotProduct[] = [];
+    let after: string | undefined;
+    try {
+      do {
+        const params = new URLSearchParams({ limit: "100", properties: "name" });
+        if (after) params.append("after", after);
+        const response = await axios.get(
+          `https://api.hubapi.com/crm/v3/objects/products?${params.toString()}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        products.push(...(response.data?.results ?? []));
+        after = response.data?.paging?.next?.after;
+      } while (after);
+      return products;
+    } catch {
+      throw AppError.badRequest(
+        "Failed to fetch products from HubSpot",
+        "HUBSPOT_PRODUCTS_FETCH_FAILED",
       );
     }
   }

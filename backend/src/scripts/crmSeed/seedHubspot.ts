@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { hubspotAuth, closeDb } from './auth'
-import { CUSTOMERS, monthlyRevenue, isoDate, MONTH_COUNT } from './data'
+import { CUSTOMERS, monthlyRevenue, isoDate, MONTH_COUNT, HUBSPOT_PRODUCTS, customerByKey } from './data'
 
 const BASE = 'https://api.hubapi.com'
 const OWNER_ID = '96152582'
@@ -30,21 +30,40 @@ function slug(name: string): string {
 
 async function batchCreate(
   headers: Record<string, string>,
-  objectType: 'contacts' | 'deals',
+  objectType: 'contacts' | 'deals' | 'products' | 'line_items',
   inputs: { properties: Record<string, string> }[]
 ): Promise<string[]> {
   const ids: string[] = []
   for (let i = 0; i < inputs.length; i += 100) {
     const chunk = inputs.slice(i, i + 100)
-    const res: { data: { results: { id: string }[] } } = await axios.post(
+    const res: { data: { results: { id: string }[]; numErrors?: number; errors?: { message: string }[] } } = await axios.post(
       `${BASE}/crm/v3/objects/${objectType}/batch/create`,
       { inputs: chunk },
       { headers }
     )
     ids.push(...res.data.results.map((r) => r.id))
-    console.log(`  created ${objectType} ${Math.min(i + 100, inputs.length)}/${inputs.length}`)
+    // A 207 multi-status response only puts successes in `results` — surface
+    // the rest so a partial failure isn't silently swallowed (previously the
+    // only symptom was a smaller-than-expected count in the summary line).
+    if (res.data.errors?.length) {
+      console.log(`  ${res.data.errors.length} ${objectType} failed, e.g.: ${res.data.errors[0].message}`)
+    }
+    console.log(`  created ${objectType} ${ids.length}/${inputs.length}`)
   }
   return ids
+}
+
+/** Default-associates a batch of (from, to) id pairs via the v4 batch/associate/default endpoint — same shape for deals<->contacts and line_items<->deals. */
+async function associateDefault(
+  headers: Record<string, string>,
+  fromType: string,
+  toType: string,
+  pairs: { from: string; to: string }[]
+): Promise<void> {
+  for (let i = 0; i < pairs.length; i += 100) {
+    const chunk = pairs.slice(i, i + 100).map((p) => ({ from: { id: p.from }, to: { id: p.to } }))
+    await axios.post(`${BASE}/crm/v4/associations/${fromType}/${toType}/batch/associate/default`, { inputs: chunk }, { headers })
+  }
 }
 
 async function main() {
@@ -166,12 +185,64 @@ async function main() {
   })
 
   console.log(`Associating ${associationInputs.length} deals to contacts...`)
-  for (let i = 0; i < associationInputs.length; i += 100) {
-    const chunk = associationInputs.slice(i, i + 100)
-    await axios.post(`${BASE}/crm/v4/associations/deals/contacts/batch/associate/default`, { inputs: chunk }, { headers })
-  }
+  await associateDefault(
+    headers,
+    'deals',
+    'contacts',
+    associationInputs.map((a) => ({ from: a.from.id, to: a.to.id }))
+  )
 
-  console.log(`HubSpot seed complete: ${contactIds.length} contacts, ${dealIds.length} deals.`)
+  // --- Products + line items: gives the funnel product filter something to filter by ---
+  console.log(`Creating ${HUBSPOT_PRODUCTS.length} HubSpot products...`)
+  const productIds = await batchCreate(
+    headers,
+    'products',
+    HUBSPOT_PRODUCTS.map((name) => ({ properties: { name } }))
+  )
+  const productIdByName = new Map(HUBSPOT_PRODUCTS.map((name, i) => [name, productIds[i]]))
+  const platformProductId = productIdByName.get('DriverInsights Platform')!
+  const hardwareProductId = productIdByName.get('GPS Hardware Kit')!
+
+  const lineItemInputs: { properties: Record<string, string> }[] = []
+  const lineItemDealId: string[] = []
+  dealIds.forEach((dealId, i) => {
+    const key = dealCustomerKey[i]
+    const amount = dealInputs[i].properties.amount
+    if (key) {
+      // Every real customer deal carries the core platform line item; expansion
+      // customers also bought the hardware kit — gives the filter more than
+      // one bucket to differentiate real deals by.
+      lineItemInputs.push({ properties: { name: 'DriverInsights Platform', hs_product_id: platformProductId, quantity: '1', price: amount } })
+      lineItemDealId.push(dealId)
+      if (customerByKey(key).trajectory === 'expansion') {
+        lineItemInputs.push({ properties: { name: 'GPS Hardware Kit', hs_product_id: hardwareProductId, quantity: '1', price: '1200' } })
+        lineItemDealId.push(dealId)
+      }
+    } else if (i % 2 === 0) {
+      // Noise deals: roughly half carry a line item, alternating product, so
+      // the filter has pipeline-stage variety too, not just closed-won deals.
+      const name = i % 4 === 0 ? 'DriverInsights Platform' : 'GPS Hardware Kit'
+      lineItemInputs.push({
+        properties: { name, hs_product_id: name === 'DriverInsights Platform' ? platformProductId : hardwareProductId, quantity: '1', price: amount }
+      })
+      lineItemDealId.push(dealId)
+    }
+  })
+
+  console.log(`Creating ${lineItemInputs.length} HubSpot line items...`)
+  const lineItemIds = await batchCreate(headers, 'line_items', lineItemInputs)
+
+  console.log(`Associating ${lineItemIds.length} line items to deals...`)
+  await associateDefault(
+    headers,
+    'line_items',
+    'deals',
+    lineItemIds.map((lineItemId, i) => ({ from: lineItemId, to: lineItemDealId[i] }))
+  )
+
+  console.log(
+    `HubSpot seed complete: ${contactIds.length} contacts, ${dealIds.length} deals, ${productIds.length} products, ${lineItemIds.length} line items.`
+  )
   await closeDb()
 }
 

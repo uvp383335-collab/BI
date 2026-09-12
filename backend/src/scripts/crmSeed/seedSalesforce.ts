@@ -1,6 +1,6 @@
 import { salesforceAuth, closeDb } from './auth'
 import { makeSfClient } from './sfClient'
-import { CUSTOMERS, monthlyRevenue, isoDate, MONTH_COUNT, COMPETITORS } from './data'
+import { CUSTOMERS, monthlyRevenue, isoDate, MONTH_COUNT, COMPETITORS, customerByKey } from './data'
 
 const OWNER_ID = '005jV0000002kErQAI' // Integration User — the only realistic non-system active user in this dev org
 const LEAD_SOURCES = ['Web', 'Phone Inquiry', 'Partner Referral', 'Purchased List', 'Other']
@@ -15,6 +15,21 @@ async function main() {
   const sf = makeSfClient(accessToken, instanceUrl)
 
   const sfCustomers = CUSTOMERS.filter((c) => c.crmSource === 'salesforce')
+
+  // --- Standard Price Book + its entries: this dev org already ships a
+  // Product2 sample catalog (unlike HubSpot, which gets one created fresh
+  // by the HubSpot seed script) — reused here rather than creating new
+  // Product2 records, since OpportunityLineItem needs a PricebookEntryId,
+  // not a bare Product2Id. Degrades to no line items (not a hard failure)
+  // if the org has no active standard-pricebook entries.
+  console.log('Looking up Standard Price Book entries...')
+  const [standardPricebook] = await sf.query<{ Id: string }>('SELECT Id FROM Pricebook2 WHERE IsStandard = true LIMIT 1')
+  const priceBookEntries = standardPricebook
+    ? await sf.query<{ Id: string; Product2Id: string; UnitPrice: number }>(
+        `SELECT Id, Product2Id, UnitPrice FROM PricebookEntry WHERE Pricebook2Id = '${standardPricebook.Id}' AND IsActive = true`
+      )
+    : []
+  console.log(`  found ${priceBookEntries.length} active Standard Price Book entries`)
 
   // --- Campaigns ---
   console.log('Creating Campaigns...')
@@ -166,7 +181,8 @@ async function main() {
       Type: o.Type,
       LeadSource: o.LeadSource,
       ...(o.CampaignId ? { CampaignId: o.CampaignId } : {}),
-      ...(o.Description ? { Description: o.Description } : {})
+      ...(o.Description ? { Description: o.Description } : {}),
+      ...(standardPricebook ? { Pricebook2Id: standardPricebook.Id } : {})
     }))
   )
   const oppFailures = oppResults.filter((r) => !r.success)
@@ -185,6 +201,36 @@ async function main() {
   const compResults = await sf.createMany('OpportunityCompetitor', competitorRecords)
   console.log(`  created ${compResults.filter((r) => r.success).length}/${competitorRecords.length}`)
 
+  // --- OpportunityLineItem: gives the funnel product filter something to filter by ---
+  let lineItemResults: { success: boolean }[] = []
+  if (priceBookEntries.length > 0) {
+    const pickEntry = (seed: number) => priceBookEntries[seed % priceBookEntries.length]
+    const lineItemRecords: { OpportunityId: string; PricebookEntryId: string; Quantity: number; UnitPrice: number }[] = []
+    oppDefs.forEach((o, i) => {
+      const oppId = oppResults[i]?.id
+      if (!oppId) return
+      // The origin "DriverInsights Platform" opportunity per customer, plus
+      // roughly half the noise pipeline, carries a line item; expansion
+      // customers get a second one — same real-vs-noise, single-vs-multi
+      // split as the HubSpot seed script, so both providers exercise the
+      // filter the same way.
+      const isOriginDeal = o.Name.endsWith('DriverInsights Platform')
+      if (!isOriginDeal && i % 2 !== 0) return
+      const entry = pickEntry(i)
+      lineItemRecords.push({ OpportunityId: oppId, PricebookEntryId: entry.Id, Quantity: 1, UnitPrice: entry.UnitPrice ?? 1000 })
+      const customer = o.customerKey ? customerByKey(o.customerKey) : undefined
+      if (customer?.trajectory === 'expansion') {
+        const addOnEntry = pickEntry(i + 7)
+        lineItemRecords.push({ OpportunityId: oppId, PricebookEntryId: addOnEntry.Id, Quantity: 1, UnitPrice: addOnEntry.UnitPrice ?? 500 })
+      }
+    })
+    console.log(`Creating ${lineItemRecords.length} OpportunityLineItems...`)
+    lineItemResults = await sf.createMany('OpportunityLineItem', lineItemRecords)
+    console.log(`  created ${lineItemResults.filter((r) => r.success).length}/${lineItemRecords.length}`)
+  } else {
+    console.log('Skipping OpportunityLineItem creation — no active Standard Price Book entries found.')
+  }
+
   // --- Leads: generic top-of-funnel noise, not tied to specific customers ---
   const LEAD_COUNT = 40
   const leadRecords = Array.from({ length: LEAD_COUNT }, (_, i) => ({
@@ -202,7 +248,7 @@ async function main() {
   console.log(
     `Salesforce seed complete: ${campaignIds.length} campaigns, ${accountIdByKey.size} accounts, ` +
       `${oppResults.length - oppFailures.length} opportunities, ${compResults.filter((r) => r.success).length} competitor rows, ` +
-      `${leadResults.filter((r) => r.success).length} leads.`
+      `${lineItemResults.filter((r) => r.success).length} line items, ${leadResults.filter((r) => r.success).length} leads.`
   )
   await closeDb()
 }

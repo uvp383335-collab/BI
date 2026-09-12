@@ -13,7 +13,7 @@ dotenv.config()
  * multi-tenant tooling. Hardcoded on purpose; re-check via the `organizations`
  * collection if this is ever run against a different environment.
  */
-export const ORG_ID = '6a85e7529a6a49dd517ecda1'
+export const ORG_ID = '6a8adc0e601ee7759cc616dc'
 
 let dbReady: Promise<void> | null = null
 export async function ensureDb(): Promise<void> {

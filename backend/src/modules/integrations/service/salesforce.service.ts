@@ -79,6 +79,11 @@ export interface SalesforcePicklistStage {
   isWon: boolean;
 }
 
+export interface SalesforceProduct {
+  Id: string;
+  Name: string | null;
+}
+
 /**
  * Thin wrapper around Salesforce's OAuth + SOQL query endpoints. Leads are
  * synced into this app's generic Contact entity and Opportunities into its
@@ -470,6 +475,60 @@ export class SalesforceService {
         "Failed to fetch opportunity competitors from Salesforce",
         "SALESFORCE_OPPORTUNITY_COMPETITORS_FETCH_FAILED",
       );
+    }
+  }
+
+  /**
+   * Batch-resolves opportunity -> associated product id(s) for a whole page
+   * of opportunities, via the standard `OpportunityLineItem` junction object
+   * (Salesforce's equivalent of HubSpot's deal -> line_item -> product hop,
+   * collapsed into one query since OpportunityLineItem carries Product2Id
+   * directly rather than needing a second batch-read). Powers the funnel
+   * product filter (Deal.productIds).
+   */
+  static async getOpportunityLineItemProducts(
+    accessToken: string,
+    instanceUrl: string,
+    opportunityIds: string[],
+  ): Promise<Record<string, string[]>> {
+    if (opportunityIds.length === 0) return {};
+    try {
+      const ids = opportunityIds.map((id) => `'${id}'`).join(",");
+      const soql = `SELECT OpportunityId, Product2Id FROM OpportunityLineItem WHERE OpportunityId IN (${ids}) AND Product2Id != null`;
+      const response = await this.runQuery<{ OpportunityId: string; Product2Id: string }>(
+        accessToken,
+        instanceUrl,
+        soql,
+      );
+      const map: Record<string, string[]> = {};
+      for (const record of response.records) {
+        const list = map[record.OpportunityId] ?? [];
+        if (!list.includes(record.Product2Id)) list.push(record.Product2Id);
+        map[record.OpportunityId] = list;
+      }
+      return map;
+    } catch {
+      throw AppError.badRequest(
+        "Failed to fetch opportunity line item products from Salesforce",
+        "SALESFORCE_LINE_ITEM_PRODUCTS_FETCH_FAILED",
+      );
+    }
+  }
+
+  /** Paginates the org's full product catalog (id + name only) — labels for the funnel product-filter dropdown, refreshed once per sync job like the pipeline/lead-status metadata. Not filtered on IsActive so older deals' products still resolve a name. */
+  static async getProducts(
+    accessToken: string,
+    instanceUrl: string,
+    limit: number,
+    nextRecordsUrl?: string,
+  ): Promise<SalesforcePaginatedResponse<SalesforceProduct>> {
+    try {
+      if (nextRecordsUrl) return await this.runQueryPage<SalesforceProduct>(accessToken, instanceUrl, nextRecordsUrl);
+
+      const soql = "SELECT Id, Name FROM Product2 ORDER BY Name";
+      return await this.runQuery<SalesforceProduct>(accessToken, instanceUrl, soql, limit);
+    } catch {
+      throw AppError.badRequest("Failed to fetch products from Salesforce", "SALESFORCE_PRODUCTS_FETCH_FAILED");
     }
   }
 

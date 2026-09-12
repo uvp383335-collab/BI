@@ -13,6 +13,7 @@ import { parseProfitAndLoss } from '../../metrics/service/plParser'
 import { extractSectionTotals, extractFlatReportGrandTotal } from '../../metrics/service/reportParser'
 import { funnelStageEventRepository, FunnelStageEventInput } from '../repository/funnelStageEvent.repository'
 import { pipelineStageDefinitionRepository, PipelineStageDefinitionInput } from '../repository/pipelineStageDefinition.repository'
+import { productRepository } from '../repository/product.repository'
 import { HubSpotService, HubSpotContact, HubSpotDeal } from '../../integrations/service/hubspot.service'
 import { SalesforceService } from '../../integrations/service/salesforce.service'
 import { QuickBooksService } from '../../integrations/service/quickbooks.service'
@@ -117,6 +118,7 @@ async function executeSyncJob(orgId: string, provider: string, jobId: string, fo
         throw AppError.badRequest('Missing Salesforce instance URL for this connection', 'SALESFORCE_INSTANCE_URL_MISSING')
       }
       await syncSalesforcePipelineStageDefinitions(orgId, provider, accessToken, instanceUrl)
+      await syncSalesforceProducts(orgId, provider, accessToken, instanceUrl)
       await syncSalesforceAccounts(orgId, provider, jobId, accessToken, instanceUrl, since)
       await syncSalesforceLeadsAsContacts(orgId, provider, jobId, accessToken, instanceUrl, since)
       await syncSalesforceOpportunitiesAsDeals(orgId, provider, jobId, accessToken, instanceUrl, since)
@@ -131,6 +133,7 @@ async function executeSyncJob(orgId: string, provider: string, jobId: string, fo
       await syncQuickBooksCashBalance(orgId, provider, jobId, accessToken, realmId)
     } else {
       await syncPipelineStageDefinitions(orgId, provider, accessToken)
+      await syncProducts(orgId, provider, accessToken)
       await syncContacts(orgId, provider, jobId, accessToken, since)
       await syncDeals(orgId, provider, jobId, accessToken, since)
     }
@@ -181,6 +184,30 @@ async function syncPipelineStageDefinitions(orgId: string, provider: string, acc
   }))
 
   await pipelineStageDefinitionRepository.bulkUpsert(orgId, provider, [...dealStages, ...leadStages])
+}
+
+/**
+ * Refreshes the Product catalog (id + name), the label source for the
+ * funnel product-filter dropdown. Cheap, run once per sync job like
+ * syncPipelineStageDefinitions.
+ *
+ * Requires the `crm.objects.line_items.read`/`crm.objects.products.read`
+ * scopes added alongside this feature — an org connected before this
+ * shipped won't have consented to them yet, so a 403 here is expected
+ * until they reconnect. Swallowed rather than failing the whole sync:
+ * missing product labels shouldn't block contacts/deals from syncing.
+ */
+async function syncProducts(orgId: string, provider: string, accessToken: string): Promise<void> {
+  try {
+    const products = await HubSpotService.getProducts(accessToken)
+    await productRepository.bulkUpsert(
+      orgId,
+      provider,
+      products.map((product) => ({ providerRecordId: product.id, name: product.properties.name || product.id }))
+    )
+  } catch (err) {
+    console.error(`Product sync skipped for org ${orgId} (likely missing product/line-item scope):`, err)
+  }
 }
 
 async function syncContacts(
@@ -279,6 +306,29 @@ async function syncDeals(
       response.results.map((deal) => deal.id)
     )
 
+    // Deal -> product is two hops in HubSpot (deal -> line item -> product),
+    // both batched once per page like the contact associations above.
+    // Swallowed on failure for the same reason as syncProducts: an org that
+    // hasn't reconnected for the new scope yet should still get its
+    // contacts/deals, just without productIds until it does.
+    let dealToProductIds: Record<string, string[]> = {}
+    try {
+      const dealLineItems = await HubSpotService.getDealLineItemAssociations(
+        accessToken,
+        response.results.map((deal) => deal.id)
+      )
+      const allLineItemIds = Array.from(new Set(Object.values(dealLineItems).flat()))
+      const lineItemProducts = await HubSpotService.getLineItemProducts(accessToken, allLineItemIds)
+      dealToProductIds = Object.fromEntries(
+        Object.entries(dealLineItems).map(([dealId, lineItemIds]) => [
+          dealId,
+          Array.from(new Set(lineItemIds.map((id) => lineItemProducts[id]).filter((id): id is string => !!id)))
+        ])
+      )
+    } catch (err) {
+      console.error(`Deal product association skipped for org ${orgId} (likely missing product/line-item scope):`, err)
+    }
+
     const deals = response.results.map((deal: HubSpotDeal, index: number) => ({
       providerRecordId: deal.id,
       dealname: deal.properties.dealname,
@@ -289,6 +339,7 @@ async function syncDeals(
       ownerId: deal.properties.hubspot_owner_id,
       dealCreatedAt: deal.properties.createdate ? new Date(deal.properties.createdate) : undefined,
       contactIds: associations[deal.id] ?? [],
+      productIds: dealToProductIds[deal.id] ?? [],
       dealStageHistory: (dealStageHistories ? dealStageHistories[index] : deal.propertiesWithHistory?.dealstage || []).map(
         (entry) => ({
           value: entry.value,
@@ -359,6 +410,30 @@ async function syncSalesforcePipelineStageDefinitions(
   }))
 
   await pipelineStageDefinitionRepository.bulkUpsert(orgId, provider, [...dealStages, ...leadStages])
+}
+
+/**
+ * Refreshes the Product catalog (id + name) from Salesforce's `Product2`
+ * object — the label source for the funnel product-filter dropdown, same
+ * role as HubSpot's syncProducts. Swallowed on failure rather than failing
+ * the whole sync: some orgs restrict Product2 access at the profile/
+ * permission-set level even though the object always exists, and missing
+ * product labels shouldn't block accounts/leads/opportunities from syncing.
+ */
+async function syncSalesforceProducts(orgId: string, provider: string, accessToken: string, instanceUrl: string): Promise<void> {
+  try {
+    let nextRecordsUrl: string | undefined
+    const products: { providerRecordId: string; name: string }[] = []
+    do {
+      const response = await SalesforceService.getProducts(accessToken, instanceUrl, PAGE_SIZE, nextRecordsUrl)
+      products.push(...response.records.map((product) => ({ providerRecordId: product.Id, name: product.Name || product.Id })))
+      nextRecordsUrl = response.done ? undefined : response.nextRecordsUrl
+    } while (nextRecordsUrl)
+
+    await productRepository.bulkUpsert(orgId, provider, products)
+  } catch (err) {
+    console.error(`Product sync skipped for org ${orgId} (likely restricted Product2 access):`, err)
+  }
 }
 
 /**
@@ -500,14 +575,20 @@ async function syncSalesforceOpportunitiesAsDeals(
     const response = await SalesforceService.getOpportunities(accessToken, instanceUrl, PAGE_SIZE, since, nextRecordsUrl, competitorField)
     const opportunityIds = response.records.map((opportunity) => opportunity.Id)
 
-    const [stageHistories, convertedLeadsByOpportunity, competitorsByOpportunity] = await Promise.all([
+    const [stageHistories, convertedLeadsByOpportunity, competitorsByOpportunity, productIdsByOpportunity] = await Promise.all([
       SalesforceService.getOpportunityStageHistory(accessToken, instanceUrl, opportunityIds),
       SalesforceService.getConvertedLeadIdsByOpportunity(accessToken, instanceUrl, opportunityIds),
       // Only queried in 'junction' mode -- an org that doesn't use OpportunityCompetitor at all
       // shouldn't have this object's absence/inaccessibility break the whole sync.
       useCompetitorJunctionObject
         ? SalesforceService.getOpportunityCompetitors(accessToken, instanceUrl, opportunityIds).catch(() => ({}) as Record<string, string[]>)
-        : Promise.resolve({} as Record<string, string[]>)
+        : Promise.resolve({} as Record<string, string[]>),
+      // Same rationale as syncSalesforceProducts: some orgs restrict Product2/
+      // OpportunityLineItem access, so a failure here degrades to no
+      // productIds rather than breaking the whole opportunity sync.
+      SalesforceService.getOpportunityLineItemProducts(accessToken, instanceUrl, opportunityIds).catch(
+        () => ({}) as Record<string, string[]>
+      )
     ])
     const historyByOpportunity = new Map<string, { value: string; timestamp: Date }[]>()
     for (const entry of stageHistories) {
@@ -531,7 +612,8 @@ async function syncSalesforceOpportunitiesAsDeals(
       campaignId: opportunity.CampaignId ?? undefined,
       accountId: opportunity.AccountId ?? undefined,
       competitor: opportunity.Competitor ?? undefined,
-      competitors: useCompetitorJunctionObject ? (competitorsByOpportunity[opportunity.Id] ?? undefined) : undefined
+      competitors: useCompetitorJunctionObject ? (competitorsByOpportunity[opportunity.Id] ?? undefined) : undefined,
+      productIds: productIdsByOpportunity[opportunity.Id] ?? []
     }))
 
     await dealRepository.bulkUpsert(orgId, provider, deals)

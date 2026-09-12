@@ -51,17 +51,28 @@ export const funnelService = {
   async getFunnels(
     orgId: string,
     provider: string,
-    filters: { pipeline?: string; from?: Date; to?: Date }
+    filters: { pipeline?: string; from?: Date; to?: Date; productId?: string }
   ): Promise<FunnelsResponse> {
     const dateRange = { from: filters.from, to: filters.to }
     const hasDateRange = !!filters.from || !!filters.to
 
-    const [leadCohortIds, dealCohortIds] = hasDateRange
+    const [leadCohortIds, dealCohortIdsFromDate] = hasDateRange
       ? await Promise.all([
           funnelStageEventRepository.getCohortRecordIds(orgId, provider, 'lead', dateRange),
           funnelStageEventRepository.getCohortRecordIds(orgId, provider, 'deal', dateRange)
         ])
       : [undefined, undefined]
+
+    // Product filter only ever narrows the *deal* cohort — leads carry no
+    // product data (see Deal.model.ts's productIds), so leadCohortIds is
+    // untouched here. Intersected with the date cohort (not just unioned in
+    // separately) so "product X, this quarter" reads as both conditions at
+    // once rather than either one.
+    let dealCohortIds = dealCohortIdsFromDate
+    if (filters.productId) {
+      const productDealIds = new Set(await dealRepository.findIdsByProduct(orgId, provider, filters.productId))
+      dealCohortIds = dealCohortIds ? dealCohortIds.filter((id) => productDealIds.has(id)) : Array.from(productDealIds)
+    }
 
     const [leadCounts, dealCounts, leadStageSets, dealStageSets, allDefs, totalLeads, dealsWithContacts] = await Promise.all([
       funnelStageEventRepository.getStageMembershipCounts(orgId, provider, 'lead', undefined, leadCohortIds),
@@ -70,7 +81,7 @@ export const funnelService = {
       funnelStageEventRepository.getRecordStageSets(orgId, provider, 'deal', dealCohortIds),
       pipelineStageDefinitionRepository.findAllForOrg(orgId, provider),
       hasDateRange ? Promise.resolve(undefined) : contactRepository.count(orgId, provider),
-      dealRepository.findContactAssociationsForFunnel(orgId, provider, filters.pipeline)
+      dealRepository.findContactAssociationsForFunnel(orgId, provider, filters.pipeline, filters.productId)
     ])
 
     const buildFunnel = (

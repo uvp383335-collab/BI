@@ -24,8 +24,8 @@ import {
 } from 'lucide-react'
 import { useIntegrationsStatus } from '../../integrations/hooks/useIntegrations'
 import { IntegrationProvider } from '../../integrations/api/integrationsApi'
-import { useEntityCounts, useFunnels, usePipelines, useStartSync, useSyncStatus } from '../hooks/useSync'
-import { FunnelsResponse } from '../api/syncApi'
+import { useEntityCounts, useFunnels, usePipelines, useProducts, useStartSync, useSyncStatus } from '../hooks/useSync'
+import { FunnelsResponse, Product } from '../api/syncApi'
 import { useMetric, useMetricTrend } from '../hooks/useMetrics'
 import { useAuthContext } from '../../../shared/context/AuthContext'
 import { StatsCard } from '../components/StatsCard'
@@ -43,25 +43,32 @@ const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
   quickbooks: 'QuickBooks'
 }
 
-/**
- * Temporary MVP scope gate. Unset/anything but 'true' -> only Funnels, Pipeline
- * Coverage (CM-04), COGS % (VC-04), G&A % (VC-09), EBITDA Margin (VC-10), and
- * Customer Concentration (CM-02) show. Set VITE_ENABLE_FULL_METRICS=true to
- * bring back the rest of the 21-metric grid once it's ready to launch.
- */
-const SHOW_ALL_METRICS = import.meta.env.VITE_ENABLE_FULL_METRICS === 'true'
-
 /** One provider's pipeline/date filters + its three funnel charts — the body of whichever tab is active. */
 const FunnelsBody: React.FC<{
   pipelines?: string[]
   pipelineFilter: string
   onPipelineFilterChange: (value: string) => void
+  products?: Product[]
+  productFilter: string
+  onProductFilterChange: (value: string) => void
   funnels?: FunnelsResponse
   isLoading: boolean
   fromDate: string
   toDate: string
   onDateChange: (range: { from?: string; to?: string }) => void
-}> = ({ pipelines, pipelineFilter, onPipelineFilterChange, funnels, isLoading, fromDate, toDate, onDateChange }) => (
+}> = ({
+  pipelines,
+  pipelineFilter,
+  onPipelineFilterChange,
+  products,
+  productFilter,
+  onProductFilterChange,
+  funnels,
+  isLoading,
+  fromDate,
+  toDate,
+  onDateChange
+}) => (
   <div className="flex flex-col gap-6">
     <div className="flex justify-end gap-3">
       {pipelines && pipelines.length > 1 && (
@@ -69,6 +76,16 @@ const FunnelsBody: React.FC<{
           {pipelines.map((p) => (
             <option key={p} value={p}>
               {p}
+            </option>
+          ))}
+        </select>
+      )}
+      {products && products.length > 0 && (
+        <select className="form-input-dark w-auto" value={productFilter} onChange={(e) => onProductFilterChange(e.target.value)}>
+          <option value="">All products</option>
+          {products.map((product) => (
+            <option key={product.id} value={product.id}>
+              {product.name}
             </option>
           ))}
         </select>
@@ -114,6 +131,8 @@ export const CrmDashboardPage: React.FC = () => {
   const [activeFunnelsProvider, setActiveFunnelsProvider] = useState<'hubspot' | 'salesforce'>('hubspot')
   const [hubspotPipelineFilter, setHubspotPipelineFilter] = useState('')
   const [salesforcePipelineFilter, setSalesforcePipelineFilter] = useState('')
+  const [hubspotProductFilter, setHubspotProductFilter] = useState('')
+  const [salesforceProductFilter, setSalesforceProductFilter] = useState('')
   const [hubspotFromDate, setHubspotFromDate] = useState('')
   const [hubspotToDate, setHubspotToDate] = useState('')
   const [salesforceFromDate, setSalesforceFromDate] = useState('')
@@ -194,43 +213,42 @@ export const CrmDashboardPage: React.FC = () => {
   const combinedDeals = (hubspotCounts.data?.deals ?? 0) + (salesforceCounts.data?.deals ?? 0)
 
   const quickbooksMetricsEnabled = isQuickbooksVisible && isQuickbooksSettled
-  const quickbooksExtraMetricsEnabled = quickbooksMetricsEnabled && SHOW_ALL_METRICS
-  const { data: vc01, isLoading: isVc01Loading } = useMetric('vc-01', quickbooksExtraMetricsEnabled)
-  const { data: vc02, isLoading: isVc02Loading } = useMetric('vc-02', quickbooksExtraMetricsEnabled)
-  const { data: vc03, isLoading: isVc03Loading } = useMetric('vc-03', quickbooksExtraMetricsEnabled)
+  const { data: vc01, isLoading: isVc01Loading } = useMetric('vc-01', quickbooksMetricsEnabled)
+  const { data: vc02, isLoading: isVc02Loading } = useMetric('vc-02', quickbooksMetricsEnabled)
+  const { data: vc03, isLoading: isVc03Loading } = useMetric('vc-03', quickbooksMetricsEnabled)
   const { data: vc04, isLoading: isVc04Loading } = useMetric('vc-04', quickbooksMetricsEnabled)
-  const { data: vc06, isLoading: isVc06Loading } = useMetric('vc-06', quickbooksExtraMetricsEnabled)
-  const { data: vc07, isLoading: isVc07Loading } = useMetric('vc-07', quickbooksExtraMetricsEnabled)
+  const { data: vc06, isLoading: isVc06Loading } = useMetric('vc-06', quickbooksMetricsEnabled)
+  const { data: vc07, isLoading: isVc07Loading } = useMetric('vc-07', quickbooksMetricsEnabled)
   const { data: vc09, isLoading: isVc09Loading } = useMetric('vc-09', quickbooksMetricsEnabled)
   const { data: vc10, isLoading: isVc10Loading } = useMetric('vc-10', quickbooksMetricsEnabled)
   const { data: vc04Trend, isLoading: isVc04TrendLoading } = useMetricTrend('vc-04', quickbooksMetricsEnabled)
   const { data: vc09Trend, isLoading: isVc09TrendLoading } = useMetricTrend('vc-09', quickbooksMetricsEnabled)
   const { data: vc10Trend, isLoading: isVc10TrendLoading } = useMetricTrend('vc-10', quickbooksMetricsEnabled)
-  const { data: vc12, isLoading: isVc12Loading } = useMetric('vc-12', quickbooksExtraMetricsEnabled)
-  const { data: vc13, isLoading: isVc13Loading } = useMetric('vc-13', quickbooksExtraMetricsEnabled)
-  const { data: vc14, isLoading: isVc14Loading } = useMetric('vc-14', quickbooksExtraMetricsEnabled)
-  const { data: cb05, isLoading: isCb05Loading } = useMetric('cb-05', quickbooksExtraMetricsEnabled)
-  const { data: cb07, isLoading: isCb07Loading } = useMetric('cb-07', quickbooksExtraMetricsEnabled)
-  const { data: cb10, isLoading: isCb10Loading } = useMetric('cb-10', quickbooksExtraMetricsEnabled)
+  const { data: vc12, isLoading: isVc12Loading } = useMetric('vc-12', quickbooksMetricsEnabled)
+  const { data: vc13, isLoading: isVc13Loading } = useMetric('vc-13', quickbooksMetricsEnabled)
+  const { data: vc14, isLoading: isVc14Loading } = useMetric('vc-14', quickbooksMetricsEnabled)
+  const { data: cb05, isLoading: isCb05Loading } = useMetric('cb-05', quickbooksMetricsEnabled)
+  const { data: cb07, isLoading: isCb07Loading } = useMetric('cb-07', quickbooksMetricsEnabled)
+  const { data: cb10, isLoading: isCb10Loading } = useMetric('cb-10', quickbooksMetricsEnabled)
   const { data: cm02, isLoading: isCm02Loading } = useMetric('cm-02', quickbooksMetricsEnabled)
 
   const hubspotMetricsEnabled = isHubspotVisible && isHubspotSettled
   const salesforceMetricsEnabled = isSalesforceVisible && isSalesforceSettled
-  const hubspotExtraMetricsEnabled = hubspotMetricsEnabled && SHOW_ALL_METRICS
-  const salesforceExtraMetricsEnabled = salesforceMetricsEnabled && SHOW_ALL_METRICS
   const { data: cm04Hubspot, isLoading: isCm04HubspotLoading } = useMetric('cm-04', hubspotMetricsEnabled, 'hubspot')
-  const { data: cm06Hubspot, isLoading: isCm06HubspotLoading } = useMetric('cm-06', hubspotExtraMetricsEnabled, 'hubspot')
-  const { data: cm08Hubspot, isLoading: isCm08HubspotLoading } = useMetric('cm-08', hubspotExtraMetricsEnabled, 'hubspot')
-  const { data: cm05, isLoading: isCm05Loading } = useMetric('cm-05', hubspotExtraMetricsEnabled)
-  const { data: cm07, isLoading: isCm07Loading } = useMetric('cm-07', hubspotExtraMetricsEnabled)
+  const { data: cm06Hubspot, isLoading: isCm06HubspotLoading } = useMetric('cm-06', hubspotMetricsEnabled, 'hubspot')
+  const { data: cm08Hubspot, isLoading: isCm08HubspotLoading } = useMetric('cm-08', hubspotMetricsEnabled, 'hubspot')
+  const { data: cm05, isLoading: isCm05Loading } = useMetric('cm-05', hubspotMetricsEnabled)
+  const { data: cm07, isLoading: isCm07Loading } = useMetric('cm-07', hubspotMetricsEnabled)
 
   const { data: cm04Salesforce, isLoading: isCm04SalesforceLoading } = useMetric('cm-04', salesforceMetricsEnabled, 'salesforce')
-  const { data: cm06Salesforce, isLoading: isCm06SalesforceLoading } = useMetric('cm-06', salesforceExtraMetricsEnabled, 'salesforce')
-  const { data: cm08Salesforce, isLoading: isCm08SalesforceLoading } = useMetric('cm-08', salesforceExtraMetricsEnabled, 'salesforce')
-  const { data: cm03, isLoading: isCm03Loading } = useMetric('cm-03', salesforceExtraMetricsEnabled)
+  const { data: cm06Salesforce, isLoading: isCm06SalesforceLoading } = useMetric('cm-06', salesforceMetricsEnabled, 'salesforce')
+  const { data: cm08Salesforce, isLoading: isCm08SalesforceLoading } = useMetric('cm-08', salesforceMetricsEnabled, 'salesforce')
+  const { data: cm03, isLoading: isCm03Loading } = useMetric('cm-03', salesforceMetricsEnabled)
 
   const { data: hubspotPipelines } = usePipelines('hubspot', hubspotMetricsEnabled)
   const { data: salesforcePipelines } = usePipelines('salesforce', salesforceMetricsEnabled)
+  const { data: hubspotProducts } = useProducts('hubspot', hubspotMetricsEnabled)
+  const { data: salesforceProducts } = useProducts('salesforce', salesforceMetricsEnabled)
 
   // Funnel stage order needs one concrete pipeline — default to the first
   // once pipelines load, rather than leaving "all pipelines" selected.
@@ -248,13 +266,23 @@ export const CrmDashboardPage: React.FC = () => {
   const { data: hubspotFunnels, isLoading: isHubspotFunnelsLoading } = useFunnels(
     organization?.id ?? '',
     'hubspot',
-    { pipeline: hubspotPipelineFilter || undefined, from: hubspotFromDate || undefined, to: hubspotToDate || undefined },
+    {
+      pipeline: hubspotPipelineFilter || undefined,
+      from: hubspotFromDate || undefined,
+      to: hubspotToDate || undefined,
+      productId: hubspotProductFilter || undefined
+    },
     hubspotMetricsEnabled && !!organization
   )
   const { data: salesforceFunnels, isLoading: isSalesforceFunnelsLoading } = useFunnels(
     organization?.id ?? '',
     'salesforce',
-    { pipeline: salesforcePipelineFilter || undefined, from: salesforceFromDate || undefined, to: salesforceToDate || undefined },
+    {
+      pipeline: salesforcePipelineFilter || undefined,
+      from: salesforceFromDate || undefined,
+      to: salesforceToDate || undefined,
+      productId: salesforceProductFilter || undefined
+    },
     salesforceMetricsEnabled && !!organization
   )
 
@@ -391,6 +419,9 @@ export const CrmDashboardPage: React.FC = () => {
                         pipelines={hubspotPipelines}
                         pipelineFilter={hubspotPipelineFilter}
                         onPipelineFilterChange={setHubspotPipelineFilter}
+                        products={hubspotProducts}
+                        productFilter={hubspotProductFilter}
+                        onProductFilterChange={setHubspotProductFilter}
                         funnels={hubspotFunnels}
                         isLoading={isHubspotFunnelsLoading}
                         fromDate={hubspotFromDate}
@@ -405,6 +436,9 @@ export const CrmDashboardPage: React.FC = () => {
                         pipelines={salesforcePipelines}
                         pipelineFilter={salesforcePipelineFilter}
                         onPipelineFilterChange={setSalesforcePipelineFilter}
+                        products={salesforceProducts}
+                        productFilter={salesforceProductFilter}
+                        onProductFilterChange={setSalesforceProductFilter}
                         funnels={salesforceFunnels}
                         isLoading={isSalesforceFunnelsLoading}
                         fromDate={salesforceFromDate}
@@ -424,13 +458,9 @@ export const CrmDashboardPage: React.FC = () => {
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {isQuickbooksVisible && (
               <>
-                {SHOW_ALL_METRICS && (
-                  <>
-                    <MetricCard id="VC-01" title="Gross Revenue Retention" description="Of the recurring revenue you started the period with, how much you kept" icon={<RefreshCcw className="h-5 w-5" />} metric={vc01} isLoading={isVc01Loading} />
-                    <MetricCard id="VC-02" title="Net Revenue Retention" description="Same as GRR, but upsells count — can exceed 100%" icon={<TrendingDown className="h-5 w-5" />} metric={vc02} isLoading={isVc02Loading} />
-                    <MetricCard id="VC-03" title="New-Logo Revenue Growth" description="Growth of revenue from brand-new customers" icon={<Rocket className="h-5 w-5" />} metric={vc03} isLoading={isVc03Loading} />
-                  </>
-                )}
+                <MetricCard id="VC-01" title="Gross Revenue Retention" description="Of the recurring revenue you started the period with, how much you kept" icon={<RefreshCcw className="h-5 w-5" />} metric={vc01} isLoading={isVc01Loading} />
+                <MetricCard id="VC-02" title="Net Revenue Retention" description="Same as GRR, but upsells count — can exceed 100%" icon={<TrendingDown className="h-5 w-5" />} metric={vc02} isLoading={isVc02Loading} />
+                <MetricCard id="VC-03" title="New-Logo Revenue Growth" description="Growth of revenue from brand-new customers" icon={<Rocket className="h-5 w-5" />} metric={vc03} isLoading={isVc03Loading} />
                 <MetricCard
                   id="VC-04"
                   title="COGS %"
@@ -458,33 +488,29 @@ export const CrmDashboardPage: React.FC = () => {
                   isLoading={isVc10Loading}
                   trend={<MetricTrendChart embedded title="EBITDA Margin %" description="" color="var(--color-teal)" points={vc10Trend?.points ?? []} isLoading={isVc10TrendLoading} />}
                 />
-                {SHOW_ALL_METRICS && (
-                  <>
-                    <MetricCard
-                      id="VC-06"
-                      title="CAC Payback"
-                      description="Months to earn back the cost of winning a new customer"
-                      icon={<Target className="h-5 w-5" />}
-                      metric={vc06}
-                      isLoading={isVc06Loading}
-                      extras={
-                        vc06
-                          ? [
-                              ...(vc06.data.cac != null ? [{ label: 'CAC', value: `$${Number(vc06.data.cac).toLocaleString()}` }] : []),
-                              ...(vc06.data.ltvCacRatio != null ? [{ label: 'LTV:CAC', value: `${Number(vc06.data.ltvCacRatio).toFixed(2)}x` }] : [])
-                            ]
-                          : undefined
-                      }
-                    />
-                    <MetricCard id="VC-07" title="LTV:CAC (New)" description="Lifetime value vs. acquisition cost, new customers" icon={<Gauge className="h-5 w-5" />} metric={vc07} isLoading={isVc07Loading} />
-                    <MetricCard id="VC-14" title="LTV:CAC (Whole Base)" description="Lifetime value vs. acquisition cost, entire active base" icon={<Gauge className="h-5 w-5" />} metric={vc14} isLoading={isVc14Loading} />
-                    <MetricCard id="VC-12" title="Recurring Revenue %" description="Share of revenue that's contractually recurring" icon={<Repeat className="h-5 w-5" />} metric={vc12} isLoading={isVc12Loading} />
-                    <MetricCard id="VC-13" title="Revenue Growth (YoY)" description="Total revenue growth, recurring vs. non-recurring" icon={<LineChart className="h-5 w-5" />} metric={vc13} isLoading={isVc13Loading} />
-                    <MetricCard id="CB-05" title="Cash & Runway" description="Unrestricted cash on hand and months of runway" icon={<Banknote className="h-5 w-5" />} metric={cb05} isLoading={isCb05Loading} />
-                    <MetricCard id="CB-07" title="FCF Conversion" description="Share of EBITDA that converts to free cash flow" icon={<Droplets className="h-5 w-5" />} metric={cb07} isLoading={isCb07Loading} />
-                    <MetricCard id="CB-10" title="Cash Conversion Cycle" description="Days cash is tied up in the operating cycle" icon={<RefreshCw className="h-5 w-5" />} metric={cb10} isLoading={isCb10Loading} />
-                  </>
-                )}
+                <MetricCard
+                  id="VC-06"
+                  title="CAC Payback"
+                  description="Months to earn back the cost of winning a new customer"
+                  icon={<Target className="h-5 w-5" />}
+                  metric={vc06}
+                  isLoading={isVc06Loading}
+                  extras={
+                    vc06
+                      ? [
+                          ...(vc06.data.cac != null ? [{ label: 'CAC', value: `$${Number(vc06.data.cac).toLocaleString()}` }] : []),
+                          ...(vc06.data.ltvCacRatio != null ? [{ label: 'LTV:CAC', value: `${Number(vc06.data.ltvCacRatio).toFixed(2)}x` }] : [])
+                        ]
+                      : undefined
+                  }
+                />
+                <MetricCard id="VC-07" title="LTV:CAC (New)" description="Lifetime value vs. acquisition cost, new customers" icon={<Gauge className="h-5 w-5" />} metric={vc07} isLoading={isVc07Loading} />
+                <MetricCard id="VC-14" title="LTV:CAC (Whole Base)" description="Lifetime value vs. acquisition cost, entire active base" icon={<Gauge className="h-5 w-5" />} metric={vc14} isLoading={isVc14Loading} />
+                <MetricCard id="VC-12" title="Recurring Revenue %" description="Share of revenue that's contractually recurring" icon={<Repeat className="h-5 w-5" />} metric={vc12} isLoading={isVc12Loading} />
+                <MetricCard id="VC-13" title="Revenue Growth (YoY)" description="Total revenue growth, recurring vs. non-recurring" icon={<LineChart className="h-5 w-5" />} metric={vc13} isLoading={isVc13Loading} />
+                <MetricCard id="CB-05" title="Cash & Runway" description="Unrestricted cash on hand and months of runway" icon={<Banknote className="h-5 w-5" />} metric={cb05} isLoading={isCb05Loading} />
+                <MetricCard id="CB-07" title="FCF Conversion" description="Share of EBITDA that converts to free cash flow" icon={<Droplets className="h-5 w-5" />} metric={cb07} isLoading={isCb07Loading} />
+                <MetricCard id="CB-10" title="Cash Conversion Cycle" description="Days cash is tied up in the operating cycle" icon={<RefreshCw className="h-5 w-5" />} metric={cb10} isLoading={isCb10Loading} />
                 <MetricCard id="CM-02" title="Customer Concentration" description="Share of trailing-12-month revenue from the top 10 customers" icon={<Building2 className="h-5 w-5" />} metric={cm02} isLoading={isCm02Loading} />
               </>
             )}
@@ -492,27 +518,19 @@ export const CrmDashboardPage: React.FC = () => {
             {isHubspotVisible && (
               <>
                 <MetricCard id="CM-04" title={`Pipeline Coverage${suffix('HubSpot')}`} description="Qualified pipeline closing next quarter vs. target" icon={<Target className="h-5 w-5" />} metric={cm04Hubspot} isLoading={isCm04HubspotLoading} />
-                {SHOW_ALL_METRICS && (
-                  <>
-                    <MetricCard id="CM-06" title={`Funnel Conversion (MQL -> SQL)${suffix('HubSpot')}`} description="Cohort-based stage-to-stage advancement" icon={<Users className="h-5 w-5" />} metric={cm06Hubspot} isLoading={isCm06HubspotLoading} />
-                    <MetricCard id="CM-08" title={`MQL Volume${suffix('HubSpot')}`} description="Marketing-qualified leads generated this period" icon={<LineChart className="h-5 w-5" />} metric={cm08Hubspot} isLoading={isCm08HubspotLoading} />
-                    <MetricCard id="CM-05" title="Marketing-Sourced Pipeline & Revenue" description="Share of qualified pipeline and closed revenue attributed to marketing" icon={<PieChart className="h-5 w-5" />} metric={cm05} isLoading={isCm05Loading} />
-                    <MetricCard id="CM-07" title="Marketing ROI" description="Blended pipeline and profit return per dollar of marketing spend" icon={<Gauge className="h-5 w-5" />} metric={cm07} isLoading={isCm07Loading} />
-                  </>
-                )}
+                <MetricCard id="CM-06" title={`Funnel Conversion (MQL -> SQL)${suffix('HubSpot')}`} description="Cohort-based stage-to-stage advancement" icon={<Users className="h-5 w-5" />} metric={cm06Hubspot} isLoading={isCm06HubspotLoading} />
+                <MetricCard id="CM-08" title={`MQL Volume${suffix('HubSpot')}`} description="Marketing-qualified leads generated this period" icon={<LineChart className="h-5 w-5" />} metric={cm08Hubspot} isLoading={isCm08HubspotLoading} />
+                <MetricCard id="CM-05" title="Marketing-Sourced Pipeline & Revenue" description="Share of qualified pipeline and closed revenue attributed to marketing" icon={<PieChart className="h-5 w-5" />} metric={cm05} isLoading={isCm05Loading} />
+                <MetricCard id="CM-07" title="Marketing ROI" description="Blended pipeline and profit return per dollar of marketing spend" icon={<Gauge className="h-5 w-5" />} metric={cm07} isLoading={isCm07Loading} />
               </>
             )}
 
             {isSalesforceVisible && (
               <>
                 <MetricCard id="CM-04" title={`Pipeline Coverage${suffix('Salesforce')}`} description="Qualified pipeline closing next quarter vs. target" icon={<Target className="h-5 w-5" />} metric={cm04Salesforce} isLoading={isCm04SalesforceLoading} />
-                {SHOW_ALL_METRICS && (
-                  <>
-                    <MetricCard id="CM-06" title={`Funnel Conversion (MQL -> SQL)${suffix('Salesforce')}`} description="Cohort-based stage-to-stage advancement" icon={<Users className="h-5 w-5" />} metric={cm06Salesforce} isLoading={isCm06SalesforceLoading} />
-                    <MetricCard id="CM-08" title={`MQL Volume${suffix('Salesforce')}`} description="Marketing-qualified leads generated this period" icon={<LineChart className="h-5 w-5" />} metric={cm08Salesforce} isLoading={isCm08SalesforceLoading} />
-                    <MetricCard id="CM-03" title="Competitive Win Rate" description="Blended win rate vs. named competitors (configure in Settings)" icon={<Swords className="h-5 w-5" />} metric={cm03} isLoading={isCm03Loading} />
-                  </>
-                )}
+                <MetricCard id="CM-06" title={`Funnel Conversion (MQL -> SQL)${suffix('Salesforce')}`} description="Cohort-based stage-to-stage advancement" icon={<Users className="h-5 w-5" />} metric={cm06Salesforce} isLoading={isCm06SalesforceLoading} />
+                <MetricCard id="CM-08" title={`MQL Volume${suffix('Salesforce')}`} description="Marketing-qualified leads generated this period" icon={<LineChart className="h-5 w-5" />} metric={cm08Salesforce} isLoading={isCm08SalesforceLoading} />
+                <MetricCard id="CM-03" title="Competitive Win Rate" description="Blended win rate vs. named competitors (configure in Settings)" icon={<Swords className="h-5 w-5" />} metric={cm03} isLoading={isCm03Loading} />
               </>
             )}
           </div>

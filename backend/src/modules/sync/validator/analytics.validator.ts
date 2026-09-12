@@ -4,7 +4,8 @@ export const getFunnelsQuerySchema = z
   .object({
     pipeline: z.string().min(1).optional(),
     from: z.string().date().optional(),
-    to: z.string().date().optional()
+    to: z.string().date().optional(),
+    productId: z.string().min(1).optional()
   })
   .refine((data) => !data.from || !data.to || data.from <= data.to, {
     message: '"from" must not be after "to"',

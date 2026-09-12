@@ -3,7 +3,7 @@ import { hubspotAuth, closeDb } from './auth'
 
 const BASE = 'https://api.hubapi.com'
 
-async function listAllIds(accessToken: string, objectType: 'contacts' | 'deals'): Promise<string[]> {
+async function listAllIds(accessToken: string, objectType: 'contacts' | 'deals' | 'line_items' | 'products'): Promise<string[]> {
   const headers = { Authorization: `Bearer ${accessToken}` }
   const ids: string[] = []
   let after: string | undefined
@@ -18,7 +18,7 @@ async function listAllIds(accessToken: string, objectType: 'contacts' | 'deals')
   return ids
 }
 
-async function batchArchive(accessToken: string, objectType: 'contacts' | 'deals', ids: string[]): Promise<void> {
+async function batchArchive(accessToken: string, objectType: 'contacts' | 'deals' | 'line_items' | 'products', ids: string[]): Promise<void> {
   const headers = { Authorization: `Bearer ${accessToken}` }
   for (let i = 0; i < ids.length; i += 100) {
     const chunk = ids.slice(i, i + 100)
@@ -33,6 +33,19 @@ async function batchArchive(accessToken: string, objectType: 'contacts' | 'deals
 
 async function main() {
   const { accessToken } = await hubspotAuth()
+
+  // Line items first — they're independent records, not cascade-archived
+  // when their associated deal is archived (unlike Salesforce's Opportunity
+  // -> OpportunityLineItem master-detail cascade).
+  console.log('Listing HubSpot line items...')
+  const lineItemIds = await listAllIds(accessToken, 'line_items')
+  console.log(`Found ${lineItemIds.length} line items. Archiving...`)
+  await batchArchive(accessToken, 'line_items', lineItemIds)
+
+  console.log('Listing HubSpot products...')
+  const productIds = await listAllIds(accessToken, 'products')
+  console.log(`Found ${productIds.length} products. Archiving...`)
+  await batchArchive(accessToken, 'products', productIds)
 
   console.log('Listing HubSpot deals...')
   const dealIds = await listAllIds(accessToken, 'deals')

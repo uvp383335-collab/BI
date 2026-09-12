@@ -45,6 +45,14 @@ export function usePipelines(provider: IntegrationProvider, enabled: boolean) {
   })
 }
 
+export function useProducts(provider: IntegrationProvider, enabled: boolean) {
+  return useQuery({
+    queryKey: ['analytics', 'products', provider],
+    queryFn: () => syncApi.getProductsRequest(provider),
+    enabled
+  })
+}
+
 export function useStartSync(provider: IntegrationProvider) {
   const queryClient = useQueryClient()
   return useMutation({
