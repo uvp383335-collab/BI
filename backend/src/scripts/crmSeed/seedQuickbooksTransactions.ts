@@ -82,10 +82,14 @@ async function main() {
           SalesItemLineDetail: { ItemRef: { value: ITEM_PS }, ClassRef: { value: CLASS_PS_HW } }
         })
         if (ci % 3 === 0) {
+          // Inventory-type items (GPS Hardware Kit) reject an Amount-only line --
+          // QuickBooks requires Qty ("Missing Inventory Item Quantity" otherwise).
+          // 1 kit per order keeps the existing dollar amounts unchanged (UnitPrice == Amount).
+          const hwAmount = 2200 + (ci % 4) * 500
           lines.push({
-            Amount: 2200 + (ci % 4) * 500,
+            Amount: hwAmount,
             DetailType: 'SalesItemLineDetail',
-            SalesItemLineDetail: { ItemRef: { value: ITEM_HW }, ClassRef: { value: CLASS_PS_HW } }
+            SalesItemLineDetail: { ItemRef: { value: ITEM_HW }, ClassRef: { value: CLASS_PS_HW }, Qty: 1, UnitPrice: hwAmount }
           })
         }
       }

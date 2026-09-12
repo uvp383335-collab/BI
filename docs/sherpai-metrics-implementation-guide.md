@@ -90,7 +90,8 @@ Shared Building Blocks) — this is the prerequisite for the metric to exist at 
 optional enhancement. Separately, widen the Salesforce Opportunity query to include `Type`, and
 decide whether to sync `Account` (for a churn-date field) or rely on `Type = 'Churn'` alone —
 `Type` alone is enough to compute the metric; `Account`'s churn-date only enriches the "why"
-narrative attached to the alert, so it can ship second.
+narrative attached to the alert, so it can ship second. Separately, the 90% watch benchmark
+below is hardcoded, not a per-org override — see Shared Building Blocks / G-3.
 
 **Cadence:** calculated monthly, alert checked quarterly.
 
@@ -115,7 +116,9 @@ the same quarter.
 **Gap & fix:** The core NRR number only needs the invoice-based roll-forward (VC-01's fix covers
 it). The usage-data split described in the PDF is a nice-to-have refinement with no available
 data source in MVP scope — compute NRR from invoice deltas only and skip the organic-vs-sales-led
-breakdown until a usage-data connector is scoped; don't block the metric on it.
+breakdown until a usage-data connector is scoped; don't block the metric on it. Separately, the
+90%/100% thresholds below are hardcoded, not a per-org override — see Shared Building Blocks /
+G-3.
 
 **Cadence:** calculated and checked monthly.
 

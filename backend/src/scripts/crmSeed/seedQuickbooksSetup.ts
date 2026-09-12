@@ -1,5 +1,6 @@
 import { quickbooksAuth, closeDb } from './auth'
 import { makeQbClient } from './qbClient'
+import { isoDate } from './data'
 
 /**
  * Phase 1 of the QuickBooks seed: chart-of-accounts additions, Classes (product
@@ -49,13 +50,32 @@ async function main() {
   })
   console.log(`  ${classResults.filter((r) => r.ok).length}/${CLASSES.length} classes created`)
 
-  const accountIdByName = new Map(accountResults.filter((r) => r.ok).map((r, i) => [ACCOUNTS[i].Name, r.id!]))
+  // Accounts can never be deleted/deactivated via the QuickBooks API (wipeQuickbooks.ts
+  // doesn't touch them at all), so a re-seed against an already-seeded company always sees
+  // these as duplicates -- fall back to the existing account's Id by name rather than
+  // crashing on a failed create.
+  const existingAccounts = await qb.query<{ Id: string; Name: string }>('Account', 'Active = true')
+  const accountIdByName = new Map<string, string>()
+  ACCOUNTS.forEach((a, i) => {
+    const r = accountResults[i]
+    if (r.ok) accountIdByName.set(a.Name, r.id!)
+    else {
+      const existing = existingAccounts.find((x) => x.Name === a.Name)
+      if (existing) accountIdByName.set(a.Name, existing.Id)
+    }
+  })
   const incomeSub = accountIdByName.get('Subscription Revenue')!
   const incomePs = accountIdByName.get('Professional Services Revenue')!
   const incomeHw = accountIdByName.get('Hardware Revenue')!
   const cogsHosting = accountIdByName.get('Hosting & Infrastructure COGS')!
   const cogsSupport = accountIdByName.get('Customer Support COGS')!
   const cogsHw = accountIdByName.get('Hardware COGS')!
+
+  // "Inventory Asset" is a QuickBooks-provisioned default account (exists on the company
+  // before this script ever runs), not one of the accounts created above -- looked up
+  // dynamically rather than hardcoding its Id, which is sandbox-specific.
+  const invAssetAccount = existingAccounts.find((a) => a.Name === 'Inventory Asset')
+  if (!invAssetAccount) throw new Error('"Inventory Asset" account not found -- required for GPS Hardware Kit as an Inventory item')
 
   console.log('Creating Items...')
   const ITEMS = [
@@ -79,9 +99,16 @@ async function main() {
     },
     {
       Name: 'GPS Hardware Kit',
-      Type: 'NonInventory',
+      Type: 'Inventory',
+      TrackQtyOnHand: true,
+      QtyOnHand: 500,
+      // Day 1 of the earliest seeded month -- must be on/before every Invoice line that
+      // references this item (data.ts's month 0), or QuickBooks rejects the invoice as
+      // dated before the item's inventory start.
+      InvStartDate: isoDate(0, 1),
       IncomeAccountRef: { value: incomeHw },
-      ExpenseAccountRef: { value: cogsHw }
+      ExpenseAccountRef: { value: cogsHw },
+      AssetAccountRef: { value: invAssetAccount.Id }
     }
   ]
   const itemResults = await qb.createMany('Item', ITEMS)

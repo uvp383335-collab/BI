@@ -1,0 +1,702 @@
+<title>Metrics Data Lineage</title>
+<meta name="description" content="Plain-language + technical reference for every Stage-1 SherpAI metric: source CRM, table, fields, calculation, and the open decisions that need a client answer.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #F4F5F1;
+    --surface: #FFFFFF;
+    --surface-2: #EBEDE7;
+    --border: #D8DBD2;
+    --ink: #191C17;
+    --ink-soft: #565F55;
+    --ink-faint: #8A9186;
+    --accent: #2A5C7A;
+    --accent-ink: #17384B;
+    --accent-soft: #E3EDF1;
+    --ok: #2F7D4F;
+    --ok-soft: #E4F1E8;
+    --warn: #A56A17;
+    --warn-soft: #F5ECDA;
+    --bad: #A5403A;
+    --bad-soft: #F4E5E1;
+    --shadow: 0 1px 2px rgba(25,28,23,0.06), 0 1px 1px rgba(25,28,23,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171A;
+      --surface: #1B1F22;
+      --surface-2: #23282B;
+      --border: #323831;
+      --ink: #E8EAE4;
+      --ink-soft: #A6AD9F;
+      --ink-faint: #6E756A;
+      --accent: #7CB2D2;
+      --accent-ink: #CFE4F0;
+      --accent-soft: #1E2E38;
+      --ok: #6FC290;
+      --ok-soft: #1C2E22;
+      --warn: #E0AE5C;
+      --warn-soft: #332812;
+      --bad: #E28981;
+      --bad-soft: #34201E;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171A;
+    --surface: #1B1F22;
+    --surface-2: #23282B;
+    --border: #323831;
+    --ink: #E8EAE4;
+    --ink-soft: #A6AD9F;
+    --ink-faint: #6E756A;
+    --accent: #7CB2D2;
+    --accent-ink: #CFE4F0;
+    --accent-soft: #1E2E38;
+    --ok: #6FC290;
+    --ok-soft: #1C2E22;
+    --warn: #E0AE5C;
+    --warn-soft: #332812;
+    --bad: #E28981;
+    --bad-soft: #34201E;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    padding: 0 20px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding-block: 48px 96px; }
+
+  h1, h2, h3 { font-family: "Source Serif 4", Georgia, serif; font-weight: 600; text-wrap: balance; color: var(--ink); }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  /* ---------- Header ---------- */
+  .doc-eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+  h1 { font-size: 34px; line-height: 1.15; margin: 0 0 14px; }
+  .lede { font-size: 17px; color: var(--ink-soft); max-width: 66ch; margin: 0 0 8px; }
+  .lede + .lede { margin-top: 10px; }
+
+  /* ---------- Stat strip ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 28px 0 8px;
+  }
+  .stat { background: var(--surface); padding: 16px 14px; }
+  .stat .n { font-family: "IBM Plex Mono", monospace; font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat .l { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+  .stat.ok .n { color: var(--ok); }
+  .stat.warn .n { color: var(--warn); }
+  .stat.bad .n { color: var(--bad); }
+  @media (max-width: 560px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+
+  /* ---------- In-page nav ---------- */
+  nav.jump {
+    display: flex; flex-wrap: wrap; gap: 8px 10px;
+    margin: 28px 0 44px;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+  }
+  nav.jump span.label { color: var(--ink-faint); font-family: "IBM Plex Mono", monospace; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; align-self: center; margin-right: 4px;}
+  nav.jump a { color: var(--accent-ink); text-decoration: none; border-bottom: 1px solid transparent; }
+  nav.jump a:hover { border-bottom-color: var(--accent); }
+
+  /* ---------- Section headers ---------- */
+  .family {
+    margin-top: 56px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--ink);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    scroll-margin-top: 16px;
+  }
+  .family h2 { font-size: 22px; margin: 0; }
+  .family .tag { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-faint); }
+  .family-note { color: var(--ink-soft); font-size: 14.5px; max-width: 70ch; margin: 10px 0 22px; }
+
+  /* ---------- Metric card ---------- */
+  .metric {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 20px 22px 18px;
+    margin-bottom: 16px;
+    scroll-margin-top: 16px;
+  }
+  .metric-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .id-badge {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 600;
+    font-size: 13px;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    border-radius: 6px;
+    padding: 3px 8px;
+    letter-spacing: 0.02em;
+  }
+  .metric-head h3 { font-size: 18px; margin: 0; flex: 1; min-width: 180px; }
+  .status {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 3px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .status.done { background: var(--ok-soft); color: var(--ok); }
+  .status.partial { background: var(--warn-soft); color: var(--warn); }
+  .status.deferred { background: var(--bad-soft); color: var(--bad); }
+  .status.blocked { background: var(--bad-soft); color: var(--bad); }
+
+  .platform-block {
+    background: var(--bad-soft);
+    border: 1px solid var(--bad);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 4px 0 14px;
+    font-size: 13.5px;
+    color: var(--ink);
+  }
+  .platform-block b { color: var(--bad); }
+
+  .what { color: var(--ink-soft); font-size: 15px; margin: 6px 0 14px; }
+
+  .lineage { width: 100%; border-collapse: collapse; margin: 4px 0 12px; font-size: 13.5px; }
+  .lineage th {
+    text-align: left; font-family: "IBM Plex Mono", monospace; font-weight: 500; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint);
+    border-bottom: 1px solid var(--border); padding: 5px 10px 5px 0;
+  }
+  .lineage td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .lineage tr:last-child td { border-bottom: none; }
+  .lineage td.src { white-space: nowrap; color: var(--ink); font-weight: 500;}
+  .lineage td.fld { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--accent-ink); }
+
+  .formula {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    margin: 4px 0 14px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .gaps { margin: 0; padding: 0; list-style: none; font-size: 13.5px; }
+  .gaps li { padding: 5px 0 5px 18px; position: relative; color: var(--ink-soft); }
+  .gaps li::before { content: "—"; position: absolute; left: 0; color: var(--ink-faint); }
+  .gaps li b { color: var(--ink); font-weight: 600; }
+  .gaps-label { font-family: "IBM Plex Mono", monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); margin: 12px 0 4px; }
+
+  /* ---------- Deferred entirely (mini cards) ---------- */
+  .deferred-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 4px 0 8px; }
+  @media (max-width: 680px) { .deferred-grid { grid-template-columns: 1fr; } }
+  .deferred-card {
+    background: var(--bad-soft); border: 1px solid var(--bad); border-radius: 10px; padding: 14px 16px;
+  }
+  .deferred-card .id-badge { background: var(--surface); }
+  .deferred-card p { font-size: 13.5px; color: var(--ink); margin: 8px 0 0; }
+
+  /* ---------- Decisions section ---------- */
+  .decision {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+  }
+  .decision h4 { font-family: "IBM Plex Mono", monospace; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-ink); margin: 0 0 6px; }
+  .decision p.q { font-size: 15px; margin: 0 0 10px; font-weight: 500; }
+  .decision p.ctx { font-size: 13.5px; color: var(--ink-soft); margin: 0 0 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--ink-soft);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px;
+  }
+
+  .checklist { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 14px; }
+  .checklist li { margin-bottom: 6px; font-size: 14px; }
+
+  footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--ink-faint); }
+</style>
+
+<div class="wrap">
+
+  <p class="doc-eyebrow">DriverInsights &middot; Stage&nbsp;1 metrics reference</p>
+  <h1>Where every number on the dashboard actually comes from</h1>
+  <p class="lede">This is a field-by-field map of the 24 metrics scoped into Stage&nbsp;1: which CRM the data comes from, which table and field it reads, the math behind the headline number, and — for anything built on a guess, a placeholder, or a fixed default — the decision that still needs a client answer before it should be treated as final.</p>
+  <p class="lede">Three systems feed this platform today: <b>HubSpot</b> (marketing/lead funnel), <b>Salesforce</b> (sales pipeline), and <b>QuickBooks</b> (billing and financials). Each org connects its own copies; data lands in that org's own database, gets lightly reshaped, and every metric below is computed fresh from that stored copy — never a live call to the CRM at request time.</p>
+
+  <div class="stats">
+    <div class="stat"><div class="n">24</div><div class="l">Stage&nbsp;1 metrics scoped</div></div>
+    <div class="stat ok"><div class="n">20</div><div class="l">Built and working</div></div>
+    <div class="stat warn"><div class="n">1</div><div class="l">Partially built</div></div>
+    <div class="stat bad"><div class="n">3</div><div class="l">Not built — out of MVP scope</div></div>
+  </div>
+  <p style="font-size:12.5px; color:var(--ink-faint); margin:6px 0 0;">The counts above are code-completeness. See <a href="#computability" style="color:var(--accent-ink);">Computability check</a> below for what's actually verified as <code>computable:true</code> against live, synced data.</p>
+
+  <nav class="jump">
+    <span class="label">Jump to</span>
+    <a href="#computability">Computability check</a>
+    <a href="#vc">Value Creation</a>
+    <a href="#cb">Capital &amp; Balance Sheet</a>
+    <a href="#cm">Customer &amp; Market</a>
+    <a href="#not-built">Not built</a>
+    <a href="#decisions">Decisions needed</a>
+  </nav>
+
+  <!-- ============================================================ COMPUTABILITY CHECK -->
+  <div class="checklist" id="computability" style="scroll-margin-top: 16px;">
+    <h4 style="font-family:'IBM Plex Mono',monospace; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); margin:0 0 12px;">Computability check — tested live against the seeded demo org, 2026-09-12</h4>
+    <table class="lineage" style="margin:0;">
+      <tr><th>Metric</th><th>Result</th><th>Why</th></tr>
+      <tr>
+        <td class="fld">VC-01…04, 06, 07, 09, 10, 12&ndash;14, CB-05/07/10, CM-02/03/07/08</td>
+        <td><span class="status done">Computable</span></td>
+        <td>20 of 24 — confirmed <code>computable:true</code> end-to-end, and should stay that way through future reseeds (the fixes are structural, not a lucky snapshot)</td>
+      </tr>
+      <tr>
+        <td class="fld">CM-04 (HubSpot &amp; Salesforce)</td>
+        <td><span class="status partial">Never, structurally</span></td>
+        <td>The sales-target feature its ratio needs doesn't exist anywhere in the system — no amount of seed data can fix this</td>
+      </tr>
+      <tr>
+        <td class="fld">CM-05, CM-06 (HubSpot &amp; Salesforce)</td>
+        <td><span class="status blocked">Never, on demo data</span></td>
+        <td>HubSpot's own API refuses to backdate the record timestamps these metrics need — confirmed live. A real, actively-used client org is unaffected; only synthetic one-shot seed data hits this wall. See Decisions, below.</td>
+      </tr>
+      <tr>
+        <td class="fld">CB-15, CM-01, ER-05</td>
+        <td><span class="status deferred">No code exists</span></td>
+        <td>Not built at all — "computable" doesn't apply yet, there's no calculation to run</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ============================================================ VALUE CREATION -->
+  <section class="family" id="vc">
+    <h2>Value Creation</h2>
+    <span class="tag">VC&ndash;01 … VC&ndash;14</span>
+  </section>
+  <p class="family-note">Revenue quality and growth. Everything here traces back to two QuickBooks building blocks: the <code>Invoice</code>-based customer revenue roll-forward (who paid what, month to month) and the <code>PLSnapshot</code> table (a stored copy of the QuickBooks Profit&nbsp;&amp;&nbsp;Loss report, refreshed once per sync rather than fetched live).</p>
+
+  <article class="metric" id="vc-01">
+    <div class="metric-head"><span class="id-badge">VC-01</span><h3>Gross Revenue Retention</h3><span class="status done">Done</span></div>
+    <p class="what">Of the recurring money you had at the start of the month, how much did you keep — counting only cancellations and downgrades, ignoring upsells.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">Invoice.customerRecordId, amount</td><td>Per-customer monthly revenue, this month vs. last</td></tr>
+    </table>
+    <div class="formula">GRR% = (Starting revenue − Cancellations − Downgrades) ÷ Starting revenue × 100</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps">
+      <li><b>No "why" behind churn.</b> Salesforce could tag a deal <code>Type = 'Churn'</code> to explain a drop — not pulled today.</li>
+      <li><b>90% alert line is fixed in code</b>, same for every client. Not adjustable per org.</li>
+    </ul>
+  </article>
+
+  <article class="metric" id="vc-02">
+    <div class="metric-head"><span class="id-badge">VC-02</span><h3>Net Revenue Retention</h3><span class="status done">Done</span></div>
+    <p class="what">Same idea as GRR, but upsells count in your favor too — so this number can go above 100%.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">Invoice.customerRecordId, amount</td><td>Same roll-forward as VC-01, plus the "expansion" leg</td></tr>
+    </table>
+    <div class="formula">NRR% = (Starting − Cancellations − Downgrades + Expansion) ÷ Starting × 100</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li><b>90% / 100% alert lines are fixed in code</b>, not adjustable per org.</li></ul>
+  </article>
+
+  <article class="metric" id="vc-03">
+    <div class="metric-head"><span class="id-badge">VC-03</span><h3>New-Logo Revenue Growth</h3><span class="status done">Done</span></div>
+    <p class="what">Growth of revenue from brand-new customers only, quarter over quarter.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">Invoice — customers with $0 prior history</td><td>Identifies genuinely new customers (win-backs excluded)</td></tr>
+    </table>
+    <div class="formula">Growth% = (This quarter's new-logo revenue − prior quarter) ÷ prior quarter × 100</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps">
+      <li><b>No Salesforce cross-check.</b> A deal tagged <code>Type = 'New Business'</code> would confirm the customer is really new — currently trusts QuickBooks history alone.</li>
+      <li><b>No "vs. plan" comparison</b> — no revenue-target data exists anywhere in the system (see Decisions, below).</li>
+    </ul>
+  </article>
+
+  <article class="metric" id="vc-04">
+    <div class="metric-head"><span class="id-badge">VC-04</span><h3>COGS % and Mix</h3><span class="status done">Done</span></div>
+    <p class="what">Cost of actually delivering the product, as a share of revenue — split by product line, and by whether costs rose (rate) or sales shifted to a cheaper-margin product (mix).</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">PLSnapshot.income, .cogs (per Class)</td><td>Revenue and cost of goods sold, by product line</td></tr>
+    </table>
+    <div class="formula">COGS% = COGS ÷ Revenue × 100&#10;Mix% = product revenue ÷ total revenue × 100</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps">
+      <li><b>Cost categories are guessed from account names</b> (keyword match, e.g. "rent" → G&amp;A) — no per-org review step exists yet.</li>
+      <li><b>No peer-company comparison</b> — needs a market-data feed, entirely outside the 3-CRM scope.</li>
+    </ul>
+  </article>
+
+  <article class="metric" id="vc-06">
+    <div class="metric-head"><span class="id-badge">VC-06</span><h3>CAC &amp; Payback Period</h3><span class="status done">Done</span></div>
+    <p class="what">What it costs to win one new customer, and how many months it takes to earn that cost back.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">PLSnapshot.expenses (tagged "sales &amp; marketing")</td><td>Total acquisition spend</td></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">Invoice roll-forward — new-logo count &amp; revenue</td><td>Customers won, and their typical revenue</td></tr>
+    </table>
+    <div class="formula">CAC = S&amp;M spend ÷ new customers won&#10;Payback (months) = CAC ÷ (avg. new-customer monthly revenue × gross margin)</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps">
+      <li><b>No per-channel breakdown</b> (Google / Meta / LinkedIn) — needs ad-platform connectors, out of scope. Blended figure only.</li>
+      <li>Salesforce already stores <code>LeadSource</code>/deal type but this metric doesn't use them yet.</li>
+    </ul>
+  </article>
+
+  <article class="metric" id="vc-07">
+    <div class="metric-head"><span class="id-badge">VC-07</span><h3>LTV : CAC — New Customers</h3><span class="status done">Done</span></div>
+    <p class="what">Is a new customer worth more than it cost to acquire them? Pure arithmetic on top of three other metrics — no new data pull of its own.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">Derived</td><td class="fld">VC-01 (churn) + VC-04 (margin) + VC-06 (CAC)</td><td>All three feed straight into the formula below</td></tr>
+    </table>
+    <div class="formula">LTV = monthly revenue × gross margin ÷ monthly churn rate (capped at 7 years)&#10;Ratio = LTV ÷ CAC</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li>None of its own — inherits whatever gaps sit in VC-01 / VC-04 / VC-06.</li></ul>
+  </article>
+
+  <article class="metric" id="vc-09">
+    <div class="metric-head"><span class="id-badge">VC-09</span><h3>G&amp;A as % of Revenue</h3><span class="status done">Done</span></div>
+    <p class="what">Back-office cost — accounting, legal, HR, facilities — as a share of revenue.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">PLSnapshot.expenses (tagged "G&amp;A")</td><td>Overhead cost total</td></tr>
+    </table>
+    <div class="formula">G&amp;A% = G&amp;A expense ÷ Revenue × 100</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li><b>No alert ever fires</b> for this one — both flag conditions need plan/peer data that doesn't exist.</li></ul>
+  </article>
+
+  <article class="metric" id="vc-10">
+    <div class="metric-head"><span class="id-badge">VC-10</span><h3>EBITDA Margin Trend</h3><span class="status done">Done</span></div>
+    <p class="what">Core profitability, the number a PE firm looks at first — and whether it's trending up or down.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">PLSnapshot.income/.cogs/.expenses + sectionTotals.NetOperatingIncome</td><td>Operating income, with depreciation/amortization added back</td></tr>
+    </table>
+    <div class="formula">EBITDA = Operating income + D&amp;A&#10;Margin% = EBITDA ÷ Revenue × 100</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li>Only the "shrunk two quarters running" alert works — plan- and peer-comparison legs have nothing to compare against yet.</li></ul>
+  </article>
+
+  <article class="metric" id="vc-12">
+    <div class="metric-head"><span class="id-badge">VC-12</span><h3>Recurring Revenue % of Total</h3><span class="status done">Done</span></div>
+    <p class="what">Share of revenue that's contractually recurring vs. one-off — a real driver of company valuation.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">PLSnapshot.income (accounts matched by keyword: "subscription", "recurring"…)</td><td>Splits income into recurring vs. non-recurring</td></tr>
+    </table>
+    <div class="formula">Recurring% = Recurring revenue ÷ Total revenue × 100</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li>Same keyword-guess risk as VC-04/06/09 — an account like "Platform Fees" would be missed and miscounted as non-recurring.</li></ul>
+  </article>
+
+  <article class="metric" id="vc-13">
+    <div class="metric-head"><span class="id-badge">VC-13</span><h3>Revenue Growth (Recurring vs. Non-Recurring)</h3><span class="status done">Done</span></div>
+    <p class="what">Splits total revenue growth into its recurring and one-off pieces, to catch growth that's being propped up by lumpy one-time deals.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">PLSnapshot.income — current, prior, and year-ago quarter</td><td>Same recurring/non-recurring split as VC-12</td></tr>
+    </table>
+    <div class="formula">Growth% = (This period − prior period) ÷ prior period × 100 — for total, recurring, and non-recurring separately</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps">
+      <li><b>Fixed 2026-09-12.</b> Was <code>computable:false</code> on the seeded org — the year-over-year comparison needs a real quarter of data from 12 months back, and the dataset only had ~13 months of history. Extended to 26 months.</li>
+      <li>Inherits VC-12's classification risk; plan-comparison alert legs have nothing to compare against.</li>
+    </ul>
+  </article>
+
+  <article class="metric" id="vc-14">
+    <div class="metric-head"><span class="id-badge">VC-14</span><h3>LTV : CAC — Whole Customer Base</h3><span class="status done">Done</span></div>
+    <p class="what">Same LTV:CAC test as VC-07, but across every active customer rather than just new ones — the trailing-12-month view.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">PLSnapshot + Invoice roll-forward, 4 trailing quarters</td><td>Trailing-12-month CAC and average revenue per customer</td></tr>
+    </table>
+    <div class="formula">LTV = avg. monthly revenue per customer × gross margin ÷ monthly churn&#10;Ratio = LTV ÷ CAC (trailing 12 months)</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li>The "falling two quarters running" alert is approximated as a simpler one-point check — not a true two-quarter trend yet.</li></ul>
+  </article>
+
+  <!-- ============================================================ CAPITAL & BALANCE SHEET -->
+  <section class="family" id="cb">
+    <h2>Capital &amp; Balance Sheet</h2>
+    <span class="tag">CB&ndash;05, 07, 10</span>
+  </section>
+  <p class="family-note">Cash health. Sourced from three more QuickBooks reports — Balance Sheet, Cash Flow, and the A/R &amp; A/P Aging reports — stored the same way as the P&amp;L data above.</p>
+
+  <article class="metric" id="cb-05">
+    <div class="metric-head"><span class="id-badge">CB-05</span><h3>Cash Position &amp; Runway</h3><span class="status done">Done</span></div>
+    <p class="what">Cash on hand today, and how many months it lasts at the current burn rate — the only metric in the whole system checked daily rather than monthly.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">CashBalanceSnapshot.unrestrictedCash, asOfDate</td><td>Bank-account balance, one row per sync</td></tr>
+    </table>
+    <div class="formula">Monthly burn = (oldest cash − latest cash) ÷ days between × 30&#10;Runway (months) = latest cash ÷ monthly burn</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li><b>No daily scheduler exists</b> — this table only refreshes when someone reconnects or manually resyncs, not automatically every day as the "daily" cadence implies.</li></ul>
+  </article>
+
+  <article class="metric" id="cb-07">
+    <div class="metric-head"><span class="id-badge">CB-07</span><h3>Free Cash Flow Conversion</h3><span class="status done">Done</span></div>
+    <p class="what">How much of EBITDA actually turns into real cash in the bank.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">PLSnapshot.operatingCashFlow, .capEx</td><td>Primary source, from the Cash Flow report</td></tr>
+      <tr><td class="src">QuickBooks (fallback)</td><td class="fld">accountsReceivable/Payable, inventoryValue, netFixedAssets deltas</td><td>Used only when a company's books can't produce a real Cash Flow statement</td></tr>
+    </table>
+    <div class="formula">FCF = Operating cash flow − CapEx&#10;Conversion% = FCF ÷ EBITDA × 100</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps">
+      <li><b>One alert leg can never fire</b> — it needs a leverage/debt metric (CB-01) that's a later-stage build, not in Stage 1 at all.</li>
+      <li>Report-parsing assumptions haven't been checked against a real, non-sandbox QuickBooks company yet.</li>
+    </ul>
+  </article>
+
+  <article class="metric" id="cb-10">
+    <div class="metric-head"><span class="id-badge">CB-10</span><h3>Cash Conversion Cycle</h3><span class="status done">Done</span></div>
+    <p class="what">How many days cash is tied up before it comes back — time to collect from customers, plus time stock sits, minus time you take to pay suppliers.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">PLSnapshot.accountsReceivable, .accountsPayable, .inventoryValue</td><td>The three legs of the cycle</td></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">PLSnapshot.income, .cogs</td><td>Denominators (revenue, cost of goods)</td></tr>
+    </table>
+    <div class="formula">Days to collect = A/R ÷ Revenue × days&#10;Days in inventory = Inventory ÷ COGS × days&#10;Days to pay = A/P ÷ COGS × days&#10;Cycle = collect + inventory − pay</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps">
+      <li>Companies with no inventory correctly show "0, hidden" rather than an error — this is by design, not a gap.</li>
+      <li>Report-parsing assumptions unverified against a live (non-sandbox) QuickBooks company.</li>
+    </ul>
+  </article>
+
+  <!-- ============================================================ CUSTOMER & MARKET -->
+  <section class="family" id="cm">
+    <h2>Customer &amp; Market</h2>
+    <span class="tag">CM&ndash;02 … CM&ndash;08</span>
+  </section>
+  <p class="family-note">Pipeline and funnel health. Sourced from HubSpot's contact/lifecycle data, Salesforce's opportunity pipeline, and — for concentration risk — QuickBooks customer relationships.</p>
+
+  <article class="metric" id="cm-02">
+    <div class="metric-head"><span class="id-badge">CM-02</span><h3>Customer Concentration</h3><span class="status done">Done</span></div>
+    <p class="what">Share of trailing-12-month revenue coming from your 10 biggest customers — grouping subsidiaries under their parent company so a group isn't undercounted as several small accounts.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">QuickBooksCustomer.parentRecordId</td><td>Rolls up subsidiaries to their parent before ranking</td></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">Invoice — trailing 12 months, by customer</td><td>Revenue per customer group</td></tr>
+    </table>
+    <div class="formula">Top-10% = revenue of 10 largest customer groups ÷ total revenue × 100</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li>Salesforce's own <code>Account.ParentId</code> is synced but unused here — QuickBooks' own hierarchy turned out to be enough on its own.</li></ul>
+  </article>
+
+  <article class="metric" id="cm-03">
+    <div class="metric-head"><span class="id-badge">CM-03</span><h3>Competitive Win Rate</h3><span class="status done">Done</span></div>
+    <p class="what">Win rate specifically in deals where a named competitor was in the running, tracked per competitor.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">Salesforce</td><td class="fld">Deal.competitors (custom field, or the standard OpportunityCompetitor object — org-configurable)</td><td>Which competitor(s) were named on a deal</td></tr>
+    </table>
+    <div class="formula">Win rate% = Wins ÷ (Wins + Losses) × 100, per competitor, trailing 2 quarters</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps">
+      <li><b>Fixed 2026-09-12.</b> Was <code>computable:false</code> on the seeded org — the competitor data existed, but the org's <code>salesforceCompetitorSource</code> setting had simply never been configured. Set to <code>'junction'</code> mode.</li>
+      <li>Otherwise none outstanding — both ways an org might track competitors in Salesforce are now supported, configured per org.</li>
+    </ul>
+  </article>
+
+  <article class="metric" id="cm-04">
+    <div class="metric-head"><span class="id-badge">CM-04</span><h3>Pipeline Coverage Ratio</h3><span class="status partial">Partial</span></div>
+    <p class="what">Qualified pipeline closing next quarter, measured against next quarter's sales target.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">Salesforce / HubSpot</td><td class="fld">Deal.amount, .stage, .closeDate</td><td>Open pipeline closing next quarter (numerator — this part works)</td></tr>
+      <tr><td class="src">Salesforce / HubSpot</td><td class="fld">PipelineStageDefinition — earliest open stage = unqualified</td><td>Guesses which stage counts as "qualified"</td></tr>
+      <tr><td class="src">Missing entirely</td><td class="fld">Next quarter's sales target</td><td>The denominator — doesn't exist anywhere in the system</td></tr>
+    </table>
+    <div class="formula">Coverage = qualified pipeline closing next quarter ÷ next quarter's target</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li><b>Structurally incomplete.</b> Only the numerator can be shown — the ratio itself cannot exist until sales-target data is captured somewhere.</li></ul>
+  </article>
+
+  <article class="metric" id="cm-05">
+    <div class="metric-head"><span class="id-badge">CM-05</span><h3>Marketing-Sourced Pipeline &amp; Revenue %</h3><span class="status done">Done</span></div>
+    <p class="what">Share of qualified pipeline and closed revenue that started from marketing, vs. sales outbound, partners, or referrals.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">HubSpot</td><td class="fld">Contact.analyticsSource (hs_analytics_source)</td><td>Original lead channel</td></tr>
+    </table>
+    <div class="formula">Marketing-sourced% = marketing-originated qualified pipeline ÷ total qualified pipeline × 100</div>
+    <div class="platform-block"><b>Confirmed permanently not-computable on any seeded/demo org (2026-09-12).</b> This needs deals actually <em>created</em> in a real past calendar month. HubSpot's <code>createdate</code> is read-only on create ("<code>READ_ONLY_VALUE</code>") — every seeded deal gets stamped "now," which this metric's own trailing-window logic always excludes. Not a code bug — a real, actively-used client's HubSpot naturally has this history already and would compute fine.</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li><b>HubSpot-only.</b> No equivalent field is pulled from Salesforce, so this metric under-represents orgs whose lead-source data lives there instead.</li></ul>
+  </article>
+
+  <article class="metric" id="cm-06">
+    <div class="metric-head"><span class="id-badge">CM-06</span><h3>Funnel Conversion Rates</h3><span class="status done">Done</span></div>
+    <p class="what">Lead → MQL → SQL → Won — what share of each cohort actually advances to the next stage.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">HubSpot</td><td class="fld">Contact.lifecycleStageHistory</td><td>Every stage transition, by date</td></tr>
+      <tr><td class="src">Salesforce</td><td class="fld">Deal stage history</td><td>The SQL → Won leg</td></tr>
+    </table>
+    <div class="formula">Stage conversion% = records advancing to next stage ÷ records entering that stage × 100, grouped by entry-month cohort</div>
+    <div class="platform-block"><b>Confirmed permanently not-computable on any seeded/demo org, both providers (2026-09-12).</b> Needs contacts that <em>entered</em> MQL/SQL in a real past month. Same wall as CM-05 — a property's change-history timestamp is stamped at the real API-call time and cannot be backdated through the standard API. A real client's genuine usage history over time is unaffected.</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li><b>Which lifecycle value counts as "MQL" vs. "SQL" is fixed in code</b>, not something each client can configure for their own naming.</li></ul>
+  </article>
+
+  <article class="metric" id="cm-07">
+    <div class="metric-head"><span class="id-badge">CM-07</span><h3>Marketing ROI by Channel</h3><span class="status done">Done</span></div>
+    <p class="what">Pipeline and gross profit generated per marketing dollar spent — meant to be broken out by channel, currently blended only.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">HubSpot</td><td class="fld">Contact.analyticsSource</td><td>Attribution (same field as CM-05)</td></tr>
+      <tr><td class="src">QuickBooks</td><td class="fld">PLSnapshot.expenses (marketing category)</td><td>Total marketing spend</td></tr>
+    </table>
+    <div class="formula">Pipeline ROI = marketing-sourced pipeline ÷ marketing spend&#10;Profit ROI = marketing-sourced revenue × gross margin ÷ marketing spend</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps">
+      <li><b>Blended only</b> — a true per-channel number needs Google/Meta/LinkedIn ad-spend connectors, confirmed out of scope.</li>
+      <li>HubSpot's own Campaigns API (recorded campaign cost) isn't pulled either — the connected OAuth scopes don't currently include it.</li>
+    </ul>
+  </article>
+
+  <article class="metric" id="cm-08">
+    <div class="metric-head"><span class="id-badge">CM-08</span><h3>Lead Volume vs. Plan (MQL Flow)</h3><span class="status done">Done</span></div>
+    <p class="what">MQLs generated vs. plan, and the trend — the earliest demand signal the system tracks.</p>
+    <table class="lineage">
+      <tr><th>Source</th><th>Table / field</th><th>Used for</th></tr>
+      <tr><td class="src">HubSpot</td><td class="fld">Contact.lifecycleStageHistory — MQL transition dates</td><td>Volume and growth/decline trend</td></tr>
+    </table>
+    <div class="formula">Variance% = (Actual MQLs − Planned MQLs) ÷ Planned MQLs × 100</div>
+    <div class="gaps-label">Open items</div>
+    <ul class="gaps"><li>Volume and trend work today; the "vs. plan" variance can't compute — no MQL target exists anywhere in the system.</li></ul>
+  </article>
+
+  <!-- ============================================================ NOT BUILT -->
+  <section class="family" id="not-built">
+    <h2>Not built</h2>
+    <span class="tag">out of MVP scope</span>
+  </section>
+  <p class="family-note">These three were named in the original Stage&nbsp;1 metric allocation but ended up outside what the three-connector MVP could produce — each needs a data source none of HubSpot, Salesforce, or QuickBooks provide. See <a href="#decisions">Decisions</a>, below.</p>
+
+  <div class="deferred-grid">
+    <div class="deferred-card">
+      <span class="id-badge">CB-15</span>
+      <p>Not specified in the metrics guide at all — falls in a range of Balance Sheet metrics (CB-11–15) deferred as needing a bank-feed or cap-table connector, neither of which exists.</p>
+    </div>
+    <div class="deferred-card">
+      <span class="id-badge">CM-01</span>
+      <p>Net Promoter Score. Needs a survey response source — an NPS survey template/upload, not a CRM pull. No upload feature exists yet.</p>
+    </div>
+    <div class="deferred-card">
+      <span class="id-badge">ER-05</span>
+      <p>Exit Readiness family — deferred as a whole. No connector or manual-input path was scoped for it in the current build.</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ DECISIONS -->
+  <section class="family" id="decisions">
+    <h2>Decisions needed from the client</h2>
+    <span class="tag">grouped by theme, not by metric</span>
+  </section>
+  <p class="family-note">Most gaps above repeat across many metrics — so instead of asking the same question 20 times, here's every open decision grouped once, with the metrics it affects tagged underneath.</p>
+
+  <div class="decision">
+    <h4>Scope conflict</h4>
+    <p class="q">Are CB-15, CM-01, and ER-05 actually required to call Stage&nbsp;1 complete?</p>
+    <p class="ctx">The original allocation lists all three as Stage-1 deliverables, but the build treated them as fully out of scope — no data model, no calculation, nothing. Either the original scope was aspirational and should be revised, or these three still need a connector/upload path scoped and built (NPS survey tool for CM-01; a bank-feed or cap-table source for CB-15; a defined data source for ER-05) before Stage 1 can be signed off as done.</p>
+    <div class="chips"><span class="chip">CB-15</span><span class="chip">CM-01</span><span class="chip">ER-05</span></div>
+  </div>
+
+  <div class="decision">
+    <h4>Configuration</h4>
+    <p class="q">Should alert thresholds (90% retention, 18-month payback, 3.0x LTV:CAC, 40% concentration, etc.) be adjustable per client, or is one fixed default acceptable?</p>
+    <p class="ctx">Every threshold today is hardcoded in the backend, identical for every org. The original spec calls these "firm-adjustable defaults" — building a real per-org settings store is a separate, not-yet-scoped piece of work.</p>
+    <div class="chips"><span class="chip">VC-01</span><span class="chip">VC-02</span><span class="chip">VC-04</span><span class="chip">VC-06</span><span class="chip">VC-07</span><span class="chip">VC-09</span><span class="chip">VC-10</span><span class="chip">VC-12</span><span class="chip">VC-13</span><span class="chip">VC-14</span><span class="chip">CM-02</span></div>
+  </div>
+
+  <div class="decision">
+    <h4>Missing feature</h4>
+    <p class="q">Do we build the operating-plan upload (revenue &amp; MQL targets) now, and if so, what should that template look like?</p>
+    <p class="ctx">The spec always intended this as one manual upload, never a CRM pull — but no upload UI exists. Every "vs. plan" comparison across the metrics below is dead code until this ships: the numbers are there, the target to compare against isn't.</p>
+    <div class="chips"><span class="chip">VC-04</span><span class="chip">VC-06</span><span class="chip">VC-09</span><span class="chip">VC-10</span><span class="chip">VC-13</span><span class="chip">CM-04</span><span class="chip">CM-05</span><span class="chip">CM-08</span></div>
+  </div>
+
+  <div class="decision">
+    <h4>Data quality risk</h4>
+    <p class="q">Should we build a per-org, editable mapping for which QuickBooks accounts count as Sales &amp; Marketing / G&amp;A / Recurring — before onboarding a real (non-test) client?</p>
+    <p class="ctx">Right now this is guessed from account-name keywords. Already found real gaps in testing: an account named "Facebook Ads" wouldn't match the marketing keyword list; "Monthly Plan Revenue" wouldn't match the recurring-revenue list. On a real client's chart of accounts, this risk is much higher than on our test data — and any editable mapping needs version history so an edit never silently rewrites a past quarter's reported numbers.</p>
+    <div class="chips"><span class="chip">VC-04</span><span class="chip">VC-06</span><span class="chip">VC-09</span><span class="chip">VC-10</span><span class="chip">VC-12</span><span class="chip">VC-13</span><span class="chip">CM-07</span></div>
+  </div>
+
+  <div class="decision">
+    <h4>Connector scope</h4>
+    <p class="q">Do we add ad-platform connectors (Google/Meta/LinkedIn) and a HubSpot Campaigns integration, or accept "blended only" as the final answer for per-channel marketing metrics?</p>
+    <p class="ctx">Per-channel CAC and marketing ROI both need real ad spend by channel — a connector family entirely outside HubSpot/Salesforce/QuickBooks. Confirmed the currently-connected HubSpot OAuth scopes don't even include Campaigns access. This is a real scoping decision, not a small fix.</p>
+    <div class="chips"><span class="chip">VC-06</span><span class="chip">CM-07</span></div>
+  </div>
+
+  <div class="decision">
+    <h4>Cross-CRM polish (low urgency)</h4>
+    <p class="q">Worth wiring in Salesforce fields that are already synced but currently unused, to sharpen a few metrics?</p>
+    <p class="ctx">Salesforce's <code>Opportunity.Type</code>, <code>LeadSource</code>, and <code>Account.ParentId</code> are already pulled into the database for other reasons but sit unused by these specific metrics. Using them would add a confirming cross-check, not fix a broken number — nice-to-have, not blocking.</p>
+    <div class="chips"><span class="chip">VC-01</span><span class="chip">VC-03</span><span class="chip">VC-06</span><span class="chip">CM-02</span></div>
+  </div>
+
+  <div class="decision">
+    <h4>Platform limitation</h4>
+    <p class="q">CM-05/CM-06 can never show real numbers on demo/synthetic data — worth testing HubSpot's bulk Import API as a workaround, or accept this as a permanent demo-data limitation?</p>
+    <p class="ctx">Confirmed live (2026-09-12): HubSpot rejects any attempt to backdate <code>createdate</code> on record creation ("read only property; its value cannot be set"). This blocks CM-05 entirely and CM-06 on both providers, on any one-shot seeded dataset — a real, actively-connected client is <em>not</em> affected, since genuine usage naturally accumulates this history over real calendar time. HubSpot's separate Import API is built for migrating historical CRM data and might support backdated property history, but this wasn't tested — unconfirmed whether it fakes a sequence of historical stage changes or just a backdated current state.</p>
+    <div class="chips"><span class="chip">CM-05</span><span class="chip">CM-06</span></div>
+  </div>
+
+  <div class="checklist">
+    <h4 style="font-family:'IBM Plex Mono',monospace; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); margin:0 0 10px;">Pre-launch checklist (not a client decision — an internal verification step)</h4>
+    <ul style="margin:0; padding-left:18px; color:var(--ink-soft);">
+      <li>QuickBooks Balance Sheet, Cash Flow, and Aging report parsing has only been checked against sandbox data — verify against a real, non-sandbox QuickBooks company before the first live client onboarding. Affects CB-05, CB-07, CB-10.</li>
+      <li>One flag on CB-07 (the "conversion below 30% while leverage is high" alert) can structurally never fire — it depends on a leverage metric (CB-01) that's a later-stage build, not part of Stage 1. Worth noting to the client so the gap isn't mistaken for a bug later.</li>
+    </ul>
+  </div>
+
+  <footer>Compiled from <code class="mono">docs/sherpai-metrics-implementation-guide.md</code> and <code class="mono">docs/sherpai-metrics-progress.md</code>, cross-checked against the running backend code. Code-completeness status as of original publish; the Computability check section was tested live against the seeded demo org and updated 2026-09-12.</footer>
+
+</div>

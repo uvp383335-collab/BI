@@ -15,8 +15,8 @@ entries to the gap list, don't delete resolved gaps — mark them done with the 
 
 | ID | Metric | Status | Notes |
 |---|---|---|---|
-| VC-01 | Gross Revenue Retention Rate | **Done (Phase 1)** | Salesforce "why" enrichment (`Opportunity.Type='Churn'`) not built — G-2 |
-| VC-02 | Net Revenue Retention Rate | **Done (Phase 1)** | |
+| VC-01 | Gross Revenue Retention Rate | **Done (Phase 1)** | Salesforce "why" enrichment (`Opportunity.Type='Churn'`) not built — G-2; 90% watch benchmark hardcoded, no per-org override — G-3 |
+| VC-02 | Net Revenue Retention Rate | **Done (Phase 1)** | 90%/100% act-now thresholds hardcoded, no per-org override — G-3 |
 | VC-03 | New-Logo Revenue Growth Rate | **Done (Phase 4)** | Built from the QuickBooks roll-forward alone, not Salesforce `Type='New Business'` — G-20 |
 | VC-04 | COGS % and Mix | **Done (Phase 2)** | Rate/mix decomposition implemented; no peer/plan benchmark (G-14) |
 | VC-06 | CAC & Payback Period | **Done (Phase 2)** | Blended only, no Salesforce channel breakdown (G-16) |
@@ -24,16 +24,16 @@ entries to the gap list, don't delete resolved gaps — mark them done with the 
 | VC-09 | G&A as % of Revenue | **Done (Phase 2)** | Flag never fires — needs peer/plan data (G-14) |
 | VC-10 | EBITDA Margin Trend | **Done (Phase 2)** | Only the "2 quarters shrinking" flag leg fires (G-14) |
 | VC-12 | Recurring Revenue % of Total | **Done (Phase 2)** | Account-name heuristic, not invoice-line cross-checked (G-4, G-13) |
-| VC-13 | Revenue Growth Rate (Recurring vs. Non-Recurring) | **Done (Phase 2)** | Plan-relative flag leg unavailable (G-14) |
+| VC-13 | Revenue Growth Rate (Recurring vs. Non-Recurring) | **Done (Phase 2)** | Plan-relative flag leg unavailable (G-14). YoY leg was `computable:false` until the seed dataset's history was extended (2026-09-12, see below) — code itself was never the problem |
 | VC-14 | LTV:CAC (Whole Base) | **Done (Phase 2)** | "2 quarters running" trend approximated (G-17) |
 | CB-05 | Cash Position & Runway | **Done (Phase 3)** | New daily `CashBalanceSnapshot` table; runway/burn-rate degrade gracefully against sparse (non-daily) sync history — G-15b |
 | CB-07 | Free Cash Flow Conversion | **Done (Phase 3)** | Flag can never fire — needs leverage (CB-01), permanently deferred — G-19 |
 | CB-10 | Cash Conversion Cycle | **Done (Phase 3)** | Report-shape assumptions unverified against a live sandbox — G-18 |
 | CM-02 | Customer Concentration (Top-10 Revenue %) | **Done (Phase 4)** | Groups via QuickBooks `Customer.ParentRef` only, not Salesforce `Account.ParentId` (now synced but unused) — G-21 |
-| CM-03 | Competitive Win Rate | **Done (Phase 7 + Post-Phase-7)** | Both custom-field **and** `OpportunityCompetitor` junction-object modes supported — G-24 resolved |
+| CM-03 | Competitive Win Rate | **Done (Phase 7 + Post-Phase-7)** | Both custom-field **and** `OpportunityCompetitor` junction-object modes supported — G-24 resolved. Was `computable:false` for the seeded org until `Organization.settings.salesforceCompetitorSource` was actually configured (2026-09-12, see below) — a deployment/config step, not a code gap |
 | CM-04 | Pipeline Coverage Ratio | **Partial (Phase 5)** | Numerator (qualified pipeline) computed; ratio structurally blocked — no operating-plan target exists at all (G-14) |
-| CM-05 | Marketing-Sourced Pipeline & Revenue % | **Done (Phase 6)** | HubSpot-only (no Salesforce equivalent) — G-23 |
-| CM-06 | Funnel Conversion Rates | **Done (Phase 5)** | Fixed HubSpot-lifecyclestage-name mapping, not per-org configurable — G-22 |
+| CM-05 | Marketing-Sourced Pipeline & Revenue % | **Done (Phase 6)** | HubSpot-only (no Salesforce equivalent) — G-23. `computable:false` on the seeded org and **cannot be fixed by better seed data** — see G-25 |
+| CM-06 | Funnel Conversion Rates | **Done (Phase 5)** | Fixed HubSpot-lifecyclestage-name mapping, not per-org configurable — G-22. `computable:false` on the seeded org (both providers) for the same reason as CM-05 — see G-25 |
 | CM-07 | Marketing ROI by Channel | **Done (Phase 6)** | Blended only — no per-channel breakdown, ad-spend connector out of MVP scope (G-16b) |
 | CM-08 | Lead Volume vs. Plan (MQL Flow) | **Done (Phase 5 + Post-Phase-7)** | Growth/decline legs fully computed, act-now leg no longer wrongly gated behind the watch leg's two-month streak; plan-vs-actual variance unavailable (G-14) |
 
@@ -539,6 +539,44 @@ two-month streak from a plain one-month drop; watch still only fires on the genu
 to act_now, and a single-month fall with CM-06 healthy still produces no flag (a lone down month alone
 was never a stated trigger). 112 backend tests passing (+2).
 
+### Session fix — seed dataset extended to 26 months; CM-03 org config set; hard platform limit found for CM-05/CM-06 (2026-09-12)
+
+User asked for every metric to be `computable:true` on the seeded demo org, with realistic,
+interrelated data across all three CRMs. A full sweep of all 20 metrics that have real
+calculation code (the other 4 — CB-15/CM-01/CM-04/ER-05 — have no code path that data alone can
+unblock, see G-14 and the deferred list above) found 4 real fails: VC-13, CM-03, CM-05, CM-06
+(both providers).
+
+**VC-13 — fixed.** `computeVC13`'s year-over-year comparison needs a real quarter of QuickBooks
+P&L data from 12 months before the latest closed quarter. The seed dataset (`data.ts`) only ever
+had `MONTH_COUNT = 14` (~13 months) of history — the year-ago quarter it needed genuinely had zero
+seeded transactions, not a bug. Fix: `MONTH_COUNT` raised to 26 (just over 2 years). Every existing
+customer's `startMonth`/`stepMonth`/`churnMonth` was shifted `+12` to land on the exact same real
+calendar dates as before (so nothing that was tuned relative to "now" — VC-03's staggered new-logo
+starts, churn timing, etc. — silently changed meaning), and 4 new long-tenured customers
+(`founding_alliance`, `founding_summit`, `founding_pacific`, `founding_heritage`, all `steady`, no
+churn) were added at the newly-opened earliest months so no quarter across the full window is ever
+empty. Verified after a full wipe + reseed of all three CRMs and a forced resync:
+`computable:true, value:298.7`.
+
+**CM-03 — fixed.** Purely a deployment/config gap, not a code or data gap — `computeCM03` already
+correctly returns `computable:false, blockedOn:'competitor-field-config'` whenever
+`Organization.settings.salesforceCompetitorSource` isn't set, and the seeded org simply never had it
+set. `seedSalesforce.ts` already writes real `OpportunityCompetitor` records for `competitive:true`
+customers — set to `'junction'` (matching that data shape) via `organizationsService.updateOrgSettings`,
+no code change needed. Verified: `computable:true, value:0` (a real computed 0% blended win rate
+against named competitors in the trailing window — an honest number, not a placeholder).
+
+**CM-05 / CM-06 (both providers) — confirmed NOT fixable by seed data, new hard platform constraint
+found — see G-25.** Both need a record's *real calendar-time* creation/stage-entry history (deals
+created in a past month; contacts that entered MQL/SQL in a past month). Live-tested whether HubSpot's
+`createdate` could be set to a backdated value on create — HubSpot rejected it outright:
+`"createdate" is a read only property; its value cannot be set"` (`code: READ_ONLY_VALUE`). Every
+object created via HubSpot's standard real-time Objects API gets `createdate` (and the first entry of
+any property's change history, e.g. `lifecyclestage`) stamped to the actual API-call time, always —
+there is no supported way to backdate this through the endpoints this app's seed scripts use. This
+isn't a gap in the seed data's design; it's a wall in the platform itself.
+
 ---
 
 ## 3. Open gaps (not silently glossed over — pick these up before/while building later metrics)
@@ -547,7 +585,7 @@ was never a stated trigger). 112 backend tests passing (+2).
 |---|---|---|---|
 | G-1 | No monthly/quarterly trend/series endpoint — every metric returns one period at a time (`?period=YYYY-MM`) | User explicitly deferred (2026-08-22). Now cheaper to build than originally scoped: `PLSnapshot` (added later in Phase 2) already stores one row per quarter, so a trend endpoint for the P&L metrics is mostly a read across existing rows, not new data collection | A trend chart (e.g. last 12 months/quarters plotted) |
 | G-2 | VC-01's Salesforce "why" enrichment (`Opportunity.Type='Churn'` or an `Account` churn-date field) not built | PDF says it "can ship second"; this org's Salesforce `Type` picklist has no `Churn` value anyway | Richer "why did retention drop" alert narrative on VC-01 |
-| G-3 | No per-org alert-threshold override store | PDF says every threshold is a firm-adjustable default; MVP hardcodes them | All metrics' flag logic |
+| G-3 | No per-org alert-threshold override store | PDF says every threshold is a firm-adjustable default; MVP hardcodes them | All metrics' flag logic, incl. VC-01's 90% GRR watch benchmark (`GRR_WATCH_BENCHMARK`) and VC-02's 90%/100% NRR thresholds (`NRR_ACT_NOW_THRESHOLD`, plus the literal `100` checks) — all in `metrics.service.ts` |
 | G-4 | Invoice sync stores per-invoice totals only, no line-item/Item/Class detail | VC-04/12 read the P&L report directly instead (see Phase 2 notes), so this stopped being a blocker for those — but the PDF's "double-checked against invoice lines at the customer level" cross-validation for VC-12 still isn't built | A stronger VC-12 (belt-and-suspenders check against Invoice line items) |
 | G-5 | ~~No chart-of-accounts mapping~~ **Partially resolved (Phase 2)** — see G-13 for what's still missing | | |
 | G-6 | ~~No customer dedup/grouping logic~~ **Resolved for CM-02 (Phase 4)** via QuickBooks `Customer.ParentRef` walk-to-root. VC-03 doesn't need dedup at all (it's pure QuickBooks revenue, not a Salesforce "is this account really new" check) | | |
@@ -571,6 +609,7 @@ was never a stated trigger). 112 backend tests passing (+2).
 | G-24 | ~~CM-03 only supported Salesforce's custom-field mode~~ **Resolved (Post-Phase-7, 2026-08-23)** — see "Post-Phase-7 build" below for the full writeup. `Organization.settings.salesforceCompetitorSource` (`'field' \| 'junction'`) now selects between the two, `Deal.competitors: string[]` stores every named competitor from the standard `OpportunityCompetitor` object, and `buildCompetitorStats` credits a win/loss to *each* competitor a multi-competitor deal names | | |
 | G-23 | CM-05/CM-07 are HubSpot-only — `Contact.analyticsSource` has no Salesforce equivalent (Salesforce's `Lead.LeadSource` picklist exists but wasn't scoped into this phase, and the app's Lead→Contact mapping already leaves several HubSpot-only fields unset for Salesforce, see `crm-integrations` skill §4). A Salesforce-connected org sees no CM-05/CM-07 cards at all rather than a `computable:false` placeholder | Wiring a second attribution source was out of Phase 6's stated scope (`hs_analytics_source`/`createdate`, HubSpot only) | A Salesforce equivalent of CM-05/CM-07 sourced from `Lead.LeadSource`/`Opportunity.CreatedDate` (both already resolvable from existing synced fields) |
 | G-22 | CM-04/06/08's funnel-role mapping (qualified-stage cutoff; MQL/SQL lifecycle values) is a fixed code default, not a per-org, user-editable, versioned config — same category as G-13's chart-of-accounts heuristic. A company using **custom** HubSpot lifecycle-stage values (an Enterprise feature) instead of the standard `marketingqualifiedlead`/`salesqualifiedlead` won't match at all, silently returning 0 MQLs/SQLs rather than an error. (~~CM-06's flag comparisons used a single prior cohort/period, not the PDF's "trailing-four-quarter average"~~ **Resolved, Post-Phase-7 (2026-08-23)** — now averages the trailing 4 monthly cohorts; found during manual validation that the single-prior-month comparison was prone to false-firing on ordinary month-to-month noise, same bug shape as VC-07's fix. The "maturation window" is still a flat 2 months for every stage rather than "stage-appropriate" per-stage windows) | Full settings UI + versioned-history store is real scope beyond MVP Phase 5, same reasoning as G-13 | Correctness for companies with customized HubSpot lifecycle stages |
+| G-25 | CM-05 and CM-06 (both providers) are permanently `computable:false` on any **seeded/synthetic** demo org — confirmed via a live test (2026-09-12) that HubSpot's `createdate` property is read-only on create (`READ_ONLY_VALUE`), and the same is true in practice for a property's first change-history entry (e.g. `lifecyclestage`) — both are always stamped to the real API-call time, never backdatable through the standard Objects API. CM-05 needs deals *created* in a real past month; CM-06 needs contacts that *entered* MQL/SQL in a real past month — neither signal can be faked for a one-shot seed run | Not a code or data-modeling gap — a platform constraint on HubSpot's real-time API. A **real, actually-used** client org accumulates this history naturally over time and would not hit this at all; only synthetic/demo data seeded in one batch is affected. HubSpot's bulk Import API is a possible workaround (built for migrating historical data) but wasn't tested — unconfirmed whether it supports backdated property-history sequences rather than just a backdated *current* state | A demo org where CM-05/CM-06 show real numbers instead of `computable:false` — either via the Import API (untested) or by accepting these two stay empty on demo data specifically |
 
 ---
 
