@@ -49,7 +49,7 @@ function notComputable(id: string, period: string, unit: MetricResult['unit']): 
 // VC-04 — Cost of Goods Sold % and Mix
 // ---------------------------------------------------------------------------
 
-export async function computeVC04(orgId: string, period?: string, itemId?: string): Promise<MetricResult> {
+export async function computeVC04(orgId: string, period?: string, itemId?: string, state?: string, viewMode?: string): Promise<MetricResult> {
   const month = period ?? latestClosedMonth()
   const quarterStart = latestClosedQuarterStart(month)
   const prevQuarterStart = shiftMonth(quarterStart, -3)
@@ -137,7 +137,7 @@ export async function computeVC04(orgId: string, period?: string, itemId?: strin
 // VC-09 — G&A as % of Revenue
 // ---------------------------------------------------------------------------
 
-export async function computeVC09(orgId: string, period?: string, itemId?: string): Promise<MetricResult> {
+export async function computeVC09(orgId: string, period?: string, itemId?: string, state?: string, viewMode?: string): Promise<MetricResult> {
   const month = period ?? latestClosedMonth()
   const quarterStart = latestClosedQuarterStart(month)
   const pl = await getQuarterPL(orgId, quarterStart, itemId)
@@ -185,7 +185,7 @@ export function grossMarginFromPL(pl: ParsedProfitAndLoss): number | null {
   return revenue > 0 ? (revenue - cogs) / revenue : null
 }
 
-export async function computeVC10(orgId: string, period?: string, itemId?: string): Promise<MetricResult> {
+export async function computeVC10(orgId: string, period?: string, itemId?: string, state?: string, viewMode?: string): Promise<MetricResult> {
   const month = period ?? latestClosedMonth()
   const quarterStart = latestClosedQuarterStart(month)
   const prevQuarterStart = shiftMonth(quarterStart, -3)
@@ -485,7 +485,7 @@ function growthPct(current: number, prior: number): number | null {
   return prior > 0 ? ((current - prior) / prior) * 100 : null
 }
 
-export async function computeVC13(orgId: string, period?: string, itemId?: string): Promise<MetricResult> {
+export async function computeVC13(orgId: string, period?: string, itemId?: string, state?: string, viewMode?: string): Promise<MetricResult> {
   const month = period ?? latestClosedMonth()
   const quarterStart = latestClosedQuarterStart(month)
   const prevQuarterStart = shiftMonth(quarterStart, -3)
@@ -529,18 +529,23 @@ export async function computeVC13(orgId: string, period?: string, itemId?: strin
   // The plan-relative legs (>10% below plan; misses plan two quarters running) need
   // operating-plan data this MVP doesn't have — see gap G-14.
 
+  // Determine display value and unit based on viewMode
+  const displayValue = viewMode === 'absolute' ? cur.total : totalYoY
+  const displayUnit = viewMode === 'absolute' ? 'usd' : 'percent'
+
   return {
     id: 'VC-13',
     period: quarterStart,
     computable: totalYoY !== null,
-    value: totalYoY !== null ? round1(totalYoY) : null,
-    unit: 'percent',
+    value: totalYoY !== null ? round1(displayValue ?? 0) : null,
+    unit: displayUnit,
     data: {
       totalYoY: totalYoY !== null ? round1(totalYoY) : null,
       recurringYoY: recurringYoY !== null ? round1(recurringYoY) : null,
       nonRecurringYoY: nonRecurringYoY !== null ? round1(nonRecurringYoY) : null,
       totalQoQ: totalQoQ !== null ? round1(totalQoQ) : null,
       recurringQoQ: recurringQoQ !== null ? round1(recurringQoQ) : null,
+      revenue: round1(cur.total),
       benchmarkAvailable: false
     },
     flag,

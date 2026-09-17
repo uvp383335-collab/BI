@@ -47,8 +47,8 @@ export type MetricId =
   | 'cm-07'
   | 'cm-08'
 
-export async function getMetricRequest(id: MetricId, period?: string, provider?: 'hubspot' | 'salesforce', item?: string): Promise<MetricResult> {
-  const res = await httpClient.get<ApiEnvelope<MetricResult>>(`/metrics/${id}`, { params: { period, provider, item } })
+export async function getMetricRequest(id: MetricId, period?: string, provider?: 'hubspot' | 'salesforce', item?: string, state?: string, viewMode?: 'percentage' | 'absolute'): Promise<MetricResult> {
+  const res = await httpClient.get<ApiEnvelope<MetricResult>>(`/metrics/${id}`, { params: { period, provider, item, state, viewMode } })
   return res.data.data
 }
 
@@ -57,6 +57,10 @@ export type TrendMetricId = 'vc-04' | 'vc-09' | 'vc-10' | 'vc-13'
 export interface TrendPoint {
   month: string
   value: number | null
+  // VC-13 (Revenue Growth) additionally includes both metrics so the frontend
+  // can toggle between percentage view mode and absolute revenue view mode.
+  revenue?: number | null
+  revenueGrowthPct?: number | null
 }
 
 export interface MetricTrend {
@@ -66,7 +70,7 @@ export interface MetricTrend {
 }
 
 /** Monthly series from January of `fromYear` (default: current year) through the latest closed month. */
-export async function getMetricTrendRequest(id: TrendMetricId, item?: string, fromYear?: string): Promise<MetricTrend> {
-  const res = await httpClient.get<ApiEnvelope<MetricTrend>>(`/metrics/trend/${id}`, { params: { item, fromYear } })
+export async function getMetricTrendRequest(id: TrendMetricId, item?: string, fromYear?: string, state?: string, viewMode?: 'percentage' | 'absolute'): Promise<MetricTrend> {
+  const res = await httpClient.get<ApiEnvelope<MetricTrend>>(`/metrics/trend/${id}`, { params: { item, fromYear, state, viewMode } })
   return res.data.data
 }

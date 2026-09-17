@@ -16,7 +16,11 @@ export const getMetricQuerySchema = z.object({
   fromYear: z
     .string()
     .regex(/^\d{4}$/, 'fromYear must be "YYYY"')
-    .optional()
+    .optional(),
+  // Only VC-13 (Revenue Growth) reads this — billing state filter for revenue metrics.
+  state: z.string().optional(),
+  // Only VC-13 (Revenue Growth) reads this — view mode for displaying percentage vs. absolute revenue.
+  viewMode: z.enum(['percentage', 'absolute']).optional()
 })
 
 export type GetMetricQuery = z.infer<typeof getMetricQuerySchema>

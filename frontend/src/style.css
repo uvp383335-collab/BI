@@ -174,3 +174,30 @@ body {
 .dashboard-daypicker .rdp-outside {
   opacity: 0.35;
 }
+
+/* Custom scrollbar styling for metric trend charts */
+.metric-trend-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.metric-trend-scroll::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+.metric-trend-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--color-line-strong);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.metric-trend-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-ink-3);
+  background-clip: content-box;
+}
+
+/* Firefox scrollbar styling */
+.metric-trend-scroll {
+  scrollbar-color: var(--color-line-strong) transparent;
+  scrollbar-width: thin;
+}

@@ -29,12 +29,12 @@ function metricHandlerWithProvider(compute: (orgId: string, provider: string, pe
   })
 }
 
-/** VC-04/09/10/13 additionally accept `?item=<quickBooksItemId>` to filter their P&L to a single product/service. */
-function metricHandlerWithItem(compute: (orgId: string, period?: string, itemId?: string) => Promise<unknown>) {
+/** VC-04/09/10/13 additionally accept `?item=<quickBooksItemId>` to filter their P&L to a single product/service, and VC-13 accepts `?state=<state>&viewMode=percentage|absolute` for Revenue Growth specific filters. */
+function metricHandlerWithItem(compute: (orgId: string, period?: string, itemId?: string, state?: string, viewMode?: string) => Promise<unknown>) {
   return asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const orgId = req.auth!.orgId!
-    const { period, item } = req.query as unknown as GetMetricQuery
-    const result = await compute(orgId, period, item)
+    const { period, item, state, viewMode } = req.query as unknown as GetMetricQuery
+    const result = await compute(orgId, period, item, state, viewMode)
     sendSuccess(res, result)
   })
 }
@@ -66,11 +66,11 @@ export const getCM07 = metricHandler(computeCM07)
 export const getMetricTrend = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const orgId = req.auth!.orgId!
   const { id } = req.params
-  const { item, fromYear } = req.query as unknown as GetMetricQuery
+  const { item, fromYear, state, viewMode } = req.query as unknown as GetMetricQuery
   if (!TREND_METRIC_IDS.includes(id as TrendMetricId)) {
     throw AppError.badRequest(`Unsupported trend metric "${id}"`, 'UNSUPPORTED_TREND_METRIC')
   }
-  const result = await computeMetricTrend(orgId, id as TrendMetricId, item, fromYear)
+  const result = await computeMetricTrend(orgId, id as TrendMetricId, item, fromYear, state, viewMode)
   sendSuccess(res, result)
 })
 

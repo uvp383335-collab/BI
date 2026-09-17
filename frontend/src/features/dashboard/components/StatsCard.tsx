@@ -35,10 +35,10 @@ export const StatsCard: React.FC<StatsCardProps> = ({ title, value, valueSuffix,
       <p className="text-xs font-semibold uppercase tracking-wide text-ink-3">{title}</p>
       <div className={ACCENT_ICON[accent]}>{icon}</div>
     </div>
-    <p className="mt-3 text-3xl font-semibold text-ink">
+    <p className="mt-3 text-2xl font-semibold text-ink">
       {value.toLocaleString()}
       {valueSuffix}
     </p>
-    <p className="mt-1 text-xs text-ink-2">{description}</p>
+    <p className="mt-1 text-xs text-ink-3">{description}</p>
   </div>
 )

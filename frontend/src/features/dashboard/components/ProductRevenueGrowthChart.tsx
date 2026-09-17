@@ -48,7 +48,7 @@ export const ProductRevenueGrowthChart: React.FC<ProductRevenueGrowthChartProps>
 
   return (
     <div className="overflow-x-auto">
-      <div style={{ width: chartWidth, height: 280 }}>
+      <div style={{ width: chartWidth, height: 320 }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid stroke="var(--color-line)" vertical={false} />

@@ -5,7 +5,7 @@ import { latestClosedMonth, shiftMonth } from './revenueRollForward.service'
 export const TREND_METRIC_IDS = ['vc-04', 'vc-09', 'vc-10', 'vc-13'] as const
 export type TrendMetricId = (typeof TREND_METRIC_IDS)[number]
 
-const TREND_COMPUTE_FNS: Record<TrendMetricId, (orgId: string, period?: string, itemId?: string) => Promise<MetricResult>> = {
+const TREND_COMPUTE_FNS: Record<TrendMetricId, (orgId: string, period?: string, itemId?: string, state?: string, viewMode?: string) => Promise<MetricResult>> = {
   'vc-04': computeVC04,
   'vc-09': computeVC09,
   'vc-10': computeVC10,
@@ -15,6 +15,10 @@ const TREND_COMPUTE_FNS: Record<TrendMetricId, (orgId: string, period?: string, 
 export interface TrendPoint {
   month: string
   value: number | null
+  // VC-13 (Revenue Growth) additionally includes both metrics so the frontend
+  // can toggle between percentage view mode and absolute revenue view mode.
+  revenue?: number | null
+  revenueGrowthPct?: number | null
 }
 
 export interface MetricTrend {
@@ -34,7 +38,7 @@ export interface MetricTrend {
  * back "not computable" (null) — same honest-numbers rule as everywhere
  * else, not a special case here.
  */
-export async function computeMetricTrend(orgId: string, id: TrendMetricId, itemId?: string, fromYear?: string): Promise<MetricTrend> {
+export async function computeMetricTrend(orgId: string, id: TrendMetricId, itemId?: string, fromYear?: string, state?: string, viewMode?: string): Promise<MetricTrend> {
   const endMonth = latestClosedMonth()
   const year = fromYear ?? endMonth.slice(0, 4)
   const months: string[] = []
@@ -43,11 +47,19 @@ export async function computeMetricTrend(orgId: string, id: TrendMetricId, itemI
   }
 
   const computeFn = TREND_COMPUTE_FNS[id]
-  const results = await Promise.all(months.map((month) => computeFn(orgId, month, itemId)))
+  const results = await Promise.all(months.map((month) => computeFn(orgId, month, itemId, state, viewMode)))
 
   return {
     id,
     unit: results[0]?.unit ?? 'percent',
-    points: months.map((month, index) => ({ month, value: results[index].value }))
+    points: months.map((month, index) => {
+      const point: TrendPoint = { month, value: results[index].value }
+      // VC-13 includes both absolute revenue and percentage growth so frontend can toggle views
+      if (id === 'vc-13') {
+        point.revenueGrowthPct = results[index].value
+        point.revenue = (results[index].data as any)?.revenue ?? null
+      }
+      return point
+    })
   }
 }
