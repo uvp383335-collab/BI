@@ -6,7 +6,8 @@ import {
   sumColumn,
   sumDepreciationAndAmortization,
   sumExpensesByCategory,
-  sumRecurringIncome
+  sumRecurringIncome,
+  buildMonthlyRevenueGrowth
 } from './plParser'
 
 // Shaped after QuickBooks' real ProfitAndLoss report JSON: a recursive
@@ -125,5 +126,45 @@ describe('cross-section D&A rollup (the "D&A hiding inside COGS" case the guide 
   it('sums recurring income', () => {
     const pl = parseProfitAndLoss(FIXTURE_REPORT)
     expect(sumRecurringIncome(pl, 'Total')).toBe(80000)
+  })
+})
+
+describe('buildMonthlyRevenueGrowth', () => {
+  // Shaped after a summarize_column_by=Month report: one Income amount per month column, no "Total" column.
+  const MONTHLY_REPORT: QuickBooksReport = {
+    Columns: {
+      Column: [
+        { ColTitle: '', ColType: 'Account' },
+        { ColTitle: 'Jan 2026', ColType: 'Money' },
+        { ColTitle: 'Feb 2026', ColType: 'Money' },
+        { ColTitle: 'Mar 2026', ColType: 'Money' }
+      ]
+    },
+    Rows: {
+      Row: [
+        {
+          group: 'Income',
+          Rows: { Row: [{ ColData: [{ value: 'Subscription Revenue' }, { value: '10000.00' }, { value: '0.00' }, { value: '12000.00' }] }] },
+          Summary: { ColData: [{ value: 'Total Income' }, { value: '10000.00' }, { value: '0.00' }, { value: '12000.00' }] }
+        }
+      ]
+    }
+  }
+
+  it('computes month-over-month growth %, null for the first month and after a zero-revenue month', () => {
+    const pl = parseProfitAndLoss(MONTHLY_REPORT)
+    const months = buildMonthlyRevenueGrowth(pl)
+
+    expect(months).toEqual([
+      { month: 'Jan 2026', revenue: 10000, revenueGrowthPct: null },
+      { month: 'Feb 2026', revenue: 0, revenueGrowthPct: -100 },
+      // Prior month's revenue was 0 — growth % is null (server.js's own "divide by zero" guard), not Infinity.
+      { month: 'Mar 2026', revenue: 12000, revenueGrowthPct: null }
+    ])
+  })
+
+  it('returns an empty array for a report with no Income section', () => {
+    const pl = parseProfitAndLoss({ Columns: { Column: [{ ColTitle: '', ColType: 'Account' }, { ColTitle: 'Jan 2026', ColType: 'Money' }] }, Rows: { Row: [] } })
+    expect(buildMonthlyRevenueGrowth(pl)).toEqual([{ month: 'Jan 2026', revenue: 0, revenueGrowthPct: null }])
   })
 })

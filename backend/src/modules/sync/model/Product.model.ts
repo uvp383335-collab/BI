@@ -2,10 +2,12 @@ import { Schema, Document, Types, Connection, Model } from 'mongoose'
 
 /**
  * Generic, per-tenant product catalog entry (HubSpot `Product` object;
- * Salesforce `Product2`). Lives in the organization's own tenant database
- * (same pattern as PipelineStageDefinition). Only exists to label
- * `Deal.productIds` in the funnel product-filter dropdown — no pricing or
- * catalog detail is synced.
+ * Salesforce `Product2`; QuickBooks `Item`, sellable types only). Lives in
+ * the organization's own tenant database (same pattern as
+ * PipelineStageDefinition). For HubSpot/Salesforce this only exists to label
+ * `Deal.productIds` in the funnel product-filter dropdown; for QuickBooks it
+ * also backs the per-product filter on the VC-04/09/10/13 P&L trend cards
+ * (see `PLItemSnapshot`) — no pricing or catalog detail is synced either way.
  */
 export interface ProductDocument extends Document {
   _id: Types.ObjectId

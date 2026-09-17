@@ -4,6 +4,7 @@ import { dealRepository } from '../repository/deal.repository'
 import { quickBooksCustomerRepository } from '../repository/quickBooksCustomer.repository'
 import { invoiceRepository } from '../repository/invoice.repository'
 import { plSnapshotRepository } from '../repository/plSnapshot.repository'
+import { plItemSnapshotRepository } from '../repository/plItemSnapshot.repository'
 import { salesforceAccountRepository } from '../repository/salesforceAccount.repository'
 import { cashBalanceSnapshotRepository } from '../repository/cashBalanceSnapshot.repository'
 // Parsing a QuickBooks Report response is P&L-specific interpretation logic
@@ -16,7 +17,7 @@ import { pipelineStageDefinitionRepository, PipelineStageDefinitionInput } from 
 import { productRepository } from '../repository/product.repository'
 import { HubSpotService, HubSpotContact, HubSpotDeal } from '../../integrations/service/hubspot.service'
 import { SalesforceService } from '../../integrations/service/salesforce.service'
-import { QuickBooksService } from '../../integrations/service/quickbooks.service'
+import { QuickBooksService, mapWithConcurrency } from '../../integrations/service/quickbooks.service'
 import * as integrationsService from '../../integrations/service/integrations.service'
 import { integrationsRepository } from '../../integrations/repository/integrations.repository'
 import { organizationsRepository } from '../../organizations/repository/organizations.repository'
@@ -129,7 +130,9 @@ async function executeSyncJob(orgId: string, provider: string, jobId: string, fo
       }
       await syncQuickBooksCustomers(orgId, provider, jobId, accessToken, realmId, since)
       await syncQuickBooksInvoices(orgId, provider, jobId, accessToken, realmId, since)
+      const items = await syncQuickBooksItems(orgId, provider, jobId, accessToken, realmId)
       await syncQuickBooksProfitAndLoss(orgId, provider, jobId, accessToken, realmId)
+      await syncQuickBooksItemProfitAndLoss(orgId, provider, jobId, accessToken, realmId, items)
       await syncQuickBooksCashBalance(orgId, provider, jobId, accessToken, realmId)
     } else {
       await syncPipelineStageDefinitions(orgId, provider, accessToken)
@@ -839,6 +842,118 @@ async function syncQuickBooksProfitAndLoss(
 
   await plSnapshotRepository.upsertMany(orgId, provider, snapshots)
   await syncJobRepository.updateEntityProgress(jobId, 'plSnapshots', { total: quarterStarts.length, status: 'completed' })
+}
+
+// QuickBooks' Reports API only accepts a sellable Item as a report `item`
+// filter — Category/Discount/Payment/Subtotal/Description are rejected.
+// Same set docs/server.js's per-product report filtering uses.
+const SELLABLE_ITEM_TYPES = new Set(['Service', 'Inventory', 'NonInventory', 'Bundle', 'Group'])
+
+/**
+ * Syncs QuickBooks Items (Products/Services), sellable types only — the
+ * label source (via the shared `Product` catalog, `provider: 'quickbooks'`)
+ * for the per-product filter on the VC-04/09/10/13 P&L trend cards. Returns
+ * the synced items so `syncQuickBooksItemProfitAndLoss` doesn't need to
+ * re-fetch them.
+ */
+async function syncQuickBooksItems(
+  orgId: string,
+  provider: string,
+  jobId: string,
+  accessToken: string,
+  realmId: string
+): Promise<{ providerRecordId: string; name: string }[]> {
+  await syncJobRepository.updateEntityProgress(jobId, 'items', { status: 'syncing' })
+  await syncJobRepository.updateProgress(jobId, 92, 'Syncing products & services')
+
+  let startPosition = 1
+  let hasMore = true
+  const items: { providerRecordId: string; name: string }[] = []
+
+  while (hasMore) {
+    const page = await QuickBooksService.getItems(accessToken, realmId, startPosition, QUICKBOOKS_PAGE_SIZE)
+    const sellable = page.records.filter((item) => item.Type && SELLABLE_ITEM_TYPES.has(item.Type))
+    items.push(...sellable.map((item) => ({ providerRecordId: item.Id, name: item.Name || item.Id })))
+
+    hasMore = page.hasMore
+    startPosition += QUICKBOOKS_PAGE_SIZE
+  }
+
+  await productRepository.bulkUpsert(orgId, provider, items)
+  await syncJobRepository.updateEntityProgress(jobId, 'items', { total: items.length, status: 'completed' })
+  return items
+}
+
+/**
+ * Refreshes `PLItemSnapshot` for the same trailing 6 quarters as
+ * `syncQuickBooksProfitAndLoss`, one item-filtered P&L report per
+ * (item, quarter) pair — the data behind the VC-04/09/10/13 product filter.
+ * Concurrency-capped (`mapWithConcurrency`, limit 3) since this is N items ×
+ * 6 report calls on top of the ~30 calls a QuickBooks sync already makes
+ * (crm-integrations skill's explicit "worth watching under real load" gap);
+ * `QuickBooksService.getReport`'s 429 retry/backoff covers the rest. A
+ * single (item, quarter) failure is skipped, not fatal — same
+ * "not computable" honesty rule as the whole-company snapshot, just scoped
+ * to that one row instead of aborting every other item's sync.
+ */
+async function syncQuickBooksItemProfitAndLoss(
+  orgId: string,
+  provider: string,
+  jobId: string,
+  accessToken: string,
+  realmId: string,
+  items: { providerRecordId: string; name: string }[]
+): Promise<void> {
+  await syncJobRepository.updateEntityProgress(jobId, 'plItemSnapshots', { status: 'syncing' })
+  await syncJobRepository.updateProgress(jobId, 94, 'Syncing per-product profit & loss snapshots')
+
+  if (items.length === 0) {
+    await syncJobRepository.updateEntityProgress(jobId, 'plItemSnapshots', { total: 0, status: 'completed' })
+    return
+  }
+
+  const TRAILING_QUARTERS = 6
+  const quarterStarts = Array.from({ length: TRAILING_QUARTERS }, (_, i) => quarterStartMonthsAgo(i))
+  const tasks = items.flatMap((item) => quarterStarts.map((quarterStart) => ({ item, quarterStart })))
+
+  const fetchedAt = new Date()
+  let completed = 0
+
+  const results = await mapWithConcurrency(tasks, 3, async ({ item, quarterStart }) => {
+    const { startDate, endDate } = quarterDateRange(quarterStart)
+    try {
+      const report = await QuickBooksService.getProfitAndLossReport(accessToken, realmId, startDate, endDate, 'Total', item.providerRecordId)
+      const parsed = parseProfitAndLoss(report)
+      completed += 1
+      await syncJobRepository.updateEntityProgress(jobId, 'plItemSnapshots', { synced: completed })
+      return {
+        itemId: item.providerRecordId,
+        quarterStart,
+        startDate,
+        endDate,
+        columns: parsed.columns,
+        income: parsed.income,
+        cogs: parsed.cogs,
+        expenses: parsed.expenses,
+        otherExpenses: parsed.otherExpenses,
+        sectionTotals: parsed.sectionTotals,
+        fetchedAt
+      }
+    } catch (err) {
+      console.error(`Skipping PLItemSnapshot for item ${item.providerRecordId}, quarter ${quarterStart}:`, err)
+      completed += 1
+      await syncJobRepository.updateEntityProgress(jobId, 'plItemSnapshots', { synced: completed })
+      return null
+    }
+  })
+
+  // `fn` above never rejects (it catches internally so one item/quarter's
+  // failure doesn't stop the rest) — every result is 'fulfilled', with a
+  // `null` value standing in for a skipped (item, quarter) pair.
+  const snapshots = results.flatMap((r) => (r.status === 'fulfilled' && r.value ? [r.value] : []))
+
+  await plItemSnapshotRepository.upsertMany(orgId, provider, snapshots)
+  await syncJobRepository.updateEntityProgress(jobId, 'plItemSnapshots', { total: tasks.length, status: 'completed' })
 }
 
 /**

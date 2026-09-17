@@ -2,13 +2,19 @@ import { Router } from 'express'
 import * as metricsController from '../controller/metrics.controller'
 import { requireAuth, requireOrgContext } from '../../../middleware/auth'
 import { validateQuery } from '../../../middleware/validate'
-import { getMetricQuerySchema } from '../validator/metrics.validator'
+import { getMetricQuerySchema, getProductRevenueGrowthQuerySchema } from '../validator/metrics.validator'
 
 export const metricsRouter = Router()
 
 const guards = [requireAuth, requireOrgContext, validateQuery(getMetricQuerySchema)] as const
+const productRevenueGrowthGuards = [requireAuth, requireOrgContext, validateQuery(getProductRevenueGrowthQuerySchema)] as const
 
-metricsRouter.get('/trend/:id', requireAuth, requireOrgContext, metricsController.getMetricTrend)
+metricsRouter.get('/trend/:id', ...guards, metricsController.getMetricTrend)
+
+// Live "Revenue growth by product" section (docs/server.js §5) — not pre-synced, see productRevenueGrowth.service.ts.
+metricsRouter.get('/quickbooks/departments', requireAuth, requireOrgContext, metricsController.getQuickBooksDepartmentsHandler)
+metricsRouter.get('/quickbooks/customer-states', requireAuth, requireOrgContext, metricsController.getQuickBooksCustomerStatesHandler)
+metricsRouter.get('/quickbooks/product-revenue-growth', ...productRevenueGrowthGuards, metricsController.getProductRevenueGrowthHandler)
 
 metricsRouter.get('/vc-01', ...guards, metricsController.getVC01)
 metricsRouter.get('/vc-02', ...guards, metricsController.getVC02)

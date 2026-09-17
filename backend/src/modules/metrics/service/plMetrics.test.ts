@@ -1,4 +1,4 @@
-import { getStoredProfitAndLoss } from './plReport.service'
+import { getStoredProfitAndLoss, getStoredItemProfitAndLoss } from './plReport.service'
 import { ParsedProfitAndLoss } from './plParser'
 import { computeQuarterRollForward, RollForward } from './revenueRollForward.service'
 import { computeVC04, computeVC06, computeVC07, computeVC09, computeVC10, computeVC12, computeVC13, computeVC14 } from './plMetrics.service'
@@ -12,6 +12,7 @@ jest.mock('./revenueRollForward.service', () => {
 // plMetrics.service.ts reads exclusively from PLSnapshot (via getStoredProfitAndLoss) —
 // not a live QuickBooks call — see docs/sherpai-metrics-progress.md gap G-15.
 const mockedGetPL = getStoredProfitAndLoss as jest.Mock
+const mockedGetItemPL = getStoredItemProfitAndLoss as jest.Mock
 const mockedRollForward = computeQuarterRollForward as jest.Mock
 
 function pl(opts: {
@@ -53,6 +54,7 @@ function rollForward(overrides: Partial<RollForward>): RollForward {
 
 beforeEach(() => {
   mockedGetPL.mockReset()
+  mockedGetItemPL.mockReset()
   mockedRollForward.mockReset()
 })
 
@@ -216,6 +218,30 @@ describe('VC-12 / VC-13 — recurring vs. non-recurring revenue', () => {
     const vc13 = await computeVC13('org1', '2026-03')
     expect(vc13.data.totalYoY).toBeCloseTo(8.0, 1) // (10800-10000)/10000
     expect(vc13.data.recurringYoY).toBeCloseTo(10.0, 1) // (8800-8000)/8000
+  })
+})
+
+describe('VC-04/09/10/13 — product filter (itemId) routes to the per-item snapshot', () => {
+  it('reads getStoredItemProfitAndLoss instead of getStoredProfitAndLoss when an itemId is given', async () => {
+    const quarterPl = pl({ income: { Rev: { Total: 10000 } }, cogs: { Cogs: { Total: 4000 } } })
+    mockedGetItemPL.mockResolvedValue(quarterPl)
+
+    const vc04 = await computeVC04('org1', '2026-03', 'item-42')
+
+    expect(vc04.computable).toBe(true)
+    expect(mockedGetItemPL).toHaveBeenCalledWith('org1', 'quickbooks', expect.any(String), 'item-42')
+    expect(mockedGetPL).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the whole-company snapshot when no itemId is given', async () => {
+    const quarterPl = pl({ income: { Rev: { Total: 10000 } }, cogs: { Cogs: { Total: 4000 } } })
+    mockedGetPL.mockResolvedValue(quarterPl)
+
+    const vc04 = await computeVC04('org1', '2026-03')
+
+    expect(vc04.computable).toBe(true)
+    expect(mockedGetPL).toHaveBeenCalled()
+    expect(mockedGetItemPL).not.toHaveBeenCalled()
   })
 })
 

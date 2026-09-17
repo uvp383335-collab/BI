@@ -2,10 +2,12 @@ import { getValidAccessToken } from '../../integrations/service/integrations.ser
 import { integrationsRepository } from '../../integrations/repository/integrations.repository'
 import { QuickBooksService } from '../../integrations/service/quickbooks.service'
 import { plSnapshotRepository } from '../../sync/repository/plSnapshot.repository'
+import { plItemSnapshotRepository } from '../../sync/repository/plItemSnapshot.repository'
 import { AppError } from '../../../shared/utils/AppError'
 import { parseProfitAndLoss, ParsedProfitAndLoss } from './plParser'
 
-async function getQuickBooksAuth(orgId: string): Promise<{ accessToken: string; realmId: string }> {
+/** Exported for reuse by productRevenueGrowth.service.ts — the other module that needs a QuickBooks accessToken/realmId. */
+export async function getQuickBooksAuth(orgId: string): Promise<{ accessToken: string; realmId: string }> {
   const accessToken = await getValidAccessToken(orgId, 'quickbooks')
   const integration = await integrationsRepository.findByOrgAndProvider(orgId, 'quickbooks')
   if (!integration?.accountId) {
@@ -76,5 +78,25 @@ export async function getStoredProfitAndLoss(orgId: string, provider: string, qu
     operatingCashFlow: snapshot.operatingCashFlow,
     capEx: snapshot.capEx,
     netFixedAssets: snapshot.netFixedAssets
+  }
+}
+
+/**
+ * Reads one quarter's Item-filtered financial snapshot out of
+ * `PLItemSnapshot` (populated by the per-item sync, `syncQuickBooksItemProfitAndLoss`)
+ * — `null` if that (item, quarter) combination hasn't been synced yet.
+ * Sibling to `getStoredProfitAndLoss` above; VC-04/09/10/13 call this instead
+ * when a caller passes an `itemId`.
+ */
+export async function getStoredItemProfitAndLoss(orgId: string, provider: string, quarterStart: string, itemId: string): Promise<ParsedProfitAndLoss | null> {
+  const snapshot = await plItemSnapshotRepository.findByQuarterAndItem(orgId, provider, quarterStart, itemId)
+  if (!snapshot) return null
+  return {
+    columns: snapshot.columns,
+    income: snapshot.income,
+    cogs: snapshot.cogs,
+    expenses: snapshot.expenses,
+    otherExpenses: snapshot.otherExpenses,
+    sectionTotals: snapshot.sectionTotals as Record<string, Record<string, number>>
   }
 }

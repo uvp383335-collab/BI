@@ -1,5 +1,5 @@
 import { MetricFlag, MetricResult } from '../metrics.types'
-import { getStoredProfitAndLoss } from './plReport.service'
+import { getStoredProfitAndLoss, getStoredItemProfitAndLoss } from './plReport.service'
 import { ParsedProfitAndLoss, sumColumn, sumDepreciationAndAmortization, sumExpensesByCategory, sumRecurringIncome } from './plParser'
 import { computeQuarterRollForward, latestClosedMonth, latestClosedQuarterStart, shiftMonth } from './revenueRollForward.service'
 
@@ -35,7 +35,9 @@ const QUICKBOOKS = 'quickbooks'
 /** A quarter with no synced snapshot behaves like an empty P&L for comparison purposes — every ratio guarded by `>0` naturally falls back to null instead of computing against a fake zero. */
 const EMPTY_PL: ParsedProfitAndLoss = { columns: ['Total'], income: [], cogs: [], expenses: [], otherExpenses: [], sectionTotals: {} }
 
-async function getQuarterPL(orgId: string, quarterStart: string): Promise<ParsedProfitAndLoss | null> {
+/** `itemId` reads the per-product snapshot (VC-04/09/10/13's product filter) instead of the whole-company one. */
+async function getQuarterPL(orgId: string, quarterStart: string, itemId?: string): Promise<ParsedProfitAndLoss | null> {
+  if (itemId) return getStoredItemProfitAndLoss(orgId, QUICKBOOKS, quarterStart, itemId)
   return getStoredProfitAndLoss(orgId, QUICKBOOKS, quarterStart)
 }
 
@@ -47,12 +49,12 @@ function notComputable(id: string, period: string, unit: MetricResult['unit']): 
 // VC-04 — Cost of Goods Sold % and Mix
 // ---------------------------------------------------------------------------
 
-export async function computeVC04(orgId: string, period?: string): Promise<MetricResult> {
+export async function computeVC04(orgId: string, period?: string, itemId?: string): Promise<MetricResult> {
   const month = period ?? latestClosedMonth()
   const quarterStart = latestClosedQuarterStart(month)
   const prevQuarterStart = shiftMonth(quarterStart, -3)
 
-  const [currentOrNull, previousOrNull] = await Promise.all([getQuarterPL(orgId, quarterStart), getQuarterPL(orgId, prevQuarterStart)])
+  const [currentOrNull, previousOrNull] = await Promise.all([getQuarterPL(orgId, quarterStart, itemId), getQuarterPL(orgId, prevQuarterStart, itemId)])
   if (!currentOrNull) return notComputable('VC-04', quarterStart, 'percent')
   const current = currentOrNull
   const previous = previousOrNull ?? EMPTY_PL
@@ -135,10 +137,10 @@ export async function computeVC04(orgId: string, period?: string): Promise<Metri
 // VC-09 — G&A as % of Revenue
 // ---------------------------------------------------------------------------
 
-export async function computeVC09(orgId: string, period?: string): Promise<MetricResult> {
+export async function computeVC09(orgId: string, period?: string, itemId?: string): Promise<MetricResult> {
   const month = period ?? latestClosedMonth()
   const quarterStart = latestClosedQuarterStart(month)
-  const pl = await getQuarterPL(orgId, quarterStart)
+  const pl = await getQuarterPL(orgId, quarterStart, itemId)
   if (!pl) return notComputable('VC-09', quarterStart, 'percent')
 
   const revenue = sumColumn(pl.income, 'Total')
@@ -183,16 +185,16 @@ export function grossMarginFromPL(pl: ParsedProfitAndLoss): number | null {
   return revenue > 0 ? (revenue - cogs) / revenue : null
 }
 
-export async function computeVC10(orgId: string, period?: string): Promise<MetricResult> {
+export async function computeVC10(orgId: string, period?: string, itemId?: string): Promise<MetricResult> {
   const month = period ?? latestClosedMonth()
   const quarterStart = latestClosedQuarterStart(month)
   const prevQuarterStart = shiftMonth(quarterStart, -3)
   const prev2QuarterStart = shiftMonth(quarterStart, -6)
 
   const [plOrNull, prevPlOrNull, prev2PlOrNull] = await Promise.all([
-    getQuarterPL(orgId, quarterStart),
-    getQuarterPL(orgId, prevQuarterStart),
-    getQuarterPL(orgId, prev2QuarterStart)
+    getQuarterPL(orgId, quarterStart, itemId),
+    getQuarterPL(orgId, prevQuarterStart, itemId),
+    getQuarterPL(orgId, prev2QuarterStart, itemId)
   ])
   if (!plOrNull) return notComputable('VC-10', quarterStart, 'percent')
 
@@ -483,16 +485,16 @@ function growthPct(current: number, prior: number): number | null {
   return prior > 0 ? ((current - prior) / prior) * 100 : null
 }
 
-export async function computeVC13(orgId: string, period?: string): Promise<MetricResult> {
+export async function computeVC13(orgId: string, period?: string, itemId?: string): Promise<MetricResult> {
   const month = period ?? latestClosedMonth()
   const quarterStart = latestClosedQuarterStart(month)
   const prevQuarterStart = shiftMonth(quarterStart, -3)
   const yearAgoQuarterStart = shiftMonth(quarterStart, -12)
 
   const [plOrNull, prevPlOrNull, yearAgoPlOrNull] = await Promise.all([
-    getQuarterPL(orgId, quarterStart),
-    getQuarterPL(orgId, prevQuarterStart),
-    getQuarterPL(orgId, yearAgoQuarterStart)
+    getQuarterPL(orgId, quarterStart, itemId),
+    getQuarterPL(orgId, prevQuarterStart, itemId),
+    getQuarterPL(orgId, yearAgoQuarterStart, itemId)
   ])
   if (!plOrNull) return notComputable('VC-13', quarterStart, 'percent')
 

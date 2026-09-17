@@ -33,6 +33,8 @@ import { MetricCard } from '../components/MetricCard'
 import { SyncProgressBanner } from '../components/SyncProgressBanner'
 import { FunnelChart } from '../components/FunnelChart'
 import { MetricTrendChart } from '../components/MetricTrendChart'
+import { ProductRevenueGrowthChart } from '../components/ProductRevenueGrowthChart'
+import { useQuickBooksDepartments, useQuickBooksCustomerStates, useProductRevenueGrowth } from '../hooks/useProductRevenueGrowth'
 import { DateRangeFilter } from '../components/DateRangeFilter'
 import { Banner } from '../../../shared/components/Banner'
 import { AppShell } from '../../../widgets/AppShell'
@@ -133,6 +135,12 @@ export const CrmDashboardPage: React.FC = () => {
   const [salesforcePipelineFilter, setSalesforcePipelineFilter] = useState('')
   const [hubspotProductFilter, setHubspotProductFilter] = useState('')
   const [salesforceProductFilter, setSalesforceProductFilter] = useState('')
+  const [quickbooksProductFilter, setQuickbooksProductFilter] = useState('')
+  const [quickbooksFromYear, setQuickbooksFromYear] = useState('2018')
+  const [quickbooksLocationFilter, setQuickbooksLocationFilter] = useState('')
+  const [quickbooksStateFilter, setQuickbooksStateFilter] = useState('')
+  const [quickbooksRevenueViewMode, setQuickbooksRevenueViewMode] = useState<'percentage' | 'absolute'>('percentage')
+  const [quickbooksRevenueProductFilter, setQuickbooksRevenueProductFilter] = useState('')
   const [hubspotFromDate, setHubspotFromDate] = useState('')
   const [hubspotToDate, setHubspotToDate] = useState('')
   const [salesforceFromDate, setSalesforceFromDate] = useState('')
@@ -213,19 +221,134 @@ export const CrmDashboardPage: React.FC = () => {
   const combinedDeals = (hubspotCounts.data?.deals ?? 0) + (salesforceCounts.data?.deals ?? 0)
 
   const quickbooksMetricsEnabled = isQuickbooksVisible && isQuickbooksSettled
+  const { data: quickbooksProducts } = useProducts('quickbooks', quickbooksMetricsEnabled)
+  const quickbooksItemFilter = quickbooksProductFilter || undefined
+  // Guards against sending a partial/invalid year while the user is still typing —
+  // the backend rejects anything that isn't exactly 4 digits (metrics.validator.ts).
+  const quickbooksFromYearParam = /^\d{4}$/.test(quickbooksFromYear) ? quickbooksFromYear : undefined
+  const quickbooksProductName = quickbooksProducts?.find((p) => p.id === quickbooksProductFilter)?.name
+  const quickbooksTitleSuffix = quickbooksProductName ? ` — ${quickbooksProductName}` : ''
+  const { data: quickbooksDepartments } = useQuickBooksDepartments(quickbooksMetricsEnabled)
+  const { data: quickbooksCustomerStates } = useQuickBooksCustomerStates(quickbooksMetricsEnabled)
+  const productRevenueGrowth = useProductRevenueGrowth()
+  const handleLoadProductRevenueGrowth = () => {
+    productRevenueGrowth.mutate(
+      { fromYear: quickbooksFromYearParam, department: quickbooksLocationFilter || undefined, state: quickbooksStateFilter || undefined },
+      { onSuccess: () => setQuickbooksRevenueProductFilter('') }
+    )
+  }
+
+  // "Revenue growth by product" (docs/server.js §5) — lives inside VC-13's own card
+  // (below its YoY trend), not a separate card, per-product/location/billing-state
+  // filters plus the percentage/absolute view toggle.
+  const productRevenueGrowthSection = (
+    <div className="mt-4 border-t border-line pt-3">
+      <p className="text-xs font-semibold text-ink">Revenue growth by product</p>
+      <p className="mt-0.5 text-xs text-ink-3">Month-over-month, one product at a time or all together — uses the "From year" setting above.</p>
+
+      <div className="mt-2 flex flex-col gap-2">
+        <button
+          type="button"
+          className="btn-primary w-auto self-start px-3 py-1.5 text-xs"
+          onClick={handleLoadProductRevenueGrowth}
+          disabled={productRevenueGrowth.isPending}
+        >
+          {productRevenueGrowth.isPending ? 'Loading…' : 'Load Product Revenue Growth'}
+        </button>
+
+        <div className="flex flex-wrap gap-2">
+          <select
+            className="form-input-dark w-auto text-xs"
+            value={quickbooksRevenueProductFilter}
+            onChange={(e) => setQuickbooksRevenueProductFilter(e.target.value)}
+            disabled={!productRevenueGrowth.data?.products.length}
+            aria-label="Product"
+          >
+            <option value="">All products</option>
+            {(productRevenueGrowth.data?.products ?? []).map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.name}
+              </option>
+            ))}
+          </select>
+
+          {quickbooksDepartments && quickbooksDepartments.length > 0 && (
+            <select className="form-input-dark w-auto text-xs" value={quickbooksLocationFilter} onChange={(e) => setQuickbooksLocationFilter(e.target.value)} aria-label="Location">
+              <option value="">All locations</option>
+              {quickbooksDepartments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {quickbooksCustomerStates && quickbooksCustomerStates.length > 0 && (
+            <select className="form-input-dark w-auto text-xs" value={quickbooksStateFilter} onChange={(e) => setQuickbooksStateFilter(e.target.value)} aria-label="Billing state">
+              <option value="">All states</option>
+              {quickbooksCustomerStates.map((state) => (
+                <option key={state} value={state}>
+                  {state}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 text-xs text-ink-2">
+          <label className="flex items-center gap-1.5">
+            <input type="radio" name="quickbooksRevenueViewMode" checked={quickbooksRevenueViewMode === 'percentage'} onChange={() => setQuickbooksRevenueViewMode('percentage')} />
+            Percentage
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input type="radio" name="quickbooksRevenueViewMode" checked={quickbooksRevenueViewMode === 'absolute'} onChange={() => setQuickbooksRevenueViewMode('absolute')} />
+            Absolute revenue
+          </label>
+        </div>
+      </div>
+
+      <p className="mt-2 text-xs text-ink-3">
+        {productRevenueGrowth.isPending
+          ? 'Loading revenue growth per product... this runs one report per product and can take a while.'
+          : productRevenueGrowth.isError
+            ? 'Could not load product revenue growth.'
+            : productRevenueGrowth.data
+              ? productRevenueGrowth.data.message ??
+                `${productRevenueGrowth.data.products.length} product(s) loaded.${
+                  productRevenueGrowth.data.failedProducts.length
+                    ? ` ${productRevenueGrowth.data.failedProducts.length} product(s) skipped: ${productRevenueGrowth.data.failedProducts
+                        .map((p) => `${p.name} (${p.message})`)
+                        .join('; ')}`
+                    : ''
+                }`
+              : ''}
+      </p>
+
+      {productRevenueGrowth.data && productRevenueGrowth.data.products.length > 0 && (
+        <div className="mt-2">
+          <ProductRevenueGrowthChart
+            products={productRevenueGrowth.data.products}
+            selectedProductId={quickbooksRevenueProductFilter}
+            viewMode={quickbooksRevenueViewMode}
+          />
+        </div>
+      )}
+    </div>
+  )
   const { data: vc01, isLoading: isVc01Loading } = useMetric('vc-01', quickbooksMetricsEnabled)
   const { data: vc02, isLoading: isVc02Loading } = useMetric('vc-02', quickbooksMetricsEnabled)
   const { data: vc03, isLoading: isVc03Loading } = useMetric('vc-03', quickbooksMetricsEnabled)
-  const { data: vc04, isLoading: isVc04Loading } = useMetric('vc-04', quickbooksMetricsEnabled)
+  const { data: vc04, isLoading: isVc04Loading } = useMetric('vc-04', quickbooksMetricsEnabled, undefined, quickbooksItemFilter)
   const { data: vc06, isLoading: isVc06Loading } = useMetric('vc-06', quickbooksMetricsEnabled)
   const { data: vc07, isLoading: isVc07Loading } = useMetric('vc-07', quickbooksMetricsEnabled)
-  const { data: vc09, isLoading: isVc09Loading } = useMetric('vc-09', quickbooksMetricsEnabled)
-  const { data: vc10, isLoading: isVc10Loading } = useMetric('vc-10', quickbooksMetricsEnabled)
-  const { data: vc04Trend, isLoading: isVc04TrendLoading } = useMetricTrend('vc-04', quickbooksMetricsEnabled)
-  const { data: vc09Trend, isLoading: isVc09TrendLoading } = useMetricTrend('vc-09', quickbooksMetricsEnabled)
-  const { data: vc10Trend, isLoading: isVc10TrendLoading } = useMetricTrend('vc-10', quickbooksMetricsEnabled)
+  const { data: vc09, isLoading: isVc09Loading } = useMetric('vc-09', quickbooksMetricsEnabled, undefined, quickbooksItemFilter)
+  const { data: vc10, isLoading: isVc10Loading } = useMetric('vc-10', quickbooksMetricsEnabled, undefined, quickbooksItemFilter)
+  const { data: vc04Trend, isLoading: isVc04TrendLoading } = useMetricTrend('vc-04', quickbooksMetricsEnabled, quickbooksItemFilter, quickbooksFromYearParam)
+  const { data: vc09Trend, isLoading: isVc09TrendLoading } = useMetricTrend('vc-09', quickbooksMetricsEnabled, quickbooksItemFilter, quickbooksFromYearParam)
+  const { data: vc10Trend, isLoading: isVc10TrendLoading } = useMetricTrend('vc-10', quickbooksMetricsEnabled, quickbooksItemFilter, quickbooksFromYearParam)
   const { data: vc12, isLoading: isVc12Loading } = useMetric('vc-12', quickbooksMetricsEnabled)
-  const { data: vc13, isLoading: isVc13Loading } = useMetric('vc-13', quickbooksMetricsEnabled)
+  const { data: vc13, isLoading: isVc13Loading } = useMetric('vc-13', quickbooksMetricsEnabled, undefined, quickbooksItemFilter)
+  const { data: vc13Trend, isLoading: isVc13TrendLoading } = useMetricTrend('vc-13', quickbooksMetricsEnabled, quickbooksItemFilter, quickbooksFromYearParam)
   const { data: vc14, isLoading: isVc14Loading } = useMetric('vc-14', quickbooksMetricsEnabled)
   const { data: cb05, isLoading: isCb05Loading } = useMetric('cb-05', quickbooksMetricsEnabled)
   const { data: cb07, isLoading: isCb07Loading } = useMetric('cb-07', quickbooksMetricsEnabled)
@@ -455,6 +578,39 @@ export const CrmDashboardPage: React.FC = () => {
             </div>
           )}
 
+          {isQuickbooksVisible && (
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <label className="flex items-center gap-2 text-sm text-ink-2">
+                From year
+                <input
+                  type="number"
+                  min={2000}
+                  max={2100}
+                  step={1}
+                  className="form-input-dark w-24"
+                  value={quickbooksFromYear}
+                  onChange={(e) => setQuickbooksFromYear(e.target.value)}
+                  aria-label="Trend charts start year"
+                />
+              </label>
+              {quickbooksProducts && quickbooksProducts.length > 0 && (
+                <select
+                  className="form-input-dark w-auto"
+                  value={quickbooksProductFilter}
+                  onChange={(e) => setQuickbooksProductFilter(e.target.value)}
+                  aria-label="Filter COGS %, G&A %, EBITDA margin %, and Revenue growth % by product"
+                >
+                  <option value="">All products</option>
+                  {quickbooksProducts.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {isQuickbooksVisible && (
               <>
@@ -463,7 +619,7 @@ export const CrmDashboardPage: React.FC = () => {
                 <MetricCard id="VC-03" title="New-Logo Revenue Growth" description="Growth of revenue from brand-new customers" icon={<Rocket className="h-5 w-5" />} metric={vc03} isLoading={isVc03Loading} />
                 <MetricCard
                   id="VC-04"
-                  title="COGS %"
+                  title={`COGS %${quickbooksTitleSuffix}`}
                   description="Direct delivery cost as a share of revenue"
                   icon={<PieChart className="h-5 w-5" />}
                   metric={vc04}
@@ -473,7 +629,7 @@ export const CrmDashboardPage: React.FC = () => {
                 />
                 <MetricCard
                   id="VC-09"
-                  title="G&A % of Revenue"
+                  title={`G&A % of Revenue${quickbooksTitleSuffix}`}
                   description="Back-office cost as a share of revenue"
                   icon={<Wallet className="h-5 w-5" />}
                   metric={vc09}
@@ -483,7 +639,7 @@ export const CrmDashboardPage: React.FC = () => {
                 />
                 <MetricCard
                   id="VC-10"
-                  title="EBITDA Margin"
+                  title={`EBITDA Margin${quickbooksTitleSuffix}`}
                   description="EBITDA as a share of revenue"
                   icon={<BarChart3 className="h-5 w-5" />}
                   metric={vc10}
@@ -510,7 +666,21 @@ export const CrmDashboardPage: React.FC = () => {
                 <MetricCard id="VC-07" title="LTV:CAC (New)" description="Lifetime value vs. acquisition cost, new customers" icon={<Gauge className="h-5 w-5" />} metric={vc07} isLoading={isVc07Loading} />
                 <MetricCard id="VC-14" title="LTV:CAC (Whole Base)" description="Lifetime value vs. acquisition cost, entire active base" icon={<Gauge className="h-5 w-5" />} metric={vc14} isLoading={isVc14Loading} />
                 <MetricCard id="VC-12" title="Recurring Revenue %" description="Share of revenue that's contractually recurring" icon={<Repeat className="h-5 w-5" />} metric={vc12} isLoading={isVc12Loading} />
-                <MetricCard id="VC-13" title="Revenue Growth (YoY)" description="Total revenue growth, recurring vs. non-recurring" icon={<LineChart className="h-5 w-5" />} metric={vc13} isLoading={isVc13Loading} />
+                <MetricCard
+                  id="VC-13"
+                  title={`Revenue Growth (YoY)${quickbooksTitleSuffix}`}
+                  description="Total revenue growth, recurring vs. non-recurring"
+                  icon={<LineChart className="h-5 w-5" />}
+                  metric={vc13}
+                  isLoading={isVc13Loading}
+                  trend={
+                    <>
+                      <MetricTrendChart embedded title="Revenue Growth %" description="" color="var(--color-success)" points={vc13Trend?.points ?? []} isLoading={isVc13TrendLoading} />
+                      {productRevenueGrowthSection}
+                    </>
+                  }
+                  trendPoints={vc13Trend?.points}
+                />
                 <MetricCard id="CB-05" title="Cash & Runway" description="Unrestricted cash on hand and months of runway" icon={<Banknote className="h-5 w-5" />} metric={cb05} isLoading={isCb05Loading} />
                 <MetricCard id="CB-07" title="FCF Conversion" description="Share of EBITDA that converts to free cash flow" icon={<Droplets className="h-5 w-5" />} metric={cb07} isLoading={isCb07Loading} />
                 <MetricCard id="CB-10" title="Cash Conversion Cycle" description="Days cash is tied up in the operating cycle" icon={<RefreshCw className="h-5 w-5" />} metric={cb10} isLoading={isCb10Loading} />

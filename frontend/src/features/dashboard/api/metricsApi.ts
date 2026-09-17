@@ -47,12 +47,12 @@ export type MetricId =
   | 'cm-07'
   | 'cm-08'
 
-export async function getMetricRequest(id: MetricId, period?: string, provider?: 'hubspot' | 'salesforce'): Promise<MetricResult> {
-  const res = await httpClient.get<ApiEnvelope<MetricResult>>(`/metrics/${id}`, { params: { period, provider } })
+export async function getMetricRequest(id: MetricId, period?: string, provider?: 'hubspot' | 'salesforce', item?: string): Promise<MetricResult> {
+  const res = await httpClient.get<ApiEnvelope<MetricResult>>(`/metrics/${id}`, { params: { period, provider, item } })
   return res.data.data
 }
 
-export type TrendMetricId = 'vc-04' | 'vc-09' | 'vc-10'
+export type TrendMetricId = 'vc-04' | 'vc-09' | 'vc-10' | 'vc-13'
 
 export interface TrendPoint {
   month: string
@@ -65,8 +65,8 @@ export interface MetricTrend {
   points: TrendPoint[]
 }
 
-/** Monthly series from January of the current year through the latest closed month. */
-export async function getMetricTrendRequest(id: TrendMetricId): Promise<MetricTrend> {
-  const res = await httpClient.get<ApiEnvelope<MetricTrend>>(`/metrics/trend/${id}`)
+/** Monthly series from January of `fromYear` (default: current year) through the latest closed month. */
+export async function getMetricTrendRequest(id: TrendMetricId, item?: string, fromYear?: string): Promise<MetricTrend> {
+  const res = await httpClient.get<ApiEnvelope<MetricTrend>>(`/metrics/trend/${id}`, { params: { item, fromYear } })
   return res.data.data
 }

@@ -7,7 +7,8 @@ import { computeVC04, computeVC06, computeVC07, computeVC09, computeVC10, comput
 import { computeCB05, computeCB07, computeCB10 } from '../service/cbMetrics.service'
 import { computeCM02, computeCM03, computeCM04, computeCM05, computeCM06, computeCM07, computeCM08 } from '../service/cmMetrics.service'
 import { computeMetricTrend, TREND_METRIC_IDS, TrendMetricId } from '../service/metricsTrend.service'
-import { GetMetricQuery } from '../validator/metrics.validator'
+import { getProductRevenueGrowth, getQuickBooksDepartments, getQuickBooksCustomerStates } from '../service/productRevenueGrowth.service'
+import { GetMetricQuery, GetProductRevenueGrowthQuery } from '../validator/metrics.validator'
 
 function metricHandler(compute: (orgId: string, period?: string) => Promise<unknown>) {
   return asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -28,16 +29,26 @@ function metricHandlerWithProvider(compute: (orgId: string, provider: string, pe
   })
 }
 
+/** VC-04/09/10/13 additionally accept `?item=<quickBooksItemId>` to filter their P&L to a single product/service. */
+function metricHandlerWithItem(compute: (orgId: string, period?: string, itemId?: string) => Promise<unknown>) {
+  return asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const orgId = req.auth!.orgId!
+    const { period, item } = req.query as unknown as GetMetricQuery
+    const result = await compute(orgId, period, item)
+    sendSuccess(res, result)
+  })
+}
+
 export const getVC01 = metricHandler(computeVC01)
 export const getVC02 = metricHandler(computeVC02)
 export const getVC03 = metricHandler(computeVC03)
-export const getVC04 = metricHandler(computeVC04)
+export const getVC04 = metricHandlerWithItem(computeVC04)
 export const getVC06 = metricHandler(computeVC06)
 export const getVC07 = metricHandler(computeVC07)
-export const getVC09 = metricHandler(computeVC09)
-export const getVC10 = metricHandler(computeVC10)
+export const getVC09 = metricHandlerWithItem(computeVC09)
+export const getVC10 = metricHandlerWithItem(computeVC10)
 export const getVC12 = metricHandler(computeVC12)
-export const getVC13 = metricHandler(computeVC13)
+export const getVC13 = metricHandlerWithItem(computeVC13)
 export const getVC14 = metricHandler(computeVC14)
 
 // CB-05 is checked daily and has no meaningful `?period=` (it's always "as of the latest sync").
@@ -55,9 +66,32 @@ export const getCM07 = metricHandler(computeCM07)
 export const getMetricTrend = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const orgId = req.auth!.orgId!
   const { id } = req.params
+  const { item, fromYear } = req.query as unknown as GetMetricQuery
   if (!TREND_METRIC_IDS.includes(id as TrendMetricId)) {
     throw AppError.badRequest(`Unsupported trend metric "${id}"`, 'UNSUPPORTED_TREND_METRIC')
   }
-  const result = await computeMetricTrend(orgId, id as TrendMetricId)
+  const result = await computeMetricTrend(orgId, id as TrendMetricId, item, fromYear)
+  sendSuccess(res, result)
+})
+
+/** Location filter dropdown's contents for "Revenue growth by product" (docs/server.js §5). */
+export const getQuickBooksDepartmentsHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const result = await getQuickBooksDepartments(orgId)
+  sendSuccess(res, result)
+})
+
+/** Billing-state filter dropdown's contents for "Revenue growth by product" (docs/server.js §5). */
+export const getQuickBooksCustomerStatesHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const result = await getQuickBooksCustomerStates(orgId)
+  sendSuccess(res, result)
+})
+
+/** Live, on-demand month-over-month revenue growth per product (docs/server.js §5) — not pre-synced, see productRevenueGrowth.service.ts. */
+export const getProductRevenueGrowthHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { fromYear, department, state } = req.query as unknown as GetProductRevenueGrowthQuery
+  const result = await getProductRevenueGrowth(orgId, { fromYear, department, state })
   sendSuccess(res, result)
 })

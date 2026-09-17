@@ -134,3 +134,30 @@ export function sumExpensesByCategory(pl: ParsedProfitAndLoss, category: Expense
 export function sumRecurringIncome(pl: ParsedProfitAndLoss, column: string): number {
   return pl.income.filter((item) => isRecurringIncomeAccount(item.account)).reduce((sum, item) => sum + (item.amounts[column] ?? 0), 0)
 }
+
+export interface MonthlyRevenueGrowthPoint {
+  month: string
+  revenue: number
+  /** null for the first column (no prior month to compare) or when the prior month's revenue was 0. */
+  revenueGrowthPct: number | null
+}
+
+/**
+ * Turns a `summarize_column_by=Month` Profit & Loss report into one point
+ * per month: revenue and its month-over-month growth %. Backs the live
+ * "Revenue growth by product" section (productRevenueGrowth.service.ts) —
+ * mirrors docs/server.js's `buildMonthlyMetrics` revenue/revenueGrowthPct
+ * calculation, reusing `sectionTotals.Income` (each report column's total
+ * income) rather than re-deriving it from the income line items.
+ */
+export function buildMonthlyRevenueGrowth(pl: ParsedProfitAndLoss): MonthlyRevenueGrowthPoint[] {
+  const incomeByColumn = pl.sectionTotals.Income ?? {}
+  let previousRevenue: number | null = null
+
+  return pl.columns.map((month) => {
+    const revenue = incomeByColumn[month] ?? 0
+    const revenueGrowthPct = previousRevenue === null || previousRevenue === 0 ? null : ((revenue - previousRevenue) / Math.abs(previousRevenue)) * 100
+    previousRevenue = revenue
+    return { month, revenue, revenueGrowthPct }
+  })
+}

@@ -1,7 +1,7 @@
 import { SyncJobModel, SyncJobDocument } from '../model/SyncJob.model'
 import { Types } from 'mongoose'
 
-export type EntityKey = 'contacts' | 'deals' | 'customers' | 'invoices' | 'plSnapshots' | 'cashBalance' | 'accounts'
+export type EntityKey = 'contacts' | 'deals' | 'customers' | 'invoices' | 'plSnapshots' | 'cashBalance' | 'accounts' | 'items' | 'plItemSnapshots'
 
 export const syncJobRepository = {
   create(orgId: string | Types.ObjectId, provider: string) {
