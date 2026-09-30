@@ -31,16 +31,38 @@ async function main() {
     : []
   console.log(`  found ${priceBookEntries.length} active Standard Price Book entries`)
 
-  // --- Campaigns ---
-  console.log('Creating Campaigns...')
-  const campaignDefs = [
-    { Name: 'Q3 Webinar Series', Type: 'Webinar', IsActive: true, BudgetedCost: 12000, ActualCost: 11200, StartDate: isoDate(2), EndDate: isoDate(3) },
-    { Name: 'Enterprise Outbound ABM', Type: 'Advertisement', IsActive: true, BudgetedCost: 40000, ActualCost: 38500, StartDate: isoDate(0), EndDate: isoDate(13) },
-    { Name: 'Industry Conference 2026', Type: 'Conference', IsActive: true, BudgetedCost: 25000, ActualCost: 26800, StartDate: isoDate(9), EndDate: isoDate(9) }
-  ]
-  const campaignResults = await sf.createMany('Campaign', campaignDefs)
-  const campaignIds = campaignResults.map((r) => r.id).filter((id): id is string => !!id)
-  console.log(`  created ${campaignIds.length}/${campaignDefs.length}`)
+  // --- Campaigns: this dev org's integration user lacks the "Marketing User"
+  // permission needed to *create* Campaign records (CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY),
+  // so rather than failing the whole seed, reuse whatever Campaigns the org
+  // already ships (Salesforce Developer Edition ships 4 sample ones — Webinar,
+  // Conference, Direct Mail, Trade Show) and link Opportunities to those via
+  // CampaignId. Salesforce then computes NumberOfWonOpportunities/
+  // AmountWonOpportunities on them automatically — no write access to those
+  // rollups needed, only to Opportunity.CampaignId (a normal field write).
+  console.log('Looking up existing Campaigns (create access unavailable on this org)...')
+  const existingCampaigns = await sf.query<{ Id: string; Type: string | null; ActualCost: number | null }>(
+    'SELECT Id, Type, ActualCost FROM Campaign'
+  )
+  const campaignIds = existingCampaigns.map((c) => c.Id)
+  console.log(`  found ${campaignIds.length} campaigns`)
+
+  // Best-effort: give every channel some spend so CAC/ROI isn't N/A across
+  // the board — a couple of the org's sample campaigns ship with a null
+  // ActualCost. Update (not insert) is a normal field write, unlike Campaign
+  // creation above; degrades silently if this org restricts it too.
+  const zeroSpendCampaigns = existingCampaigns.filter((c) => !c.ActualCost)
+  if (zeroSpendCampaigns.length > 0) {
+    try {
+      await sf.updateMany(
+        'Campaign',
+        zeroSpendCampaigns.map((c, i) => ({ Id: c.Id, ActualCost: 9000 + i * 6500 }))
+      )
+      console.log(`  backfilled ActualCost on ${zeroSpendCampaigns.length} campaigns with no spend`)
+    } catch (e) {
+      const err = e as { response?: { data: unknown } }
+      console.log('  could not backfill Campaign ActualCost (non-fatal):', JSON.stringify(err.response?.data).slice(0, 300))
+    }
+  }
 
   // --- Accounts: parents first, then children (need parent Id for ParentId) ---
   console.log('Creating parent Accounts...')

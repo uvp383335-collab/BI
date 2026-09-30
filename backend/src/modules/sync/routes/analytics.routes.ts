@@ -16,3 +16,4 @@ analyticsRouter.get(
 analyticsRouter.get('/:provider/pipelines', requireAuth, requireOrgContext, analyticsController.getPipelines)
 analyticsRouter.get('/:provider/products', requireAuth, requireOrgContext, analyticsController.getProducts)
 analyticsRouter.get('/:provider/leads-by-owner', requireAuth, requireOrgContext, analyticsController.getLeadsByOwner)
+analyticsRouter.get('/:provider/marketing-roi-by-channel', requireAuth, requireOrgContext, analyticsController.getMarketingROIByChannel)

@@ -6,6 +6,7 @@ import { invoiceRepository } from '../repository/invoice.repository'
 import { plSnapshotRepository } from '../repository/plSnapshot.repository'
 import { plItemSnapshotRepository } from '../repository/plItemSnapshot.repository'
 import { salesforceAccountRepository } from '../repository/salesforceAccount.repository'
+import { campaignRepository } from '../repository/campaign.repository'
 import { cashBalanceSnapshotRepository } from '../repository/cashBalanceSnapshot.repository'
 // Parsing a QuickBooks Report response is P&L-specific interpretation logic
 // that lives with the metrics module (tested there, reused by
@@ -120,6 +121,7 @@ async function executeSyncJob(orgId: string, provider: string, jobId: string, fo
       await syncSalesforcePipelineStageDefinitions(orgId, provider, accessToken, instanceUrl)
       await syncSalesforceProducts(orgId, provider, accessToken, instanceUrl)
       await syncSalesforceAccounts(orgId, provider, jobId, accessToken, instanceUrl, since)
+      await syncSalesforceCampaigns(orgId, provider, jobId, accessToken, instanceUrl, since)
       await syncSalesforceLeadsAsContacts(orgId, provider, jobId, accessToken, instanceUrl, since)
       await syncSalesforceOpportunitiesAsDeals(orgId, provider, jobId, accessToken, instanceUrl, since)
     } else if (provider === 'quickbooks') {
@@ -476,6 +478,54 @@ async function syncSalesforceAccounts(
   } while (nextRecordsUrl)
 
   await syncJobRepository.updateEntityProgress(jobId, 'accounts', { total: totalSynced, status: 'completed' })
+}
+
+/**
+ * Syncs Salesforce Campaigns — cost plus the standard won-opportunity/lead
+ * rollups Salesforce computes automatically. Drives CAC and "Marketing ROI
+ * by channel" (channel = Campaign `Type`), mirroring the
+ * salesforce-oauth-learning prototype's computeROIByChannel.
+ */
+async function syncSalesforceCampaigns(
+  orgId: string,
+  provider: string,
+  jobId: string,
+  accessToken: string,
+  instanceUrl: string,
+  since?: Date
+): Promise<void> {
+  await syncJobRepository.updateEntityProgress(jobId, 'campaigns', { status: 'syncing' })
+  await syncJobRepository.updateProgress(jobId, 12, since ? 'Syncing campaigns (changes since last sync)' : 'Syncing campaigns')
+
+  let nextRecordsUrl: string | undefined
+  let totalSynced = 0
+
+  do {
+    const response = await SalesforceService.getCampaigns(accessToken, instanceUrl, PAGE_SIZE, since, nextRecordsUrl)
+
+    const campaigns = response.records.map((campaign) => ({
+      providerRecordId: campaign.Id,
+      name: campaign.Name ?? undefined,
+      type: campaign.Type ?? undefined,
+      isActive: campaign.IsActive ?? false,
+      actualCost: campaign.ActualCost ?? 0,
+      numberOfLeads: campaign.NumberOfLeads ?? 0,
+      numberOfConvertedLeads: campaign.NumberOfConvertedLeads ?? 0,
+      numberOfOpportunities: campaign.NumberOfOpportunities ?? 0,
+      numberOfWonOpportunities: campaign.NumberOfWonOpportunities ?? 0,
+      amountAllOpportunities: campaign.AmountAllOpportunities ?? 0,
+      amountWonOpportunities: campaign.AmountWonOpportunities ?? 0
+    }))
+
+    await campaignRepository.bulkUpsert(orgId, provider, campaigns)
+
+    totalSynced += campaigns.length
+    await syncJobRepository.updateEntityProgress(jobId, 'campaigns', { synced: totalSynced })
+
+    nextRecordsUrl = response.done ? undefined : response.nextRecordsUrl
+  } while (nextRecordsUrl)
+
+  await syncJobRepository.updateEntityProgress(jobId, 'campaigns', { total: totalSynced, status: 'completed' })
 }
 
 /**

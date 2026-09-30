@@ -61,6 +61,14 @@ export function useLeadsByOwner(provider: IntegrationProvider, enabled: boolean)
   })
 }
 
+export function useMarketingROIByChannel(provider: IntegrationProvider, enabled: boolean) {
+  return useQuery({
+    queryKey: ['analytics', 'marketing-roi-by-channel', provider],
+    queryFn: () => syncApi.getMarketingROIByChannelRequest(provider),
+    enabled
+  })
+}
+
 export function useStartSync(provider: IntegrationProvider) {
   const queryClient = useQueryClient()
   return useMutation({

@@ -65,9 +65,10 @@ async function main() {
   await deleteAll(instanceUrl, accessToken, 'Account (children)', children)
   await deleteAll(instanceUrl, accessToken, 'Account (parents)', parents)
 
-  console.log('Deleting Salesforce Campaigns...')
-  const campaigns = await query<{ Id: string }>(instanceUrl, accessToken, 'SELECT Id FROM Campaign')
-  await deleteAll(instanceUrl, accessToken, 'Campaign', campaigns.map((c) => c.Id))
+  // Campaigns are deliberately left alone: this org's integration user can't
+  // re-create them (see seedSalesforce.ts), only the 4 Developer-Edition
+  // sample Campaigns exist, and seeding relinks Opportunities to those same
+  // ones via CampaignId — deleting them here would leave nothing to relink to.
 
   console.log('Salesforce wipe complete.')
   await closeDb()

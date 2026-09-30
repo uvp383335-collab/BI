@@ -23,6 +23,24 @@ export function makeSfClient(accessToken: string, instanceUrl: string) {
     return out
   }
 
+  /** Updates up to 200 existing records of one sobject type per call via the Composite sObject Collections API. */
+  async function updateMany(
+    sobject: string,
+    records: { Id: string; [field: string]: unknown }[]
+  ): Promise<{ id?: string; success: boolean; errors: unknown[] }[]> {
+    const out: { id?: string; success: boolean; errors: unknown[] }[] = []
+    for (let i = 0; i < records.length; i += 200) {
+      const chunk = records.slice(i, i + 200)
+      const res = await axios.patch(
+        `${instanceUrl}/services/data/${V}/composite/sobjects`,
+        { allOrNone: false, records: chunk.map(({ Id, ...rest }) => ({ attributes: { type: sobject }, id: Id, ...rest })) },
+        { headers }
+      )
+      out.push(...res.data)
+    }
+    return out
+  }
+
   async function query<T>(soql: string): Promise<T[]> {
     const records: T[] = []
     let url: string | null = `${instanceUrl}/services/data/${V}/query`
@@ -36,7 +54,7 @@ export function makeSfClient(accessToken: string, instanceUrl: string) {
     return records
   }
 
-  return { createMany, query }
+  return { createMany, updateMany, query }
 }
 
 export type SfClient = ReturnType<typeof makeSfClient>

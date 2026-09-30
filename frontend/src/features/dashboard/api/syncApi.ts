@@ -82,6 +82,16 @@ export interface OwnerLeadCount {
   count: number
 }
 
+export interface ChannelROI {
+  channel: string
+  campaigns: number
+  cost: number
+  revenue: number
+  customers: number
+  cac: number | null
+  roi: number | null
+}
+
 export async function startSyncRequest(provider: IntegrationProvider): Promise<{ jobId: string }> {
   const res = await httpClient.post<ApiEnvelope<{ jobId: string }>>(`/sync/${provider}/start`)
   return res.data.data
@@ -119,5 +129,10 @@ export async function getProductsRequest(provider: IntegrationProvider): Promise
 
 export async function getLeadsByOwnerRequest(provider: IntegrationProvider): Promise<OwnerLeadCount[]> {
   const res = await httpClient.get<ApiEnvelope<OwnerLeadCount[]>>(`/analytics/${provider}/leads-by-owner`)
+  return res.data.data
+}
+
+export async function getMarketingROIByChannelRequest(provider: IntegrationProvider): Promise<ChannelROI[]> {
+  const res = await httpClient.get<ApiEnvelope<ChannelROI[]>>(`/analytics/${provider}/marketing-roi-by-channel`)
   return res.data.data
 }

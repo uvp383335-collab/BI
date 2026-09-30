@@ -67,6 +67,21 @@ export interface SalesforceAccount {
   ParentId: string | null;
 }
 
+export interface SalesforceCampaign {
+  Id: string;
+  Name: string | null;
+  Type: string | null;
+  IsActive: boolean;
+  ActualCost: number | null;
+  /** Standard Salesforce rollup fields — computed automatically from Leads/Opportunities that reference this Campaign, never set directly. */
+  NumberOfLeads: number | null;
+  NumberOfConvertedLeads: number | null;
+  NumberOfOpportunities: number | null;
+  NumberOfWonOpportunities: number | null;
+  AmountAllOpportunities: number | null;
+  AmountWonOpportunities: number | null;
+}
+
 export interface SalesforceStageHistoryEntry {
   recordId: string;
   value: string;
@@ -524,6 +539,30 @@ export class SalesforceService {
       return await this.runQuery<SalesforceAccount>(accessToken, instanceUrl, soql, limit);
     } catch {
       throw AppError.badRequest("Failed to fetch accounts from Salesforce", "SALESFORCE_ACCOUNTS_FETCH_FAILED");
+    }
+  }
+
+  /**
+   * Fetches a page of Campaigns — cost + the standard won-opportunity/lead
+   * rollups, exactly the fields CAC / marketing-ROI-by-channel needs.
+   */
+  static async getCampaigns(
+    accessToken: string,
+    instanceUrl: string,
+    limit: number,
+    since?: Date,
+    nextRecordsUrl?: string,
+  ): Promise<SalesforcePaginatedResponse<SalesforceCampaign>> {
+    try {
+      if (nextRecordsUrl) return await this.runQueryPage<SalesforceCampaign>(accessToken, instanceUrl, nextRecordsUrl);
+
+      const whereClause = since ? ` WHERE LastModifiedDate >= ${since.toISOString()}` : "";
+      const soql = `SELECT Id, Name, Type, IsActive, ActualCost, NumberOfLeads, NumberOfConvertedLeads,
+        NumberOfOpportunities, NumberOfWonOpportunities, AmountAllOpportunities, AmountWonOpportunities
+        FROM Campaign${whereClause} ORDER BY LastModifiedDate ASC`;
+      return await this.runQuery<SalesforceCampaign>(accessToken, instanceUrl, soql, limit);
+    } catch {
+      throw AppError.badRequest("Failed to fetch campaigns from Salesforce", "SALESFORCE_CAMPAIGNS_FETCH_FAILED");
     }
   }
 }

@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import { useIntegrationsStatus } from '../../integrations/hooks/useIntegrations'
 import { IntegrationProvider } from '../../integrations/api/integrationsApi'
-import { useEntityCounts, useFunnels, useLeadsByOwner, usePipelines, useProducts, useStartSync, useSyncStatus } from '../hooks/useSync'
+import { useEntityCounts, useFunnels, useLeadsByOwner, useMarketingROIByChannel, usePipelines, useProducts, useStartSync, useSyncStatus } from '../hooks/useSync'
 import { FunnelsResponse, Product } from '../api/syncApi'
 import { useMetric, useMetricTrend } from '../hooks/useMetrics'
 import { useAuthContext } from '../../../shared/context/AuthContext'
@@ -35,6 +35,7 @@ import { SyncProgressBanner } from '../components/SyncProgressBanner'
 import { FunnelChart } from '../components/FunnelChart'
 import { MetricTrendChart } from '../components/MetricTrendChart'
 import { LeadsByOwnerChart } from '../components/LeadsByOwnerChart'
+import { MarketingROIByChannelTable } from '../components/MarketingROIByChannelTable'
 import { useQuickBooksDepartments, useQuickBooksCustomerStates } from '../hooks/useProductRevenueGrowth'
 import { DateRangeFilter } from '../components/DateRangeFilter'
 import { Banner } from '../../../shared/components/Banner'
@@ -268,6 +269,7 @@ export const CrmDashboardPage: React.FC = () => {
   const { data: cm08Salesforce, isLoading: isCm08SalesforceLoading } = useMetric('cm-08', salesforceMetricsEnabled, 'salesforce')
   const { data: cm03, isLoading: isCm03Loading } = useMetric('cm-03', salesforceMetricsEnabled)
   const { data: leadsByOwner } = useLeadsByOwner('salesforce', salesforceMetricsEnabled)
+  const { data: marketingROIByChannel } = useMarketingROIByChannel('salesforce', salesforceMetricsEnabled)
 
   const { data: hubspotPipelines } = usePipelines('hubspot', hubspotMetricsEnabled)
   const { data: salesforcePipelines } = usePipelines('salesforce', salesforceMetricsEnabled)
@@ -674,6 +676,15 @@ export const CrmDashboardPage: React.FC = () => {
                     <p className="mt-1 text-xs text-ink-3">How many open leads each rep currently owns.</p>
                     <div className="mt-4">
                       <LeadsByOwnerChart data={leadsByOwner} />
+                    </div>
+                  </div>
+                )}
+                {marketingROIByChannel && marketingROIByChannel.length > 0 && (
+                  <div className="card mt-6 p-6">
+                    <h3 className="text-sm font-semibold text-ink">Marketing ROI by Channel</h3>
+                    <p className="mt-1 text-xs text-ink-3">Customer acquisition cost and return per campaign channel.</p>
+                    <div className="mt-4">
+                      <MarketingROIByChannelTable data={marketingROIByChannel} />
                     </div>
                   </div>
                 )}

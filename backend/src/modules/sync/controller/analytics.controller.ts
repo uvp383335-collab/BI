@@ -40,3 +40,10 @@ export const getLeadsByOwner = asyncHandler(async (req: Request, res: Response):
   const data = await analyticsService.getLeadsByOwner(orgId, provider)
   sendSuccess(res, data)
 })
+
+export const getMarketingROIByChannel = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const provider = String(req.params.provider)
+  const orgId = req.auth!.orgId!
+  const data = await analyticsService.getMarketingROIByChannel(orgId, provider)
+  sendSuccess(res, data)
+})
