@@ -53,6 +53,14 @@ export function useProducts(provider: IntegrationProvider, enabled: boolean) {
   })
 }
 
+export function useLeadsByOwner(provider: IntegrationProvider, enabled: boolean) {
+  return useQuery({
+    queryKey: ['analytics', 'leads-by-owner', provider],
+    queryFn: () => syncApi.getLeadsByOwnerRequest(provider),
+    enabled
+  })
+}
+
 export function useStartSync(provider: IntegrationProvider) {
   const queryClient = useQueryClient()
   return useMutation({

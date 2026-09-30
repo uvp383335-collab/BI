@@ -168,38 +168,49 @@ async function main() {
     })
   }
 
-  console.log(`Creating ${oppDefs.length} Opportunities...`)
-  const oppResults = await sf.createMany(
-    'Opportunity',
-    oppDefs.map((o) => ({
-      Name: o.Name,
-      AccountId: o.AccountId,
-      Amount: o.Amount,
-      CloseDate: o.CloseDate,
-      StageName: o.StageName,
-      OwnerId: o.OwnerId,
-      Type: o.Type,
-      LeadSource: o.LeadSource,
-      ...(o.CampaignId ? { CampaignId: o.CampaignId } : {}),
-      ...(o.Description ? { Description: o.Description } : {}),
-      ...(standardPricebook ? { Pricebook2Id: standardPricebook.Id } : {})
-    }))
-  )
-  const oppFailures = oppResults.filter((r) => !r.success)
-  console.log(`  created ${oppResults.length - oppFailures.length}/${oppDefs.length}`)
-  if (oppFailures.length) console.log('  sample failure:', JSON.stringify(oppFailures[0].errors))
+  // `MainCompetitors__c` (CM-03's named-competitor source — see
+  // salesforce.service.ts's getOpportunities) is set directly on the
+  // Opportunity, not via a separate junction object. A `wantCompetitor` deal
+  // gets one or two names, semicolon-joined, so the seed data exercises the
+  // multi-competitor parsing path too (a single name is just the 1-element case).
+  const oppCreateRecords = oppDefs.map((o, i) => ({
+    Name: o.Name,
+    AccountId: o.AccountId,
+    Amount: o.Amount,
+    CloseDate: o.CloseDate,
+    StageName: o.StageName,
+    OwnerId: o.OwnerId,
+    Type: o.Type,
+    LeadSource: o.LeadSource,
+    ...(o.CampaignId ? { CampaignId: o.CampaignId } : {}),
+    ...(o.Description ? { Description: o.Description } : {}),
+    ...(standardPricebook ? { Pricebook2Id: standardPricebook.Id } : {}),
+    ...(o.wantCompetitor
+      ? { MainCompetitors__c: i % 5 === 0 ? `${pick(COMPETITORS, i)}; ${pick(COMPETITORS, i + 1)}` : pick(COMPETITORS, i) }
+      : {})
+  }))
 
-  // --- OpportunityCompetitor for competitive deals ---
-  const competitorRecords: { OpportunityId: string; CompetitorName: string }[] = []
-  oppDefs.forEach((o, i) => {
-    if (!o.wantCompetitor) return
-    const oppId = oppResults[i]?.id
-    if (!oppId) return
-    competitorRecords.push({ OpportunityId: oppId, CompetitorName: pick(COMPETITORS, i) })
-  })
-  console.log(`Creating ${competitorRecords.length} OpportunityCompetitor records...`)
-  const compResults = await sf.createMany('OpportunityCompetitor', competitorRecords)
-  console.log(`  created ${compResults.filter((r) => r.success).length}/${competitorRecords.length}`)
+  console.log(`Creating ${oppDefs.length} Opportunities...`)
+  let oppResults = await sf.createMany('Opportunity', oppCreateRecords)
+  let oppFailures = oppResults.filter((r) => !r.success)
+
+  // MainCompetitors__c is Developer-Edition sample-data field, not guaranteed on
+  // every connected org — if every create failed because of it, retry without the
+  // field rather than leaving the whole seed with zero Opportunities/Accounts data.
+  const competitorFieldInvalid =
+    oppFailures.length === oppResults.length &&
+    oppFailures.length > 0 &&
+    oppFailures.some((r) => JSON.stringify(r.errors ?? '').includes('MainCompetitors__c'))
+  if (competitorFieldInvalid) {
+    console.log('  MainCompetitors__c not available on this org — retrying Opportunities without it')
+    const fallbackRecords = oppCreateRecords.map(({ MainCompetitors__c, ...rest }) => rest)
+    oppResults = await sf.createMany('Opportunity', fallbackRecords)
+    oppFailures = oppResults.filter((r) => !r.success)
+  }
+
+  const competitorTaggedCount = oppDefs.filter((o) => o.wantCompetitor).length
+  console.log(`  created ${oppResults.length - oppFailures.length}/${oppDefs.length} (${competitorTaggedCount} with MainCompetitors__c)`)
+  if (oppFailures.length) console.log('  sample failure:', JSON.stringify(oppFailures[0].errors))
 
   // --- OpportunityLineItem: gives the funnel product filter something to filter by ---
   let lineItemResults: { success: boolean }[] = []
@@ -247,7 +258,7 @@ async function main() {
 
   console.log(
     `Salesforce seed complete: ${campaignIds.length} campaigns, ${accountIdByKey.size} accounts, ` +
-      `${oppResults.length - oppFailures.length} opportunities, ${compResults.filter((r) => r.success).length} competitor rows, ` +
+      `${oppResults.length - oppFailures.length} opportunities (${competitorTaggedCount} with MainCompetitors__c), ` +
       `${lineItemResults.filter((r) => r.success).length} line items, ${leadResults.filter((r) => r.success).length} leads.`
   )
   await closeDb()

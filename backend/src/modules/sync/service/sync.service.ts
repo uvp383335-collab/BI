@@ -20,7 +20,6 @@ import { SalesforceService } from '../../integrations/service/salesforce.service
 import { QuickBooksService, mapWithConcurrency } from '../../integrations/service/quickbooks.service'
 import * as integrationsService from '../../integrations/service/integrations.service'
 import { integrationsRepository } from '../../integrations/repository/integrations.repository'
-import { organizationsRepository } from '../../organizations/repository/organizations.repository'
 import { IntegrationProvider } from '../../integrations/model/Integration.model'
 import { AppError } from '../../../shared/utils/AppError'
 
@@ -343,6 +342,7 @@ async function syncDeals(
       dealCreatedAt: deal.properties.createdate ? new Date(deal.properties.createdate) : undefined,
       contactIds: associations[deal.id] ?? [],
       productIds: dealToProductIds[deal.id] ?? [],
+      competitors: [],
       dealStageHistory: (dealStageHistories ? dealStageHistories[index] : deal.propertiesWithHistory?.dealstage || []).map(
         (entry) => ({
           value: entry.value,
@@ -517,6 +517,7 @@ async function syncSalesforceLeadsAsContacts(
       firstname: lead.FirstName ?? undefined,
       lastname: lead.LastName ?? undefined,
       lifecycleStage: lead.Status ?? undefined,
+      ownerName: lead.Owner?.Name ?? undefined,
       lifecycleStageHistory: historyByLead.get(lead.Id) ?? []
     }))
 
@@ -565,27 +566,16 @@ async function syncSalesforceOpportunitiesAsDeals(
     since ? 'Syncing opportunities (changes since last sync)' : 'Syncing opportunities'
   )
 
-  // CM-03's per-org competitor tracking mode (gap G-11/G-24) — read once per sync run, not per page.
-  const org = await organizationsRepository.findById(orgId)
-  const competitorSource = org?.settings?.salesforceCompetitorSource
-  const competitorField = competitorSource === 'field' ? org?.settings?.salesforceCompetitorField : undefined
-  const useCompetitorJunctionObject = competitorSource === 'junction'
-
   let nextRecordsUrl: string | undefined
   let totalSynced = 0
 
   do {
-    const response = await SalesforceService.getOpportunities(accessToken, instanceUrl, PAGE_SIZE, since, nextRecordsUrl, competitorField)
+    const response = await SalesforceService.getOpportunities(accessToken, instanceUrl, PAGE_SIZE, since, nextRecordsUrl)
     const opportunityIds = response.records.map((opportunity) => opportunity.Id)
 
-    const [stageHistories, convertedLeadsByOpportunity, competitorsByOpportunity, productIdsByOpportunity] = await Promise.all([
+    const [stageHistories, convertedLeadsByOpportunity, productIdsByOpportunity] = await Promise.all([
       SalesforceService.getOpportunityStageHistory(accessToken, instanceUrl, opportunityIds),
       SalesforceService.getConvertedLeadIdsByOpportunity(accessToken, instanceUrl, opportunityIds),
-      // Only queried in 'junction' mode -- an org that doesn't use OpportunityCompetitor at all
-      // shouldn't have this object's absence/inaccessibility break the whole sync.
-      useCompetitorJunctionObject
-        ? SalesforceService.getOpportunityCompetitors(accessToken, instanceUrl, opportunityIds).catch(() => ({}) as Record<string, string[]>)
-        : Promise.resolve({} as Record<string, string[]>),
       // Same rationale as syncSalesforceProducts: some orgs restrict Product2/
       // OpportunityLineItem access, so a failure here degrades to no
       // productIds rather than breaking the whole opportunity sync.
@@ -614,8 +604,7 @@ async function syncSalesforceOpportunitiesAsDeals(
       leadSource: opportunity.LeadSource ?? undefined,
       campaignId: opportunity.CampaignId ?? undefined,
       accountId: opportunity.AccountId ?? undefined,
-      competitor: opportunity.Competitor ?? undefined,
-      competitors: useCompetitorJunctionObject ? (competitorsByOpportunity[opportunity.Id] ?? undefined) : undefined,
+      competitors: opportunity.Competitors,
       productIds: productIdsByOpportunity[opportunity.Id] ?? []
     }))
 

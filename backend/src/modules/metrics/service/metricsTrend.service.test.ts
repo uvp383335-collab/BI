@@ -59,7 +59,7 @@ describe('computeMetricTrend', () => {
 
     await computeMetricTrend('org1', 'vc-10')
 
-    expect(mockedComputeVC10).toHaveBeenCalledWith('org1', '2026-01', undefined)
+    expect(mockedComputeVC10).toHaveBeenCalledWith('org1', '2026-01', undefined, undefined, undefined)
     expect(mockedComputeVC04).not.toHaveBeenCalled()
     expect(mockedComputeVC09).not.toHaveBeenCalled()
   })
@@ -71,8 +71,8 @@ describe('computeMetricTrend', () => {
     await computeMetricTrend('org1', 'vc-13', 'item-123')
 
     expect(mockedComputeVC13).toHaveBeenCalledTimes(2)
-    expect(mockedComputeVC13).toHaveBeenNthCalledWith(1, 'org1', '2026-01', 'item-123')
-    expect(mockedComputeVC13).toHaveBeenNthCalledWith(2, 'org1', '2026-02', 'item-123')
+    expect(mockedComputeVC13).toHaveBeenNthCalledWith(1, 'org1', '2026-01', 'item-123', undefined, undefined)
+    expect(mockedComputeVC13).toHaveBeenNthCalledWith(2, 'org1', '2026-02', 'item-123', undefined, undefined)
   })
 
   it('starts the series from `fromYear` instead of the current year when given', async () => {

@@ -17,8 +17,7 @@ export interface DealUpsertInput {
   campaignId?: string
   accountId?: string
   dealCreatedAt?: Date
-  competitor?: string
-  competitors?: string[]
+  competitors: string[]
   productIds: string[]
 }
 
@@ -74,7 +73,7 @@ export const dealRepository = {
     const DealModel = await modelForOrg(orgId)
     return DealModel.find(
       { orgId, provider, closedate: { $gte: from, $lte: to } },
-      { pipeline: 1, dealstage: 1, amount: 1, closedate: 1, contactIds: 1, competitor: 1, competitors: 1 }
+      { pipeline: 1, dealstage: 1, amount: 1, closedate: 1, contactIds: 1, competitors: 1 }
     ).lean()
   },
 

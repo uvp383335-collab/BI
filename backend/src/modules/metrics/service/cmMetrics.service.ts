@@ -5,7 +5,6 @@ import { dealRepository } from '../../sync/repository/deal.repository'
 import { contactRepository } from '../../sync/repository/contact.repository'
 import { pipelineStageDefinitionRepository } from '../../sync/repository/pipelineStageDefinition.repository'
 import { funnelStageEventRepository } from '../../sync/repository/funnelStageEvent.repository'
-import { organizationsRepository } from '../../organizations/repository/organizations.repository'
 import { CONTACTS_PIPELINE } from '../../sync/service/sync.service'
 import { getStoredProfitAndLoss, StoredQuarterSnapshot } from './plReport.service'
 import { sumExpensesByCategory } from './plParser'
@@ -682,17 +681,17 @@ export async function computeCM07(orgId: string, period?: string): Promise<Metri
 // ---------------------------------------------------------------------------
 
 /**
- * Salesforce has no single standard field for "which competitor was in the
- * deal" (metrics guide gap G-11) — it's a per-org custom field (commonly
- * `Competitor__c`), captured as `Organization.settings.salesforceCompetitorField`
- * and synced dynamically onto `Deal.competitor` (see sync.service.ts's
- * `syncSalesforceOpportunitiesAsDeals`). An org with no field configured gets
- * `computable: false` rather than a guess — same honest-numbers rule as
- * every other MVP gap. Trailing-2-quarter (6-month) rolling window per the
- * guide's cadence; win rate is tracked *per competitor*, so the top-level
- * `value`/flag are a blended figure across all named competitors while
- * `data.competitors` carries the full per-competitor breakdown a UI can
- * drill into.
+ * Named competitors come from Salesforce's `MainCompetitors__c` Opportunity
+ * field (semicolon-separated), synced onto `Deal.competitors` — see
+ * sync.service.ts's `syncSalesforceOpportunitiesAsDeals` and
+ * salesforce.service.ts's `getOpportunities`. No org falls back to
+ * `computable: false` naturally once there are no deals with a competitor
+ * recorded in the window — same honest-numbers rule as every other MVP gap,
+ * just without a separate config-gate check. Trailing-2-quarter (6-month)
+ * rolling window per the guide's cadence; win rate is tracked *per
+ * competitor*, so the top-level `value`/flag are a blended figure across all
+ * named competitors while `data.competitors` carries the full per-competitor
+ * breakdown a UI can drill into.
  */
 const SALESFORCE = 'salesforce'
 const COMPETITOR_MIN_DECIDED_PER_WINDOW = 10
@@ -714,17 +713,15 @@ interface CompetitorWindowStats {
 /**
  * Buckets closed (won or lost) deals by competitor within a window —
  * `closedKeys`/`wonKeys` come from PipelineStageDefinition, same pattern as
- * resolveQualifiedStageKeys. Handles both competitor-tracking modes
- * (G-11/G-24): `competitor` (single field, one per deal) and `competitors`
- * (the `OpportunityCompetitor` junction object, several per deal) — a deal
- * naming multiple competitors credits a win/loss to *each* of them, since
- * "we beat Competitor A and Competitor B in this deal" is meaningful for
- * both. `decidedWithCompetitor` counts the deal once regardless of how many
- * competitors it named, for the data-quality "share of deals with a
+ * resolveQualifiedStageKeys. A deal naming multiple competitors (semicolon-
+ * separated on `MainCompetitors__c`) credits a win/loss to *each* of them,
+ * since "we beat Competitor A and Competitor B in this deal" is meaningful
+ * for both. `decidedWithCompetitor` counts the deal once regardless of how
+ * many competitors it named, for the data-quality "share of deals with a
  * competitor recorded" check.
  */
 function buildCompetitorStats(
-  deals: { pipeline?: string; dealstage?: string; competitor?: string; competitors?: string[] }[],
+  deals: { pipeline?: string; dealstage?: string; competitors?: string[] }[],
   wonKeys: Set<string>,
   closedKeys: Set<string>
 ): CompetitorWindowStats {
@@ -737,7 +734,7 @@ function buildCompetitorStats(
     const key = `${deal.pipeline}::${deal.dealstage}`
     if (!closedKeys.has(key)) continue
     decidedTotal += 1
-    const dealCompetitors = deal.competitors && deal.competitors.length > 0 ? deal.competitors : deal.competitor ? [deal.competitor] : []
+    const dealCompetitors = deal.competitors ?? []
     if (dealCompetitors.length === 0) continue
     decidedWithCompetitor += 1
     const won = wonKeys.has(key)
@@ -754,22 +751,6 @@ function buildCompetitorStats(
 
 export async function computeCM03(orgId: string, period?: string): Promise<MetricResult> {
   const endMonth = period ?? latestClosedMonth()
-
-  const org = await organizationsRepository.findById(orgId)
-  const competitorSource = org?.settings?.salesforceCompetitorSource
-  const isConfigured = competitorSource === 'junction' || (competitorSource === 'field' && !!org?.settings?.salesforceCompetitorField)
-  if (!isConfigured) {
-    return {
-      id: 'CM-03',
-      period: endMonth,
-      computable: false,
-      value: null,
-      unit: 'percent',
-      data: { configured: false, blockedOn: 'competitor-field-config' },
-      flag: null,
-      asOf: new Date().toISOString()
-    }
-  }
 
   const currentFrom = new Date(monthToDateRange(shiftMonth(endMonth, -5)).startDate)
   const currentTo = new Date(`${monthToDateRange(endMonth).endDate}T23:59:59.999Z`)
@@ -795,7 +776,7 @@ export async function computeCM03(orgId: string, period?: string): Promise<Metri
       computable: false,
       value: null,
       unit: 'percent',
-      data: { configured: true, decidedDealsCurrent: 0 },
+      data: { decidedDealsCurrent: 0 },
       flag: null,
       asOf: new Date().toISOString()
     }
@@ -854,8 +835,6 @@ export async function computeCM03(orgId: string, period?: string): Promise<Metri
     value: blendedWinRatePct !== null ? round1(blendedWinRatePct) : null,
     unit: 'percent',
     data: {
-      configured: true,
-      competitorSource,
       blendedWinRatePct: blendedWinRatePct !== null ? round1(blendedWinRatePct) : null,
       decidedDealsCurrent: current.decidedTotal,
       decidedDealsWithCompetitorCurrent: current.decidedWithCompetitor,

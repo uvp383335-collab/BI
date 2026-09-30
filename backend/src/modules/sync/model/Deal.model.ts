@@ -35,10 +35,8 @@ export interface DealDocument extends Document {
   accountId?: string
   /** The CRM's own deal-creation date (HubSpot `createdate`) — distinct from `createdAt` below, which is when *this app* first synced the row. CM-05 needs "pipeline created this period," which means the former. Salesforce-undefined for now (Opportunity `CreatedDate` isn't pulled). */
   dealCreatedAt?: Date
-  /** Salesforce-only, 'field' mode — value of the org's configured competitor field (Organization.settings.salesforceCompetitorField), pulled dynamically since the field name varies per org. Undefined for HubSpot deals and for Salesforce orgs with no competitor field configured. CM-03. */
-  competitor?: string
-  /** Salesforce-only, 'junction' mode — every named competitor from the standard `OpportunityCompetitor` object (a deal can name several at once, unlike `competitor` above). Mutually exclusive with `competitor` in practice — which one gets populated depends on `Organization.settings.salesforceCompetitorSource`. CM-03 (gap G-24). */
-  competitors?: string[]
+  /** Salesforce-only — named competitors parsed from the `MainCompetitors__c` Opportunity field (semicolon-separated). Empty array for HubSpot deals and for Salesforce orgs whose Opportunity object doesn't have that field. CM-03. */
+  competitors: string[]
   /** Provider product ids from this deal's line items (HubSpot `line_items` -> `hs_product_id`; Salesforce `OpportunityLineItem.Product2Id`). Empty when the deal has no line items. Powers the funnel product filter — see Product.model.ts. */
   productIds: string[]
   createdAt: Date
@@ -71,8 +69,7 @@ const dealSchema = new Schema<DealDocument>(
     campaignId: { type: String },
     accountId: { type: String, index: true },
     dealCreatedAt: { type: Date, index: true },
-    competitor: { type: String, index: true },
-    competitors: { type: [String], default: undefined },
+    competitors: { type: [String], default: [] },
     productIds: { type: [String], default: [] }
   },
   { timestamps: true }

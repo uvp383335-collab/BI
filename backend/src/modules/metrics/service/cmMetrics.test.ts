@@ -4,7 +4,6 @@ import { dealRepository } from '../../sync/repository/deal.repository'
 import { contactRepository } from '../../sync/repository/contact.repository'
 import { pipelineStageDefinitionRepository } from '../../sync/repository/pipelineStageDefinition.repository'
 import { funnelStageEventRepository } from '../../sync/repository/funnelStageEvent.repository'
-import { organizationsRepository } from '../../organizations/repository/organizations.repository'
 import { getStoredProfitAndLoss } from './plReport.service'
 import { computeCM02, computeCM03, computeCM04, computeCM05, computeCM06, computeCM07, computeCM08 } from './cmMetrics.service'
 
@@ -14,7 +13,6 @@ jest.mock('../../sync/repository/deal.repository')
 jest.mock('../../sync/repository/contact.repository')
 jest.mock('../../sync/repository/pipelineStageDefinition.repository')
 jest.mock('../../sync/repository/funnelStageEvent.repository')
-jest.mock('../../organizations/repository/organizations.repository')
 jest.mock('./plReport.service')
 
 const mockedGetMonthlyRevenue = invoiceRepository.getMonthlyRevenueByCustomer as jest.Mock
@@ -27,7 +25,6 @@ const mockedGetCohortRecordIds = funnelStageEventRepository.getCohortRecordIds a
 const mockedGetStageMembershipCounts = funnelStageEventRepository.getStageMembershipCounts as jest.Mock
 const mockedCountRecordsEnteringStage = funnelStageEventRepository.countRecordsEnteringStage as jest.Mock
 const mockedGetStoredPL = getStoredProfitAndLoss as jest.Mock
-const mockedFindOrgById = organizationsRepository.findById as jest.Mock
 
 function customer(providerRecordId: string, displayName: string, parentRecordId?: string) {
   return { providerRecordId, displayName, parentRecordId, active: true }
@@ -468,8 +465,14 @@ describe('CM-03 — Competitive Win Rate (vs. Named Competitors)', () => {
     { entityType: 'deal', pipeline: 'opportunities-default', rawStage: 'Closed Lost', displayOrder: 4, isClosed: true, isWon: false }
   ]
 
+  // Named competitors are always an array now (parsed from Salesforce's `MainCompetitors__c`,
+  // semicolon-separated, at sync time) — a single competitor is just a one-element array.
   function closedDeal(stage: 'Closed Won' | 'Closed Lost', competitor?: string) {
-    return { pipeline: 'opportunities-default', dealstage: stage, competitor }
+    return { pipeline: 'opportunities-default', dealstage: stage, competitors: competitor ? [competitor] : [] }
+  }
+
+  function closedDealMulti(stage: 'Closed Won' | 'Closed Lost', competitors: string[]) {
+    return { pipeline: 'opportunities-default', dealstage: stage, competitors }
   }
 
   function many(n: number, stage: 'Closed Won' | 'Closed Lost', competitor?: string) {
@@ -479,23 +482,14 @@ describe('CM-03 — Competitive Win Rate (vs. Named Competitors)', () => {
   beforeEach(() => {
     mockedFindByCloseDateRange.mockReset()
     mockedFindAllStageDefs.mockReset()
-    mockedFindOrgById.mockReset()
-    mockedFindOrgById.mockResolvedValue({ settings: { salesforceCompetitorSource: 'field', salesforceCompetitorField: 'Competitor__c' } })
     mockedFindAllStageDefs.mockResolvedValue(salesforceStageDefs)
-  })
-
-  it('not computable when the org has no competitor field configured', async () => {
-    mockedFindOrgById.mockResolvedValue({ settings: {} })
-    const result = await computeCM03('org1', '2026-02')
-    expect(result.computable).toBe(false)
-    expect(result.data.configured).toBe(false)
   })
 
   it('not computable when there are no closed deals in the window', async () => {
     mockedFindByCloseDateRange.mockResolvedValue([])
     const result = await computeCM03('org1', '2026-02')
     expect(result.computable).toBe(false)
-    expect(result.data.configured).toBe(true)
+    expect(result.data.decidedDealsCurrent).toBe(0)
   })
 
   it('computes blended win rate and per-competitor breakdown, excluding deals with no competitor recorded', async () => {
@@ -557,12 +551,7 @@ describe('CM-03 — Competitive Win Rate (vs. Named Competitors)', () => {
     expect(result.flag).toBeNull()
   })
 
-  function closedDealMulti(stage: 'Closed Won' | 'Closed Lost', competitors: string[]) {
-    return { pipeline: 'opportunities-default', dealstage: stage, competitors }
-  }
-
-  it('junction mode: computable without any field name configured, and a multi-competitor deal credits every named competitor', async () => {
-    mockedFindOrgById.mockResolvedValue({ settings: { salesforceCompetitorSource: 'junction' } })
+  it('a deal naming multiple competitors (semicolon-separated on MainCompetitors__c) credits every one of them', async () => {
     mockedFindByCloseDateRange
       .mockResolvedValueOnce([
         closedDealMulti('Closed Won', ['Acme', 'Globex']), // one deal naming both -- credits a win to each
@@ -573,8 +562,6 @@ describe('CM-03 — Competitive Win Rate (vs. Named Competitors)', () => {
 
     const result = await computeCM03('org1', '2026-02')
     expect(result.computable).toBe(true)
-    expect(result.data.configured).toBe(true)
-    expect(result.data.competitorSource).toBe('junction')
 
     const competitors = result.data.competitors as any[]
     const acme = competitors.find((c) => c.competitor === 'Acme')
@@ -584,13 +571,6 @@ describe('CM-03 — Competitive Win Rate (vs. Named Competitors)', () => {
     expect(globex.wins).toBe(1)
     expect(globex.losses).toBe(9)
     expect(globex.decided).toBe(10)
-  })
-
-  it('field mode is not configured when the source is "field" but no field name was saved', async () => {
-    mockedFindOrgById.mockResolvedValue({ settings: { salesforceCompetitorSource: 'field' } })
-    const result = await computeCM03('org1', '2026-02')
-    expect(result.computable).toBe(false)
-    expect(result.data.configured).toBe(false)
   })
 
   it('does not flag a competitor with fewer than 10 decided deals in either window', async () => {

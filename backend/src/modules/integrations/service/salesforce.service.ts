@@ -41,6 +41,8 @@ export interface SalesforceLead {
   FirstName: string | null;
   LastName: string | null;
   Status: string | null;
+  /** Assigned rep — the sales owner currently working this lead. Relationship field, comes back nested as `{ Name }`. */
+  Owner: { Name: string | null } | null;
 }
 
 export interface SalesforceOpportunity {
@@ -55,8 +57,8 @@ export interface SalesforceOpportunity {
   LeadSource: string | null;
   CampaignId: string | null;
   AccountId: string | null;
-  /** Value of the org's configured competitor field (Organization.settings.salesforceCompetitorField), when one is configured — null otherwise. CM-03 (metrics guide gap G-11). */
-  Competitor: string | null;
+  /** Named competitors on this deal, parsed from the `MainCompetitors__c` Opportunity field (semicolon-separated) — CM-03. Empty when the field is blank or the org's Opportunity object doesn't have it. */
+  Competitors: string[];
 }
 
 export interface SalesforceAccount {
@@ -238,7 +240,7 @@ export class SalesforceService {
       if (nextRecordsUrl) return await this.runQueryPage<SalesforceLead>(accessToken, instanceUrl, nextRecordsUrl);
 
       const whereClause = since ? ` WHERE LastModifiedDate >= ${since.toISOString()}` : "";
-      const soql = `SELECT Id, Email, FirstName, LastName, Status FROM Lead${whereClause} ORDER BY LastModifiedDate ASC`;
+      const soql = `SELECT Id, Email, FirstName, LastName, Status, Owner.Name FROM Lead${whereClause} ORDER BY LastModifiedDate ASC`;
       return await this.runQuery<SalesforceLead>(accessToken, instanceUrl, soql, limit);
     } catch {
       throw AppError.badRequest("Failed to fetch leads from Salesforce", "SALESFORCE_LEADS_FETCH_FAILED");
@@ -298,19 +300,13 @@ export class SalesforceService {
     }
   }
 
-  // Custom Salesforce field API names: a letter, then letters/digits/underscores
-  // (e.g. `Competitor__c`). Re-validated here — belt-and-suspenders on top of the
-  // organizations settings validator — since this value gets interpolated into SOQL.
-  private static readonly FIELD_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_]*$/;
-
   /**
    * Fetches a page of Opportunities — this app's Deal entity for Salesforce.
-   * `competitorField` is the org's configured competitor field (CM-03, gap
-   * G-11) — Salesforce has no standard field for this, so it's a per-org
-   * setting (`Organization.settings.salesforceCompetitorField`) appended to
-   * the SELECT list when present, ignored (silently, not thrown) if it
-   * fails the field-name check rather than breaking the whole sync over a
-   * bad config value.
+   * Always selects `MainCompetitors__c` (CM-03's named-competitor source) —
+   * no per-org config, matches docs/salesforce-oauth-learning/server.js's
+   * own Opportunity query exactly. A semicolon-separated list on that field
+   * (Salesforce's own convention, same as the prototype) is split into
+   * `Competitors` here rather than left for the caller to parse.
    */
   static async getOpportunities(
     accessToken: string,
@@ -318,17 +314,26 @@ export class SalesforceService {
     limit: number,
     since?: Date,
     nextRecordsUrl?: string,
-    competitorField?: string,
   ): Promise<SalesforcePaginatedResponse<SalesforceOpportunity>> {
     try {
       if (nextRecordsUrl)
         return await this.runQueryPage<SalesforceOpportunity>(accessToken, instanceUrl, nextRecordsUrl);
 
-      const safeCompetitorField = competitorField && this.FIELD_NAME_REGEX.test(competitorField) ? competitorField : undefined;
       const whereClause = since ? ` WHERE LastModifiedDate >= ${since.toISOString()}` : "";
-      const competitorSelect = safeCompetitorField ? `, ${safeCompetitorField}` : "";
-      const soql = `SELECT Id, Name, Amount, CloseDate, StageName, OwnerId, Type, LeadSource, CampaignId, AccountId${competitorSelect} FROM Opportunity${whereClause} ORDER BY LastModifiedDate ASC`;
-      const response = await this.runQuery<Record<string, unknown>>(accessToken, instanceUrl, soql, limit);
+      const baseFields = "Id, Name, Amount, CloseDate, StageName, OwnerId, Type, LeadSource, CampaignId, AccountId";
+      const soqlWithCompetitors = `SELECT ${baseFields}, MainCompetitors__c FROM Opportunity${whereClause} ORDER BY LastModifiedDate ASC`;
+
+      let response: SalesforcePaginatedResponse<Record<string, unknown>>;
+      try {
+        response = await this.runQuery<Record<string, unknown>>(accessToken, instanceUrl, soqlWithCompetitors, limit);
+      } catch {
+        // MainCompetitors__c is a Developer-Edition sample-data field, not a standard
+        // Salesforce field — an org without it would otherwise fail this whole sync step.
+        // Retry without it so contacts/deals still sync; CM-03 just has nothing to read.
+        const soqlWithoutCompetitors = `SELECT ${baseFields} FROM Opportunity${whereClause} ORDER BY LastModifiedDate ASC`;
+        response = await this.runQuery<Record<string, unknown>>(accessToken, instanceUrl, soqlWithoutCompetitors, limit);
+      }
+
       return {
         ...response,
         records: response.records.map((r) => ({
@@ -342,7 +347,10 @@ export class SalesforceService {
           LeadSource: (r.LeadSource as string) ?? null,
           CampaignId: (r.CampaignId as string) ?? null,
           AccountId: (r.AccountId as string) ?? null,
-          Competitor: safeCompetitorField ? ((r[safeCompetitorField] as string) ?? null) : null,
+          Competitors: String(r.MainCompetitors__c ?? "")
+            .split(";")
+            .map((c) => c.trim())
+            .filter(Boolean),
         })),
       };
     } catch {
@@ -437,43 +445,6 @@ export class SalesforceService {
       throw AppError.badRequest(
         "Failed to fetch converted lead associations from Salesforce",
         "SALESFORCE_ASSOCIATIONS_FETCH_FAILED",
-      );
-    }
-  }
-
-  /**
-   * Batch-resolves opportunity -> named competitor(s) for a whole page of
-   * opportunities, via the standard `OpportunityCompetitor` junction object
-   * (metrics guide gap G-24's "junction object" mode — the alternative to a
-   * single custom field, where a deal can name *multiple* competitors at
-   * once). Only called when the org's settings select this mode.
-   */
-  static async getOpportunityCompetitors(
-    accessToken: string,
-    instanceUrl: string,
-    opportunityIds: string[],
-  ): Promise<Record<string, string[]>> {
-    if (opportunityIds.length === 0) return {};
-    try {
-      const ids = opportunityIds.map((id) => `'${id}'`).join(",");
-      const soql = `SELECT OpportunityId, CompetitorName FROM OpportunityCompetitor WHERE OpportunityId IN (${ids})`;
-      const response = await this.runQuery<{ OpportunityId: string; CompetitorName: string }>(
-        accessToken,
-        instanceUrl,
-        soql,
-      );
-      const map: Record<string, string[]> = {};
-      for (const record of response.records) {
-        if (!record.CompetitorName) continue;
-        const list = map[record.OpportunityId] ?? [];
-        list.push(record.CompetitorName);
-        map[record.OpportunityId] = list;
-      }
-      return map;
-    } catch {
-      throw AppError.badRequest(
-        "Failed to fetch opportunity competitors from Salesforce",
-        "SALESFORCE_OPPORTUNITY_COMPETITORS_FETCH_FAILED",
       );
     }
   }

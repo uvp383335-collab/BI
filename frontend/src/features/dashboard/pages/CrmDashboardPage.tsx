@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import { useIntegrationsStatus } from '../../integrations/hooks/useIntegrations'
 import { IntegrationProvider } from '../../integrations/api/integrationsApi'
-import { useEntityCounts, useFunnels, usePipelines, useProducts, useStartSync, useSyncStatus } from '../hooks/useSync'
+import { useEntityCounts, useFunnels, useLeadsByOwner, usePipelines, useProducts, useStartSync, useSyncStatus } from '../hooks/useSync'
 import { FunnelsResponse, Product } from '../api/syncApi'
 import { useMetric, useMetricTrend } from '../hooks/useMetrics'
 import { useAuthContext } from '../../../shared/context/AuthContext'
@@ -34,6 +34,7 @@ import { CollapsibleSection } from '../components/CollapsibleSection'
 import { SyncProgressBanner } from '../components/SyncProgressBanner'
 import { FunnelChart } from '../components/FunnelChart'
 import { MetricTrendChart } from '../components/MetricTrendChart'
+import { LeadsByOwnerChart } from '../components/LeadsByOwnerChart'
 import { useQuickBooksDepartments, useQuickBooksCustomerStates } from '../hooks/useProductRevenueGrowth'
 import { DateRangeFilter } from '../components/DateRangeFilter'
 import { Banner } from '../../../shared/components/Banner'
@@ -266,6 +267,7 @@ export const CrmDashboardPage: React.FC = () => {
   const { data: cm06Salesforce, isLoading: isCm06SalesforceLoading } = useMetric('cm-06', salesforceMetricsEnabled, 'salesforce')
   const { data: cm08Salesforce, isLoading: isCm08SalesforceLoading } = useMetric('cm-08', salesforceMetricsEnabled, 'salesforce')
   const { data: cm03, isLoading: isCm03Loading } = useMetric('cm-03', salesforceMetricsEnabled)
+  const { data: leadsByOwner } = useLeadsByOwner('salesforce', salesforceMetricsEnabled)
 
   const { data: hubspotPipelines } = usePipelines('hubspot', hubspotMetricsEnabled)
   const { data: salesforcePipelines } = usePipelines('salesforce', salesforceMetricsEnabled)
@@ -664,8 +666,17 @@ export const CrmDashboardPage: React.FC = () => {
                   <MetricCard id="CM-04" title="Pipeline Coverage" description="Qualified pipeline closing next quarter vs. target" icon={<Target className="h-5 w-5" />} metric={cm04Salesforce} isLoading={isCm04SalesforceLoading} />
                   <MetricCard id="CM-06" title="Funnel Conversion (MQL -> SQL)" description="Cohort-based stage-to-stage advancement" icon={<Users className="h-5 w-5" />} metric={cm06Salesforce} isLoading={isCm06SalesforceLoading} />
                   <MetricCard id="CM-08" title="MQL Volume" description="Marketing-qualified leads generated this period" icon={<LineChart className="h-5 w-5" />} metric={cm08Salesforce} isLoading={isCm08SalesforceLoading} />
-                  <MetricCard id="CM-03" title="Competitive Win Rate" description="Blended win rate vs. named competitors (configure in Settings)" icon={<Swords className="h-5 w-5" />} metric={cm03} isLoading={isCm03Loading} />
+                  <MetricCard id="CM-03" title="Competitive Win Rate" description="Blended win rate vs. named competitors" icon={<Swords className="h-5 w-5" />} metric={cm03} isLoading={isCm03Loading} />
                 </div>
+                {leadsByOwner && leadsByOwner.length > 0 && (
+                  <div className="card mt-6 p-6">
+                    <h3 className="text-sm font-semibold text-ink">Leads by Owner</h3>
+                    <p className="mt-1 text-xs text-ink-3">How many open leads each rep currently owns.</p>
+                    <div className="mt-4">
+                      <LeadsByOwnerChart data={leadsByOwner} />
+                    </div>
+                  </div>
+                )}
               </CollapsibleSection>
             )}
           </>

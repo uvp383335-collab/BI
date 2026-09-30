@@ -33,3 +33,10 @@ export const getProducts = asyncHandler(async (req: Request, res: Response): Pro
   const products = await analyticsService.getProducts(orgId, provider)
   sendSuccess(res, products)
 })
+
+export const getLeadsByOwner = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const provider = String(req.params.provider)
+  const orgId = req.auth!.orgId!
+  const data = await analyticsService.getLeadsByOwner(orgId, provider)
+  sendSuccess(res, data)
+})
