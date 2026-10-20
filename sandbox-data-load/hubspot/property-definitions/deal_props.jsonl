@@ -1,0 +1,7 @@
+{"name": "ridgeline_id", "label": "Ridgeline ID", "type": "string", "fieldType": "text", "groupName": "dealinformation", "hasUniqueValue": true}
+{"name": "salesforceopportunityid", "label": "Salesforce Opportunity ID", "type": "string", "fieldType": "text", "groupName": "dealinformation"}
+{"name": "salesforce_type__c", "label": "Salesforce Opportunity Type", "type": "enumeration", "fieldType": "select", "groupName": "dealinformation", "options": [{"label": "New Business", "value": "New Business", "displayOrder": 0}, {"label": "Renewal", "value": "Renewal", "displayOrder": 1}, {"label": "Expansion", "value": "Expansion", "displayOrder": 2}, {"label": "Churn", "value": "Churn", "displayOrder": 3}]}
+{"name": "rl_source_createdate", "label": "RL Source Create Date", "type": "datetime", "fieldType": "date", "groupName": "dealinformation"}
+{"name": "rl_arr", "label": "RL ARR", "type": "number", "fieldType": "number", "groupName": "dealinformation"}
+{"name": "rl_original_source", "label": "RL Original Source", "type": "string", "fieldType": "text", "groupName": "dealinformation"}
+{"name": "rl_original_source_data_1", "label": "RL Original Source Drill-Down 1", "type": "string", "fieldType": "text", "groupName": "dealinformation"}

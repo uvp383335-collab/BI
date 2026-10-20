@@ -1,0 +1,244 @@
+{
+ "rl_lifecycle_change": {
+  "name": "rl_lifecycle_change",
+  "labels": {
+   "singular": "Lifecycle Change",
+   "plural": "Lifecycle Changes"
+  },
+  "description": "Contact lifecycle stage history loaded from contact_property_history_lifecyclestage.csv (sandbox only).",
+  "primaryDisplayProperty": "rl_change_key",
+  "secondaryDisplayProperties": [
+   "stage",
+   "changed_at"
+  ],
+  "requiredProperties": [
+   "rl_change_key"
+  ],
+  "searchableProperties": [
+   "contact_ridgeline_id",
+   "rl_change_key"
+  ],
+  "associatedObjects": [
+   "CONTACT"
+  ],
+  "properties": [
+   {
+    "name": "source_type",
+    "label": "Source Type",
+    "type": "enumeration",
+    "fieldType": "select",
+    "options": [
+     {
+      "label": "FORM",
+      "value": "FORM",
+      "displayOrder": 0
+     },
+     {
+      "label": "AUTOMATION_PLATFORM",
+      "value": "AUTOMATION_PLATFORM",
+      "displayOrder": 1
+     },
+     {
+      "label": "SALESFORCE",
+      "value": "SALESFORCE",
+      "displayOrder": 2
+     },
+     {
+      "label": "IMPORT",
+      "value": "IMPORT",
+      "displayOrder": 3
+     }
+    ]
+   },
+   {
+    "name": "stage",
+    "label": "Stage",
+    "type": "enumeration",
+    "fieldType": "select",
+    "options": [
+     {
+      "label": "Subscriber",
+      "value": "subscriber",
+      "displayOrder": 0
+     },
+     {
+      "label": "Lead",
+      "value": "lead",
+      "displayOrder": 1
+     },
+     {
+      "label": "Marketing Qualified Lead",
+      "value": "marketingqualifiedlead",
+      "displayOrder": 2
+     },
+     {
+      "label": "Sales Qualified Lead",
+      "value": "salesqualifiedlead",
+      "displayOrder": 3
+     },
+     {
+      "label": "Opportunity",
+      "value": "opportunity",
+      "displayOrder": 4
+     },
+     {
+      "label": "Customer",
+      "value": "customer",
+      "displayOrder": 5
+     },
+     {
+      "label": "(cleared)",
+      "value": "cleared",
+      "displayOrder": 6
+     }
+    ]
+   },
+   {
+    "name": "rl_change_key",
+    "label": "Change Key",
+    "type": "string",
+    "fieldType": "text",
+    "hasUniqueValue": true
+   },
+   {
+    "name": "source_id",
+    "label": "Source ID",
+    "type": "string",
+    "fieldType": "text"
+   },
+   {
+    "name": "sequence",
+    "label": "Sequence",
+    "type": "number",
+    "fieldType": "number"
+   },
+   {
+    "name": "changed_at",
+    "label": "Changed At",
+    "type": "datetime",
+    "fieldType": "date"
+   },
+   {
+    "name": "contact_ridgeline_id",
+    "label": "Contact Ridgeline ID",
+    "type": "string",
+    "fieldType": "text"
+   }
+  ]
+ },
+ "rl_form_submission": {
+  "name": "rl_form_submission",
+  "labels": {
+   "singular": "Form Submission",
+   "plural": "Form Submissions"
+  },
+  "description": "Form submissions loaded from form_submissions.csv (sandbox only).",
+  "primaryDisplayProperty": "rl_submission_key",
+  "secondaryDisplayProperties": [
+   "form_name",
+   "submitted_at"
+  ],
+  "requiredProperties": [
+   "rl_submission_key"
+  ],
+  "searchableProperties": [
+   "contact_ridgeline_id",
+   "rl_submission_key"
+  ],
+  "associatedObjects": [
+   "CONTACT"
+  ],
+  "properties": [
+   {
+    "name": "submitted_at",
+    "label": "Submitted At",
+    "type": "datetime",
+    "fieldType": "date"
+   },
+   {
+    "name": "contact_ridgeline_id",
+    "label": "Contact Ridgeline ID",
+    "type": "string",
+    "fieldType": "text"
+   },
+   {
+    "name": "rl_submission_key",
+    "label": "Submission Key",
+    "type": "string",
+    "fieldType": "text",
+    "hasUniqueValue": true
+   },
+   {
+    "name": "form_name",
+    "label": "Form Name",
+    "type": "enumeration",
+    "fieldType": "select",
+    "options": [
+     {
+      "label": "Content Download",
+      "value": "Content Download",
+      "displayOrder": 0
+     },
+     {
+      "label": "Request a Demo",
+      "value": "Request a Demo",
+      "displayOrder": 1
+     },
+     {
+      "label": "Webinar Registration",
+      "value": "Webinar Registration",
+      "displayOrder": 2
+     },
+     {
+      "label": "Start Free Trial",
+      "value": "Start Free Trial",
+      "displayOrder": 3
+     },
+     {
+      "label": "Pricing Inquiry",
+      "value": "Pricing Inquiry",
+      "displayOrder": 4
+     },
+     {
+      "label": "Event Badge Scan (import)",
+      "value": "Event Badge Scan (import)",
+      "displayOrder": 5
+     },
+     {
+      "label": "SoftwareScout Lead (integration)",
+      "value": "SoftwareScout Lead (integration)",
+      "displayOrder": 6
+     },
+     {
+      "label": "Contact Us",
+      "value": "Contact Us",
+      "displayOrder": 7
+     },
+     {
+      "label": "Newsletter Signup",
+      "value": "Newsletter Signup",
+      "displayOrder": 8
+     }
+    ]
+   },
+   {
+    "name": "sequence",
+    "label": "Sequence",
+    "type": "number",
+    "fieldType": "number"
+   },
+   {
+    "name": "page_url",
+    "label": "Page URL",
+    "type": "string",
+    "fieldType": "text"
+   },
+   {
+    "name": "form_guid",
+    "label": "Form GUID",
+    "type": "string",
+    "fieldType": "text"
+   }
+  ]
+ }
+}
