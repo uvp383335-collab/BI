@@ -1,0 +1,4 @@
+{"name": "ridgeline_id", "label": "Ridgeline ID", "type": "string", "fieldType": "text", "groupName": "companyinformation", "hasUniqueValue": true}
+{"name": "salesforceaccountid", "label": "Salesforce Account ID", "type": "string", "fieldType": "text", "groupName": "companyinformation"}
+{"name": "region__c", "label": "Region", "type": "enumeration", "fieldType": "select", "groupName": "companyinformation", "options": [{"label": "US West", "value": "US West", "displayOrder": 0}, {"label": "US Central", "value": "US Central", "displayOrder": 1}, {"label": "US East", "value": "US East", "displayOrder": 2}, {"label": "Canada", "value": "Canada", "displayOrder": 3}]}
+{"name": "rl_source_createdate", "label": "RL Source Create Date", "type": "datetime", "fieldType": "date", "groupName": "companyinformation"}
