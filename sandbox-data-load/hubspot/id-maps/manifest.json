@@ -31,12 +31,11 @@
   "deals": 3769,
   "lifecycle_changes": 57994,
   "form_submissions": 50740,
-  "campaigns": 2,
+  "campaigns": 0,
   "goals": 3
  },
  "notes": [
-  "Campaigns: 2 of 198 loaded (pilot); 24 names with parentheses pending a rename decision.",
-  "Test link: contact 51000000102 linked to campaign '2022-Q3 | Paid Search | Brand' (association type 1184).",
-  "Contacts and companies: native createdate is the load date; original in rl_source_createdate."
+  "Contacts and companies: native createdate is the load date; original in rl_source_createdate.",
+  "Campaigns: none loaded (2 pilot campaigns and the test contact link removed 2026-10-20); all 198 to be loaded at once after the name decision."
  ]
 }
