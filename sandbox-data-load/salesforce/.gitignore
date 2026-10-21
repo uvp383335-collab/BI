@@ -1,0 +1,4 @@
+config.json
+__pycache__/
+metadata-build/
+reports/*.log

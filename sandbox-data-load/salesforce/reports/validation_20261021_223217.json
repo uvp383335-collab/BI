@@ -1,0 +1,130 @@
+{
+ "results": [
+  {
+   "check": "users: record count",
+   "pass": true,
+   "detail": "source 77, Salesforce 77"
+  },
+  {
+   "check": "accounts: record count",
+   "pass": true,
+   "detail": "source 2572, Salesforce 2572"
+  },
+  {
+   "check": "contacts: record count",
+   "pass": true,
+   "detail": "source 3758, Salesforce 3758"
+  },
+  {
+   "check": "leads: record count",
+   "pass": true,
+   "detail": "source 11767, Salesforce 11767"
+  },
+  {
+   "check": "campaigns: record count",
+   "pass": true,
+   "detail": "source 198, Salesforce 198"
+  },
+  {
+   "check": "products: record count",
+   "pass": true,
+   "detail": "source 12, Salesforce 12"
+  },
+  {
+   "check": "opportunities: record count",
+   "pass": true,
+   "detail": "source 3769, Salesforce 3769"
+  },
+  {
+   "check": "campaign_members: record count",
+   "pass": true,
+   "detail": "source 22148, Salesforce 22148"
+  },
+  {
+   "check": "pricebook_entries: standard prices",
+   "pass": true,
+   "detail": "12 source entries, wrong or missing: none"
+  },
+  {
+   "check": "users: field values",
+   "pass": true,
+   "detail": "77 records x 17 fields compared; missing 0; mismatches: none"
+  },
+  {
+   "check": "accounts: field values",
+   "pass": true,
+   "detail": "2572 records x 26 fields compared; missing 0; mismatches: none; LastModifiedDate changed by later writes on 2278"
+  },
+  {
+   "check": "contacts: field values",
+   "pass": true,
+   "detail": "3758 records x 13 fields compared; missing 0; mismatches: none"
+  },
+  {
+   "check": "leads: field values",
+   "pass": true,
+   "detail": "11767 records x 21 fields compared; missing 0; mismatches: none"
+  },
+  {
+   "check": "campaigns: field values",
+   "pass": true,
+   "detail": "198 records x 12 fields compared; missing 0; mismatches: none"
+  },
+  {
+   "check": "products: field values",
+   "pass": true,
+   "detail": "12 records x 7 fields compared; missing 0; mismatches: none"
+  },
+  {
+   "check": "opportunities: field values",
+   "pass": true,
+   "detail": "3769 records x 28 fields compared; missing 0; mismatches: none; LastModifiedDate changed by later writes on 2098"
+  },
+  {
+   "check": "campaign_members: field values",
+   "pass": true,
+   "detail": "22148 records x 7 fields compared; missing 0; mismatches: none"
+  },
+  {
+   "check": "owners: every record owned by the loading user, source owner in Ridgeline_Owner_Id__c",
+   "pass": true,
+   "detail": "not owned by the loading user: none"
+  },
+  {
+   "check": "leads: conversion",
+   "pass": true,
+   "detail": "2278 converted in source, 2278 in Salesforce; wrong account/contact/opportunity or status: 0"
+  },
+  {
+   "check": "crosswalk: Salesforce accounts",
+   "pass": true,
+   "detail": "751 crosswalk rows, 751 resolve; QBO customer id matches on 720 of 751, blank as in the source on 31 (trap I2), wrong on 0"
+  },
+  {
+   "check": "accounts: historical dates",
+   "pass": true,
+   "detail": "10 oldest/newest records, CreatedDate mismatches: 0"
+  },
+  {
+   "check": "contacts: historical dates",
+   "pass": true,
+   "detail": "10 oldest/newest records, CreatedDate mismatches: 0"
+  },
+  {
+   "check": "leads: historical dates",
+   "pass": true,
+   "detail": "10 oldest/newest records, CreatedDate mismatches: 0"
+  },
+  {
+   "check": "opportunities: historical dates",
+   "pass": true,
+   "detail": "10 oldest/newest records, CreatedDate, CloseDate mismatches: 0"
+  },
+  {
+   "check": "campaigns: historical dates",
+   "pass": true,
+   "detail": "10 oldest/newest records, StartDate, EndDate mismatches: 0"
+  }
+ ],
+ "load_summary": null
+}

@@ -1,0 +1,20 @@
+{
+  "org_alias": "ridgeline-full",
+  "org_id": "00DkO0000003fMoUAI",
+  "dataset_dir": "../../../ridgeline_dataset",
+  "output_dir": ".",
+  "owner_username": "",
+  "converted_lead_status": "Qualified",
+  "steps": [
+    "schema",
+    "users",
+    "accounts",
+    "contacts",
+    "leads",
+    "campaigns",
+    "products",
+    "opportunities",
+    "campaign_members",
+    "convert_leads"
+  ]
+}
