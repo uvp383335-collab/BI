@@ -1,0 +1,159 @@
+import { QuickBooksReport, QuickBooksReportRow } from '../../integrations/service/quickbooks.service'
+
+export interface PLLineItem {
+  account: string
+  /** QuickBooks' own id for this leaf account (`ColData[0].id`), when the report includes one — used to sum a user-configured set of accounts (e.g. G&A % of Revenue's account picker) without guessing from the name. */
+  accountId?: string
+  /** column title ("Total", or a Class name when summarized by Class) -> amount */
+  amounts: Record<string, number>
+}
+
+export interface ParsedProfitAndLoss {
+  /** Amount column titles, in report order (excludes the leading account-name column). "Total" for a single-column report. */
+  columns: string[]
+  income: PLLineItem[]
+  cogs: PLLineItem[]
+  expenses: PLLineItem[]
+  otherExpenses: PLLineItem[]
+  /** QuickBooks' own section subtotals (Income, COGS, GrossProfit, Expenses, NetOperatingIncome, ...) -> column -> amount. */
+  sectionTotals: Record<string, Record<string, number>>
+}
+
+/**
+ * Parses QuickBooks' ProfitAndLoss report JSON (a recursive Rows/Summary
+ * tree keyed by `group`) into flat per-section line-item lists. QuickBooks
+ * already tells us which rows are Income vs. COGS vs. Expenses via each
+ * section's `group` — no guessing needed there. What still needs a
+ * heuristic (see accountClassification.ts) is which *individual* expense
+ * accounts count as sales & marketing vs. G&A vs. D&A, since QuickBooks'
+ * own report doesn't sub-split "Expenses" that way.
+ */
+export function parseProfitAndLoss(report: QuickBooksReport): ParsedProfitAndLoss {
+  const columns = report.Columns.Column.slice(1).map((c) => c.ColTitle || 'Total')
+
+  const income: PLLineItem[] = []
+  const cogs: PLLineItem[] = []
+  const expenses: PLLineItem[] = []
+  const otherExpenses: PLLineItem[] = []
+  const sectionTotals: Record<string, Record<string, number>> = {}
+
+  function parseAmounts(colData: { value: string }[]): Record<string, number> {
+    const amounts: Record<string, number> = {}
+    columns.forEach((col, i) => {
+      amounts[col] = parseFloat(colData[i + 1]?.value || '0') || 0
+    })
+    return amounts
+  }
+
+  function bucketFor(section: string | null): PLLineItem[] | null {
+    if (section === 'Income') return income
+    if (section === 'COGS') return cogs
+    if (section === 'Expenses') return expenses
+    if (section === 'OtherExpenses') return otherExpenses
+    return null
+  }
+
+  function walk(rows: QuickBooksReportRow[] | undefined, section: string | null) {
+    if (!rows) return
+    for (const row of rows) {
+      const group = row.group ?? section
+      if (row.Summary?.ColData && group) {
+        sectionTotals[group] = parseAmounts(row.Summary.ColData)
+      }
+      if (row.Rows?.Row) {
+        walk(row.Rows.Row, group)
+      } else if (row.ColData && row.ColData.length > 1) {
+        const bucket = bucketFor(section)
+        if (bucket) {
+          bucket.push({ account: row.ColData[0]?.value ?? 'Unknown', accountId: row.ColData[0]?.id, amounts: parseAmounts(row.ColData) })
+        }
+      }
+    }
+  }
+
+  walk(report.Rows.Row, null)
+
+  return { columns, income, cogs, expenses, otherExpenses, sectionTotals }
+}
+
+export type ExpenseCategory = 'sales_marketing' | 'd_and_a' | 'other'
+
+// A one-time, name-keyword classification — the metrics guide calls for a
+// "one-time reviewable mapping per company" (versioned, editable). This is
+// the MVP default that mapping would start from; there's no per-org
+// override store yet (tracked as gap G-13 in the progress doc). Order
+// matters: D&A is checked before sales-and-marketing, since an account like
+// "Sales & Marketing - Depreciation" would otherwise match the S&M keyword
+// first. (G&A itself is no longer guessed here — see
+// gaExpenseTrend.service.ts, which sums an org-configured set of account ids
+// instead.)
+const D_AND_A_KEYWORDS = ['depreciation', 'amortization']
+const SALES_MARKETING_KEYWORDS = ['sales & marketing', 'sales and marketing', 's&m', 'advertising', 'marketing']
+
+export function classifyExpenseAccount(accountName: string): ExpenseCategory {
+  const name = accountName.toLowerCase()
+  if (D_AND_A_KEYWORDS.some((k) => name.includes(k))) return 'd_and_a'
+  if (SALES_MARKETING_KEYWORDS.some((k) => name.includes(k))) return 'sales_marketing'
+  return 'other'
+}
+
+/** Sums a bucket's amounts for one column, e.g. total COGS in the "Total" column, or in one Class column. */
+export function sumColumn(items: PLLineItem[], column: string): number {
+  return items.reduce((sum, item) => sum + (item.amounts[column] ?? 0), 0)
+}
+
+/** D&A can sit inside COGS (the metrics guide explicitly warns not to miss this) as well as Expenses/OtherExpenses — scan every section. */
+export function sumDepreciationAndAmortization(pl: ParsedProfitAndLoss, column: string): number {
+  const allItems = [...pl.cogs, ...pl.expenses, ...pl.otherExpenses]
+  return allItems.filter((item) => classifyExpenseAccount(item.account) === 'd_and_a').reduce((sum, item) => sum + (item.amounts[column] ?? 0), 0)
+}
+
+export function sumExpensesByCategory(pl: ParsedProfitAndLoss, category: ExpenseCategory, column: string): number {
+  const allItems = [...pl.expenses, ...pl.otherExpenses]
+  return allItems.filter((item) => classifyExpenseAccount(item.account) === category).reduce((sum, item) => sum + (item.amounts[column] ?? 0), 0)
+}
+
+/**
+ * Sums exactly the org-configured account ids off a P&L's Expenses + Other
+ * Expenses — never a name/keyword guess. Shared by every "org explicitly
+ * picks its own accounts" metric (G&A % of Revenue, Customer Acquisition
+ * Cost) rather than duplicated per metric.
+ */
+export function sumConfiguredAccountIds(pl: { expenses: PLLineItem[]; otherExpenses: PLLineItem[] }, accountIds: Set<string>, column: string): number {
+  let total = 0
+  for (const item of [...pl.expenses, ...pl.otherExpenses]) {
+    if (item.accountId && accountIds.has(item.accountId)) total += item.amounts[column] ?? 0
+  }
+  return total
+}
+
+export interface MonthlyRevenueGrowthPoint {
+  month: string
+  revenue: number
+  /** null for the first column (no prior month to compare) or when the prior month's revenue was 0. */
+  revenueGrowthPct: number | null
+}
+
+/**
+ * Turns a `summarize_column_by=Month` Profit & Loss report into one point
+ * per month: revenue and its month-over-month growth %. Backs the live
+ * "Revenue growth by product" section (productRevenueGrowth.service.ts) —
+ * mirrors docs/server.js's `buildMonthlyMetrics` revenue/revenueGrowthPct
+ * calculation, reusing `sectionTotals.Income` (each report column's total
+ * income) rather than re-deriving it from the income line items.
+ */
+export function buildMonthlyRevenueGrowth(pl: ParsedProfitAndLoss): MonthlyRevenueGrowthPoint[] {
+  const incomeByColumn = pl.sectionTotals.Income ?? {}
+  let previousRevenue: number | null = null
+
+  return pl.columns
+    // QuickBooks appends a grand-total column after the real month columns on a
+    // summarize_column_by=Month report — titled "Total", not a calendar month.
+    .filter((column) => column !== 'Total')
+    .map((month) => {
+      const revenue = incomeByColumn[month] ?? 0
+      const revenueGrowthPct = previousRevenue === null || previousRevenue === 0 ? null : ((revenue - previousRevenue) / Math.abs(previousRevenue)) * 100
+      previousRevenue = revenue
+      return { month, revenue, revenueGrowthPct }
+    })
+}
