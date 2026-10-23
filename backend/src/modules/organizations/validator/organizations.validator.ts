@@ -78,3 +78,60 @@ export const updateCACSettingsSchema = z.object({
 })
 
 export type UpdateCACSettingsInput = z.infer<typeof updateCACSettingsSchema>
+
+// CM-07 Marketing ROI (see Organization.model.ts) — an org explicitly picks which QuickBooks
+// P&L expense accounts are marketing spend; never guessed from account names.
+export const updateMarketingSpendAccountsSchema = z.object({
+  marketingSpendAccountIds: z.array(z.string().regex(QUICKBOOKS_ACCOUNT_ID_REGEX)).max(100)
+})
+
+export type UpdateMarketingSpendAccountsInput = z.infer<typeof updateMarketingSpendAccountsSchema>
+
+// HubSpot history source (see Organization.model.ts) — `true` reads the `rl_*` imported
+// history, `false` goes back to HubSpot's native fields (the default).
+export const updateHubSpotHistorySourceSchema = z.object({
+  hubspotUseImportedHistory: z.boolean()
+})
+
+export type UpdateHubSpotHistorySourceInput = z.infer<typeof updateHubSpotHistorySourceSchema>
+
+const MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/
+
+// Plan targets per inclusive month range (CM-04's new-business amounts, CM-08's MQL counts —
+// see Organization.model.ts). `YYYY-MM` strings compare correctly as plain strings, so range
+// checks need no date parsing. Ranges may not overlap: a month covered twice would have no
+// single target.
+const monthRange = {
+  fromMonth: z.string().regex(MONTH_REGEX, 'Must be a month (YYYY-MM)'),
+  toMonth: z.string().regex(MONTH_REGEX, 'Must be a month (YYYY-MM)')
+}
+
+function monthRangeTargetsSchema<T extends { fromMonth: string; toMonth: string }>(row: z.ZodType<T>) {
+  return z
+    .array(row.refine((t) => t.fromMonth <= t.toMonth, { message: 'From month must be on or before To month', path: ['toMonth'] }))
+    .max(60)
+    .superRefine((targets, ctx) => {
+      const sorted = targets.map((t, index) => ({ ...t, index })).sort((a, b) => a.fromMonth.localeCompare(b.fromMonth))
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].fromMonth <= sorted[i - 1].toMonth) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `Overlaps ${sorted[i - 1].fromMonth} – ${sorted[i - 1].toMonth}`,
+            path: [sorted[i].index, 'fromMonth']
+          })
+        }
+      }
+    })
+}
+
+export const updateCm04TargetsSchema = z.object({
+  targets: monthRangeTargetsSchema(z.object({ ...monthRange, targetAmount: z.number().positive('Target must be greater than 0').max(1e12) }))
+})
+
+export type UpdateCm04TargetsInput = z.infer<typeof updateCm04TargetsSchema>
+
+export const updateCm08MqlTargetsSchema = z.object({
+  targets: monthRangeTargetsSchema(z.object({ ...monthRange, targetCount: z.number().positive('Target must be greater than 0').max(1e9) }))
+})
+
+export type UpdateCm08MqlTargetsInput = z.infer<typeof updateCm08MqlTargetsSchema>

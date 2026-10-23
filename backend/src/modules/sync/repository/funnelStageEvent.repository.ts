@@ -59,6 +59,18 @@ export const funnelStageEventRepository = {
   },
 
   /**
+   * Drops every event for a provider. bulkUpsert above only ever adds, so
+   * this is how a switch of history *source* (e.g. HubSpot native vs.
+   * imported, see Organization.model.ts) avoids the old source's timestamps
+   * lingering next to the new one's — the forced resync that follows
+   * rebuilds the events from the new source.
+   */
+  async deleteForProvider(orgId: string | Types.ObjectId, provider: string) {
+    const FunnelStageEventModel = await modelForOrg(orgId)
+    await FunnelStageEventModel.deleteMany({ orgId: new Types.ObjectId(orgId), provider })
+  },
+
+  /**
    * Counts, per (pipeline, stage), how many distinct records ever reached that
    * stage — the number a funnel chart bar needs. Groups by record first so a
    * record with multiple events for the same stage (re-synced, or a stage
@@ -150,14 +162,39 @@ export const funnelStageEventRepository = {
   },
 
   /**
-   * Counts distinct records whose *event* for `rawStage` (not their overall
-   * first-ever event — see getCohortRecordIds) falls inside `dateRange` —
-   * CM-08's "MQLs generated this period" input. Deliberately not
-   * cohort-scoped: CM-08 asks "how many crossed the MQL line this month",
-   * not "of the leads who started this month, how many became MQLs" (that
-   * second question is CM-06's).
+   * Counts distinct records whose *first* event for `rawStage` (not their
+   * overall first-ever event — see getCohortRecordIds) falls inside
+   * `dateRange` — CM-08's "MQLs generated this period" input. First entry
+   * only, so a recycled lead that re-qualifies later is counted once per
+   * journey, as the metrics guide asks. Deliberately not cohort-scoped:
+   * CM-08 asks "how many crossed the MQL line this month", not "of the
+   * leads who started this month, how many became MQLs" (that's CM-06's).
    */
-  async countRecordsEnteringStage(
+  /**
+   * Each record's *first* entry date into each of `stages` — the raw material
+   * for CM-06's per-stage cohorts (group by when a record first entered a
+   * stage, then check whether it went on to enter the next one). Records
+   * with none of the stages are omitted.
+   */
+  async getFirstStageEntries(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    entityType: 'lead' | 'deal',
+    stages: string[]
+  ): Promise<{ providerRecordId: string; firstEntered: Record<string, Date> }[]> {
+    const FunnelStageEventModel = await modelForOrg(orgId)
+    const rows = await FunnelStageEventModel.aggregate<{ _id: string; entries: { stage: string; at: Date }[] }>([
+      { $match: { orgId: new Types.ObjectId(orgId), provider, entityType, rawStage: { $in: stages } } },
+      { $group: { _id: { providerRecordId: '$providerRecordId', stage: '$rawStage' }, at: { $min: '$enteredAt' } } },
+      { $group: { _id: '$_id.providerRecordId', entries: { $push: { stage: '$_id.stage', at: '$at' } } } }
+    ])
+    return rows.map((row) => ({
+      providerRecordId: row._id,
+      firstEntered: Object.fromEntries(row.entries.map((entry) => [entry.stage, entry.at]))
+    }))
+  },
+
+  async countRecordsFirstEnteringStage(
     orgId: string | Types.ObjectId,
     provider: string,
     entityType: 'lead' | 'deal',
@@ -166,8 +203,12 @@ export const funnelStageEventRepository = {
   ): Promise<number> {
     const FunnelStageEventModel = await modelForOrg(orgId)
     const match: Record<string, unknown> = { orgId: new Types.ObjectId(orgId), provider, entityType, rawStage }
-    const dateMatch = dateFieldMatch('enteredAt', dateRange)
-    const ids = await FunnelStageEventModel.distinct('providerRecordId', { ...match, ...dateMatch })
-    return ids.length
+    const [row] = await FunnelStageEventModel.aggregate<{ count: number }>([
+      { $match: match },
+      { $group: { _id: '$providerRecordId', firstEnteredAt: { $min: '$enteredAt' } } },
+      { $match: dateFieldMatch('firstEnteredAt', dateRange) },
+      { $count: 'count' }
+    ])
+    return row?.count ?? 0
   }
 }

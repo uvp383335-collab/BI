@@ -29,6 +29,40 @@ export interface OrganizationSettings {
   /** Customer Acquisition Cost's manually-picked acquisition-spend accounts, plus the non-overlapping window size (in months) CAC is computed over. */
   cacExpenseAccountIds?: string[]
   cacDurationMonths?: number
+  /** CM-07 Marketing ROI's manually-picked marketing-spend accounts — never inferred from account names. */
+  marketingSpendAccountIds?: string[]
+  /** On: HubSpot sync reads the `rl_*` imported history (CSV-loaded portals). Off/unset: HubSpot's native history. */
+  hubspotUseImportedHistory?: boolean
+  /** CM-04's new-business targets — each a total for an inclusive month range, spread evenly across its months. */
+  cm04Targets?: Cm04Target[]
+  /** CM-08's MQL plan — each a total MQL count for an inclusive month range, spread evenly across its months. */
+  cm08MqlTargets?: Cm08MqlTarget[]
+}
+
+export interface Cm04Target {
+  /** `YYYY-MM` */
+  fromMonth: string
+  /** `YYYY-MM`, inclusive */
+  toMonth: string
+  targetAmount: number
+}
+
+export interface Cm08MqlTarget {
+  /** `YYYY-MM` */
+  fromMonth: string
+  /** `YYYY-MM`, inclusive */
+  toMonth: string
+  targetCount: number
+}
+
+export async function updateCm08MqlTargetsRequest(targets: Cm08MqlTarget[]): Promise<OrganizationSettings> {
+  const res = await httpClient.patch<ApiEnvelope<OrganizationSettings>>('/organizations/settings/cm08-mql-targets', { targets })
+  return res.data.data
+}
+
+export async function updateCm04TargetsRequest(targets: Cm04Target[]): Promise<OrganizationSettings> {
+  const res = await httpClient.patch<ApiEnvelope<OrganizationSettings>>('/organizations/settings/cm04-targets', { targets })
+  return res.data.data
 }
 
 /** One QuickBooks chart-of-accounts leaf row, as it appears on the Cash Flow or Balance Sheet report. */
@@ -74,6 +108,12 @@ export async function updateGAndAAccountsRequest(gaExpenseAccountIds: string[]):
   return res.data.data
 }
 
+/** Options come from the same G&A listing (`getGAndAAccountOptionsRequest`) — identical P&L expense-account universe. */
+export async function updateMarketingSpendAccountsRequest(marketingSpendAccountIds: string[]): Promise<OrganizationSettings> {
+  const res = await httpClient.patch<ApiEnvelope<OrganizationSettings>>('/organizations/settings/marketing-accounts', { marketingSpendAccountIds })
+  return res.data.data
+}
+
 export interface CACSettingsInput {
   cacExpenseAccountIds: string[]
   cacDurationMonths: number
@@ -87,6 +127,13 @@ export async function getCACAccountOptionsRequest(): Promise<GAndAAccountOption[
 
 export async function updateCACSettingsRequest(settings: CACSettingsInput): Promise<OrganizationSettings> {
   const res = await httpClient.patch<ApiEnvelope<OrganizationSettings>>('/organizations/settings/cac-accounts', settings)
+  return res.data.data
+}
+
+export async function updateHubSpotHistorySourceRequest(hubspotUseImportedHistory: boolean): Promise<OrganizationSettings> {
+  const res = await httpClient.patch<ApiEnvelope<OrganizationSettings>>('/organizations/settings/hubspot-history-source', {
+    hubspotUseImportedHistory
+  })
   return res.data.data
 }
 

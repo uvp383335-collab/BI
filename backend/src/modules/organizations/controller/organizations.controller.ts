@@ -97,3 +97,31 @@ export const updateCACSettings = asyncHandler(async (req: Request, res: Response
   const settings = await organizationsService.updateCACSettings(orgId, { cacExpenseAccountIds, cacDurationMonths })
   return sendSuccess(res, settings)
 })
+
+export const updateMarketingSpendAccounts = asyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.auth!.orgId!
+  const { marketingSpendAccountIds } = req.body as { marketingSpendAccountIds: string[] }
+  const settings = await organizationsService.updateMarketingSpendAccountSettings(orgId, marketingSpendAccountIds)
+  return sendSuccess(res, settings)
+})
+
+export const updateCm04Targets = asyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.auth!.orgId!
+  const { targets } = req.body as { targets: { fromMonth: string; toMonth: string; targetAmount: number }[] }
+  const settings = await organizationsService.updateCm04Targets(orgId, targets)
+  return sendSuccess(res, settings)
+})
+
+export const updateCm08MqlTargets = asyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.auth!.orgId!
+  const { targets } = req.body as { targets: { fromMonth: string; toMonth: string; targetCount: number }[] }
+  const settings = await organizationsService.updateCm08MqlTargets(orgId, targets)
+  return sendSuccess(res, settings)
+})
+
+export const updateHubSpotHistorySource = asyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.auth!.orgId!
+  const { hubspotUseImportedHistory } = req.body as { hubspotUseImportedHistory: boolean }
+  const settings = await organizationsService.updateHubSpotHistorySource(orgId, hubspotUseImportedHistory)
+  return sendSuccess(res, settings)
+})

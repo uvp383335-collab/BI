@@ -61,6 +61,7 @@ import {
 import { useProductCategories } from '../../integrations/hooks/useProductCategories'
 import { CustomerUpgradesTrendGranularity } from '../api/productRevenueGrowthApi'
 import { DateRangeFilter } from '../components/DateRangeFilter'
+import { MetricResult } from '../api/metricsApi'
 import { Banner } from '../../../shared/components/Banner'
 import { AppShell } from '../../../widgets/AppShell'
 
@@ -68,6 +69,69 @@ const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
   hubspot: 'HubSpot',
   salesforce: 'Salesforce',
   quickbooks: 'QuickBooks'
+}
+
+const formatMonth = (month: string) => {
+  const [year, mo] = month.split('-').map(Number)
+  return new Date(Date.UTC(year, mo - 1, 1)).toLocaleString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
+const signedPct = (pct: number) => `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`
+
+/** CM-08's supporting facts: growth vs. last month, the month's plan and variance, and the last full quarter vs. plan — or which month needs a plan (set in Settings). */
+function cm08Extras(metric: MetricResult | undefined) {
+  if (!metric) return undefined
+  const { growthPct, plannedMqls, variancePct, missingPlanMonths, quarterStart, quarterMqlCount, quarterVariancePct } = metric.data as {
+    growthPct?: number | null
+    plannedMqls?: number | null
+    variancePct?: number | null
+    missingPlanMonths?: string[]
+    quarterStart?: string
+    quarterMqlCount?: number
+    quarterVariancePct?: number | null
+  }
+  return [
+    ...(growthPct != null ? [{ label: 'vs. Last Month', value: signedPct(growthPct) }] : []),
+    ...(plannedMqls != null && variancePct != null
+      ? [{ label: 'vs. Plan', value: `${signedPct(variancePct)} (plan ${Math.round(plannedMqls).toLocaleString()})` }]
+      : missingPlanMonths && missingPlanMonths.length > 0
+        ? [{ label: 'Plan', value: `Not set for ${missingPlanMonths.map(formatMonth).join(', ')} (Settings)` }]
+        : []),
+    ...(quarterStart && quarterVariancePct != null
+      ? [{ label: `Quarter from ${formatMonth(quarterStart)}`, value: `${(quarterMqlCount ?? 0).toLocaleString()} MQLs, ${signedPct(quarterVariancePct)} vs. plan` }]
+      : [])
+  ]
+}
+
+/** CM-07's supporting facts: profit ROI and the marketing spend behind both ratios — or a pointer to Settings until marketing accounts are picked. */
+function cm07Extras(metric: MetricResult | undefined) {
+  if (!metric) return undefined
+  const { blockedOn, profitRoi, marketingSpend } = metric.data as { blockedOn?: string; profitRoi?: number | null; marketingSpend?: number | null }
+  if (blockedOn === 'marketing-spend-accounts') return [{ label: 'Marketing spend', value: 'Pick marketing accounts in Settings' }]
+  return [
+    ...(profitRoi != null ? [{ label: 'Profit ROI', value: `${profitRoi.toFixed(2)}x` }] : []),
+    ...(marketingSpend != null ? [{ label: 'Marketing Spend', value: `$${Number(marketingSpend).toLocaleString()}` }] : [])
+  ]
+}
+
+/** CM-04's supporting facts: the qualified pipeline (real even without a target), plus the quarter's target — or which months still need one (set in Settings). */
+function cm04Extras(metric: MetricResult | undefined) {
+  if (!metric) return undefined
+  const { qualifiedPipelineAmount, qualifiedDealCount, nextQuarterTarget, missingTargetMonths } = metric.data as {
+    qualifiedPipelineAmount?: number | null
+    qualifiedDealCount?: number | null
+    nextQuarterTarget?: number | null
+    missingTargetMonths?: string[]
+  }
+  return [
+    ...(qualifiedPipelineAmount != null ? [{ label: 'Qualified Pipeline', value: `$${Number(qualifiedPipelineAmount).toLocaleString()}` }] : []),
+    ...(qualifiedDealCount != null ? [{ label: 'Qualified Deals', value: String(qualifiedDealCount) }] : []),
+    ...(nextQuarterTarget != null
+      ? [{ label: 'Target', value: `$${Number(nextQuarterTarget).toLocaleString()}` }]
+      : missingTargetMonths && missingTargetMonths.length > 0
+        ? [{ label: 'Target', value: `Not set for ${missingTargetMonths.map(formatMonth).join(', ')} (Settings)` }]
+        : [])
+  ]
 }
 
 /** One provider's pipeline/date filters + its three funnel charts — the body of whichever tab is active. */
@@ -793,25 +857,32 @@ export const CrmDashboardPage: React.FC = () => {
                   <MetricCard
                     id="CM-04"
                     title="Pipeline Coverage"
-                    description="Qualified pipeline closing next quarter vs. target"
+                    description="Qualified new-business pipeline closing next quarter vs. target"
                     icon={<Target className="h-5 w-5" />}
                     metric={cm04Hubspot}
                     isLoading={isCm04HubspotLoading}
-                    extras={
-                      cm04Hubspot
-                        ? [
-                            ...(cm04Hubspot.data.qualifiedPipelineAmount != null
-                              ? [{ label: 'Qualified Pipeline', value: `$${Number(cm04Hubspot.data.qualifiedPipelineAmount).toLocaleString()}` }]
-                              : []),
-                            ...(cm04Hubspot.data.qualifiedDealCount != null ? [{ label: 'Qualified Deals', value: String(cm04Hubspot.data.qualifiedDealCount) }] : [])
-                          ]
-                        : undefined
-                    }
+                    extras={cm04Extras(cm04Hubspot)}
                   />
                   <MetricCard id="CM-06" title="Funnel Conversion (MQL -> SQL)" description="Cohort-based stage-to-stage advancement" icon={<Users className="h-5 w-5" />} metric={cm06Hubspot} isLoading={isCm06HubspotLoading} />
-                  <MetricCard id="CM-08" title="MQL Volume" description="Marketing-qualified leads generated this period" icon={<LineChart className="h-5 w-5" />} metric={cm08Hubspot} isLoading={isCm08HubspotLoading} />
+                  <MetricCard
+                    id="CM-08"
+                    title="MQL Volume"
+                    description="Marketing-qualified leads generated this month vs. plan"
+                    icon={<LineChart className="h-5 w-5" />}
+                    metric={cm08Hubspot}
+                    isLoading={isCm08HubspotLoading}
+                    extras={cm08Extras(cm08Hubspot)}
+                  />
                   <MetricCard id="CM-05" title="Marketing-Sourced Pipeline & Revenue" description="Share of qualified pipeline and closed revenue attributed to marketing" icon={<PieChart className="h-5 w-5" />} metric={cm05} isLoading={isCm05Loading} />
-                  <MetricCard id="CM-07" title="Marketing ROI" description="Blended pipeline and profit return per dollar of marketing spend" icon={<Gauge className="h-5 w-5" />} metric={cm07} isLoading={isCm07Loading} />
+                  <MetricCard
+                    id="CM-07"
+                    title="Marketing ROI"
+                    description="Blended pipeline and profit return per dollar of marketing spend"
+                    icon={<Gauge className="h-5 w-5" />}
+                    metric={cm07}
+                    isLoading={isCm07Loading}
+                    extras={cm07Extras(cm07)}
+                  />
                 </div>
 
                 <div className="mt-6">
@@ -832,20 +903,11 @@ export const CrmDashboardPage: React.FC = () => {
                   <MetricCard
                     id="CM-04"
                     title="Pipeline Coverage"
-                    description="Qualified pipeline closing next quarter vs. target"
+                    description="Qualified new-business pipeline closing next quarter vs. target"
                     icon={<Target className="h-5 w-5" />}
                     metric={cm04Salesforce}
                     isLoading={isCm04SalesforceLoading}
-                    extras={
-                      cm04Salesforce
-                        ? [
-                            ...(cm04Salesforce.data.qualifiedPipelineAmount != null
-                              ? [{ label: 'Qualified Pipeline', value: `$${Number(cm04Salesforce.data.qualifiedPipelineAmount).toLocaleString()}` }]
-                              : []),
-                            ...(cm04Salesforce.data.qualifiedDealCount != null ? [{ label: 'Qualified Deals', value: String(cm04Salesforce.data.qualifiedDealCount) }] : [])
-                          ]
-                        : undefined
-                    }
+                    extras={cm04Extras(cm04Salesforce)}
                   />
                   <MetricCard id="CM-06" title="Funnel Conversion (MQL -> SQL)" description="Cohort-based stage-to-stage advancement" icon={<Users className="h-5 w-5" />} metric={cm06Salesforce} isLoading={isCm06SalesforceLoading} />
                   <MetricCard id="CM-08" title="MQL Volume" description="Marketing-qualified leads generated this period" icon={<LineChart className="h-5 w-5" />} metric={cm08Salesforce} isLoading={isCm08SalesforceLoading} />

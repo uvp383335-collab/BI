@@ -1,4 +1,4 @@
-import { OrganizationModel } from '../model/Organization.model'
+import { OrganizationModel, Cm04Target, Cm08MqlTarget } from '../model/Organization.model'
 import { Types } from 'mongoose'
 
 export const organizationsRepository = {
@@ -99,6 +99,37 @@ export const organizationsRepository = {
       settings.cacExpenseAccountIds.length > 0
         ? { $set: { 'settings.cacExpenseAccountIds': settings.cacExpenseAccountIds, 'settings.cacDurationMonths': settings.cacDurationMonths } }
         : { $unset: { 'settings.cacExpenseAccountIds': 1, 'settings.cacDurationMonths': 1 } }
+    return OrganizationModel.findByIdAndUpdate(orgId, update, { new: true })
+  },
+
+  /** Empty array clears the config (un-configured), same convention as the other list settings above. Stored sorted by `fromMonth`. */
+  updateCm04Targets(orgId: string | Types.ObjectId, targets: Cm04Target[]) {
+    const sorted = [...targets].sort((a, b) => a.fromMonth.localeCompare(b.fromMonth))
+    const update = sorted.length > 0 ? { $set: { 'settings.cm04Targets': sorted } } : { $unset: { 'settings.cm04Targets': 1 } }
+    return OrganizationModel.findByIdAndUpdate(orgId, update, { new: true })
+  },
+
+  /** Empty array clears the config (un-configured), same convention as `updateGAndAAccountSettings`. */
+  updateMarketingSpendAccountSettings(orgId: string | Types.ObjectId, marketingSpendAccountIds: string[]) {
+    const update =
+      marketingSpendAccountIds.length > 0
+        ? { $set: { 'settings.marketingSpendAccountIds': marketingSpendAccountIds } }
+        : { $unset: { 'settings.marketingSpendAccountIds': 1 } }
+    return OrganizationModel.findByIdAndUpdate(orgId, update, { new: true })
+  },
+
+  /** Same conventions as updateCm04Targets: empty array clears, stored sorted by `fromMonth`. */
+  updateCm08MqlTargets(orgId: string | Types.ObjectId, targets: Cm08MqlTarget[]) {
+    const sorted = [...targets].sort((a, b) => a.fromMonth.localeCompare(b.fromMonth))
+    const update = sorted.length > 0 ? { $set: { 'settings.cm08MqlTargets': sorted } } : { $unset: { 'settings.cm08MqlTargets': 1 } }
+    return OrganizationModel.findByIdAndUpdate(orgId, update, { new: true })
+  },
+
+  /** `false` unsets the field rather than storing it, so "off" and "never configured" read the same. */
+  updateHubSpotHistorySource(orgId: string | Types.ObjectId, hubspotUseImportedHistory: boolean) {
+    const update = hubspotUseImportedHistory
+      ? { $set: { 'settings.hubspotUseImportedHistory': true } }
+      : { $unset: { 'settings.hubspotUseImportedHistory': 1 } }
     return OrganizationModel.findByIdAndUpdate(orgId, update, { new: true })
   }
 }

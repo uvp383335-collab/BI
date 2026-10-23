@@ -7,7 +7,16 @@ import { funnelStageEventRepository } from '../../sync/repository/funnelStageEve
 import { salesforceCampaignRepository } from '../../sync/repository/salesforceCampaign.repository'
 import { organizationsRepository } from '../../organizations/repository/organizations.repository'
 import { getStoredProfitAndLoss } from './plReport.service'
-import { computeCM02, computeCM03, computeCM04, computeCM05, computeCM06, computeCM07, computeCM08 } from './cmMetrics.service'
+import {
+  computeCM02,
+  computeCM03,
+  computeCM04,
+  computeCM05,
+  computeCM06,
+  computeCM07,
+  computeCM08,
+  quarterTargetFromRanges
+} from './cmMetrics.service'
 
 jest.mock('../../sync/repository/invoice.repository')
 jest.mock('../../sync/repository/quickBooksCustomer.repository')
@@ -25,9 +34,8 @@ const mockedFindByCloseDateRange = dealRepository.findByCloseDateRange as jest.M
 const mockedFindByCreateDateRange = dealRepository.findByCreateDateRange as jest.Mock
 const mockedFindSourcesByProvider = contactRepository.findSourcesByProvider as jest.Mock
 const mockedFindAllStageDefs = pipelineStageDefinitionRepository.findAllForOrg as jest.Mock
-const mockedGetCohortRecordIds = funnelStageEventRepository.getCohortRecordIds as jest.Mock
-const mockedGetStageMembershipCounts = funnelStageEventRepository.getStageMembershipCounts as jest.Mock
-const mockedCountRecordsEnteringStage = funnelStageEventRepository.countRecordsEnteringStage as jest.Mock
+const mockedGetFirstStageEntries = funnelStageEventRepository.getFirstStageEntries as jest.Mock
+const mockedCountRecordsFirstEnteringStage = funnelStageEventRepository.countRecordsFirstEnteringStage as jest.Mock
 const mockedGetStoredPL = getStoredProfitAndLoss as jest.Mock
 const mockedFindOrgById = organizationsRepository.findById as jest.Mock
 const mockedFindAllCampaigns = salesforceCampaignRepository.findAll as jest.Mock
@@ -115,13 +123,11 @@ describe('CM-02 — Customer Concentration, QuickBooks-native ParentRef grouping
   })
 })
 
-describe('CM-04 — Pipeline Coverage Ratio (always not-computable in MVP — no operating-plan target)', () => {
+describe('CM-04 — Pipeline Coverage Ratio', () => {
   beforeEach(() => {
     mockedFindByCloseDateRange.mockReset()
     mockedFindAllStageDefs.mockReset()
-  })
-
-  it('sums only deals in a qualified (non-intake, non-closed) stage', async () => {
+    mockedFindOrgById.mockReset()
     mockedFindAllStageDefs.mockResolvedValue([
       { entityType: 'deal', pipeline: 'default', rawStage: 'appointmentscheduled', displayOrder: 1, isClosed: false, isWon: false },
       { entityType: 'deal', pipeline: 'default', rawStage: 'qualifiedtobuy', displayOrder: 2, isClosed: false, isWon: false },
@@ -132,95 +138,297 @@ describe('CM-04 — Pipeline Coverage Ratio (always not-computable in MVP — no
       { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 5000 }, // qualified
       { pipeline: 'default', dealstage: 'closedwon', amount: 2000 } // closed -- not open pipeline
     ])
+  })
 
+  it('sums only deals in a qualified (non-intake, non-closed) stage; not computable without a target', async () => {
+    mockedFindOrgById.mockResolvedValue({ settings: {} })
+
+    // Feb 2026 -> measures next quarter, 2026-Q2 (Apr-Jun).
     const result = await computeCM04('org1', 'hubspot', '2026-02')
 
-    expect(result.computable).toBe(false) // no operating-plan target exists in MVP
+    expect(result.period).toBe('2026-04')
+    expect(result.computable).toBe(false)
     expect(result.value).toBeNull()
     expect(result.data.qualifiedPipelineAmount).toBeCloseTo(5000, 0)
     expect(result.data.qualifiedDealCount).toBe(1)
-  })
-})
-
-describe('CM-06 — Funnel Conversion Rates (cohort-based)', () => {
-  beforeEach(() => {
-    mockedGetCohortRecordIds.mockReset()
-    mockedGetStageMembershipCounts.mockReset()
+    expect(result.data.missingTargetMonths).toEqual(['2026-04', '2026-05', '2026-06'])
   })
 
-  function stageCounts(lead: number, mql: number, sql: number, won: number) {
-    return [
-      { pipeline: 'contacts-default', rawStage: 'lead', count: lead },
-      { pipeline: 'contacts-default', rawStage: 'marketingqualifiedlead', count: mql },
-      { pipeline: 'contacts-default', rawStage: 'salesqualifiedlead', count: sql },
-      { pipeline: 'contacts-default', rawStage: 'customer', count: won }
-    ]
-  }
+  it('divides qualified pipeline by the quarter target, no flag at or above 3.0x', async () => {
+    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-06', targetAmount: 1500 }] } })
 
-  it('computes the three transition rates but holds back the flag when the cohort is too small', async () => {
-    // Current cohort, then a uniform trailing-4-month baseline (values don't matter here since
-    // cohortSizeSufficient is false and the flag block never runs).
-    mockedGetCohortRecordIds.mockResolvedValueOnce(Array(10).fill('c')).mockResolvedValue(Array(10).fill('c'))
-    mockedGetStageMembershipCounts.mockResolvedValueOnce(stageCounts(10, 5, 2, 1)).mockResolvedValue(stageCounts(10, 8, 6, 3))
+    const result = await computeCM04('org1', 'hubspot', '2026-02')
 
-    const result = await computeCM06('org1', 'hubspot', '2026-02')
-
-    expect(result.value).toBeCloseTo(40, 0) // MQL->SQL = 2/5
-    expect(result.data.cohortSizeSufficient).toBe(false) // 10 leads < 100 minimum
-    expect(result.flag).toBeNull() // held back despite a real decline (metrics guide: alerts held back below min cohort size)
-  })
-
-  it('act_now: MQL->SQL falls below half its trailing 4-month average, with a sufficient cohort', async () => {
-    // Current cohort, then a uniform trailing-4-month baseline (all 4 identical -> average = 60%).
-    mockedGetCohortRecordIds.mockResolvedValueOnce(Array(150).fill('c')).mockResolvedValue(Array(150).fill('c'))
-    mockedGetStageMembershipCounts
-      .mockResolvedValueOnce(stageCounts(150, 60, 6, 2)) // current: MQL->SQL = 10%
-      .mockResolvedValue(stageCounts(150, 60, 36, 10)) // each trailing month: MQL->SQL = 60%
-
-    const result = await computeCM06('org1', 'hubspot', '2026-02')
-    expect(result.data.cohortSizeSufficient).toBe(true)
-    expect(result.data.trailingAvgMqlToSqlPct).toBeCloseTo(60, 0)
-    expect(result.flag?.level).toBe('act_now') // 10% < half of 60%
-  })
-
-  it('does not false-fire on a single unusually-strong prior month once smoothed into the trailing 4-month average', async () => {
-    mockedGetCohortRecordIds.mockResolvedValue(Array(150).fill('c')) // uniform across current + all 4 trailing calls
-    mockedGetStageMembershipCounts
-      .mockResolvedValueOnce(stageCounts(150, 100, 50, 10)) // current: MQL->SQL = 50%
-      .mockResolvedValueOnce(stageCounts(150, 100, 80, 10)) // month -1: 80% -- an unusual spike
-      .mockResolvedValueOnce(stageCounts(150, 100, 50, 10)) // month -2: 50%
-      .mockResolvedValueOnce(stageCounts(150, 100, 48, 10)) // month -3: 48%
-      .mockResolvedValueOnce(stageCounts(150, 100, 52, 10)) // month -4: 52%
-    // Trailing average = (80+50+48+52)/4 = 57.5%.
-
-    const result = await computeCM06('org1', 'hubspot', '2026-02')
-    expect(result.data.trailingAvgMqlToSqlPct).toBeCloseTo(57.5, 1)
-    // Old logic (vs. just month -1's 80% spike) would have false-fired: 50 < 80*0.8=64 -> true.
-    // New logic (vs. the smoothed 57.5% average) correctly does not: 50 < 57.5*0.8=46 -> false.
+    expect(result.computable).toBe(true)
+    expect(result.value).toBeCloseTo(3.33, 2)
+    expect(result.data.nextQuarterTarget).toBeCloseTo(1500, 0)
     expect(result.flag).toBeNull()
   })
 
-  it('not computable when the cohort is empty', async () => {
-    mockedGetCohortRecordIds.mockResolvedValue([]) // both the current- and previous-cohort calls
-    const result = await computeCM06('org1', 'hubspot', '2026-02')
+  it('watch: coverage below 3.0x', async () => {
+    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-06', targetAmount: 2500 }] } })
+
+    const result = await computeCM04('org1', 'hubspot', '2026-02')
+
+    expect(result.value).toBeCloseTo(2, 2)
+    expect(result.flag?.level).toBe('watch')
+  })
+
+  it('counts only new-business deals (or untyped ones) toward the new-business target', async () => {
+    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-06', targetAmount: 1000 }] } })
+    mockedFindByCloseDateRange.mockResolvedValue([
+      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 3000, type: 'newbusiness' }, // HubSpot dealtype
+      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 1000, type: 'New Business' }, // Salesforce Opportunity.Type
+      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 500 }, // no type recorded -- kept
+      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 9000, type: 'existingbusiness' } // renewal/upsell -- excluded
+    ])
+
+    const result = await computeCM04('org1', 'hubspot', '2026-02')
+
+    expect(result.data.qualifiedPipelineAmount).toBeCloseTo(4500, 0)
+    expect(result.data.qualifiedDealCount).toBe(3)
+    expect(result.data.excludedNonNewBusinessDealCount).toBe(1)
+    expect(result.data.untypedDealCount).toBe(1)
+    expect(result.value).toBeCloseTo(4.5, 2)
+  })
+
+  it('act now: coverage below 2.0x', async () => {
+    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-06', targetAmount: 5000 }] } })
+
+    const result = await computeCM04('org1', 'hubspot', '2026-02')
+
+    expect(result.value).toBeCloseTo(1, 2)
+    expect(result.flag?.level).toBe('act_now')
+  })
+
+  describe('Salesforce: under 3.0x escalates to act now while the CM-03 win rate is falling', () => {
+    const many = (n: number, dealstage: string, competitor: string) => Array.from({ length: n }, () => ({ pipeline: 'opportunities-default', dealstage, competitor }))
+
+    beforeEach(() => {
+      mockedFindAllStageDefs.mockResolvedValue([
+        { entityType: 'deal', pipeline: 'opportunities-default', rawStage: 'Prospecting', displayOrder: 1, isClosed: false, isWon: false },
+        { entityType: 'deal', pipeline: 'opportunities-default', rawStage: 'Negotiation', displayOrder: 2, isClosed: false, isWon: false },
+        { entityType: 'deal', pipeline: 'opportunities-default', rawStage: 'Closed Won', displayOrder: 3, isClosed: true, isWon: true },
+        { entityType: 'deal', pipeline: 'opportunities-default', rawStage: 'Closed Lost', displayOrder: 4, isClosed: true, isWon: false }
+      ])
+      mockedFindOrgById.mockResolvedValue({
+        settings: {
+          salesforceCompetitorSource: 'field',
+          salesforceCompetitorField: 'Competitor__c',
+          cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-06', targetAmount: 2000 }] // 5000 / 2000 = 2.5x
+        }
+      })
+      mockedFindByCloseDateRange.mockReset()
+      // CM-04's own next-quarter deals come first; CM-03's current + prior windows follow.
+      mockedFindByCloseDateRange.mockResolvedValueOnce([{ pipeline: 'opportunities-default', dealstage: 'Negotiation', amount: 5000, type: 'New Business' }])
+    })
+
+    it('act now when a competitor win rate fell', async () => {
+      mockedFindByCloseDateRange
+        .mockResolvedValueOnce([...many(2, 'Closed Won', 'Acme'), ...many(8, 'Closed Lost', 'Acme')]) // 20%
+        .mockResolvedValueOnce([...many(8, 'Closed Won', 'Acme'), ...many(2, 'Closed Lost', 'Acme')]) // 80% prior
+
+      const result = await computeCM04('org1', 'salesforce', '2026-02')
+
+      expect(result.value).toBeCloseTo(2.5, 2)
+      expect(result.flag?.level).toBe('act_now')
+      expect(result.flag?.reason).toContain('CM-03')
+    })
+
+    it('watch when the win rate is steady', async () => {
+      mockedFindByCloseDateRange
+        .mockResolvedValueOnce([...many(5, 'Closed Won', 'Acme'), ...many(5, 'Closed Lost', 'Acme')])
+        .mockResolvedValueOnce([...many(5, 'Closed Won', 'Acme'), ...many(5, 'Closed Lost', 'Acme')])
+
+      const result = await computeCM04('org1', 'salesforce', '2026-02')
+
+      expect(result.flag?.level).toBe('watch')
+    })
+  })
+
+  it('not computable when any month of the quarter has no target', async () => {
+    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-05', targetAmount: 1000 }] } })
+
+    const result = await computeCM04('org1', 'hubspot', '2026-02')
+
+    expect(result.computable).toBe(false)
+    expect(result.data.nextQuarterTarget).toBeNull()
+    expect(result.data.missingTargetMonths).toEqual(['2026-06'])
+  })
+})
+
+describe('quarterTargetFromRanges', () => {
+  it('uses a row matching the quarter exactly', () => {
+    expect(quarterTargetFromRanges([{ fromMonth: '2023-10', toMonth: '2023-12', targetAmount: 878000 }], '2023-10')).toEqual({
+      target: 878000,
+      missingMonths: []
+    })
+  })
+
+  it('takes the quarter months share of a longer range, spread evenly', () => {
+    const { target } = quarterTargetFromRanges([{ fromMonth: '2023-10', toMonth: '2024-03', targetAmount: 1800000 }], '2023-10')
+    expect(target).toBeCloseTo(900000, 0)
+  })
+
+  it('adds up several rows that together cover the quarter', () => {
+    const { target } = quarterTargetFromRanges(
+      [
+        { fromMonth: '2023-01', toMonth: '2023-10', targetAmount: 1000 }, // 100/month, Oct only
+        { fromMonth: '2023-11', toMonth: '2023-12', targetAmount: 600 } // 300/month
+      ],
+      '2023-10'
+    )
+    expect(target).toBeCloseTo(700, 0)
+  })
+
+  it('spans a year boundary', () => {
+    const { target } = quarterTargetFromRanges([{ fromMonth: '2025-07', toMonth: '2026-06', targetAmount: 1200 }], '2026-01')
+    expect(target).toBeCloseTo(300, 0)
+  })
+})
+
+/**
+ * One quarter's worth of contacts for CM-06: `leads` enter `lead` on the 2nd of the quarter's
+ * first month, the first `mqls` of them become MQLs on the 12th, the first `sqls` of those
+ * become SQLs on the 22nd — so every transition's cohort sits inside the same quarter.
+ */
+let funnelRecordSeq = 0
+function quarterFunnel(quarterStart: string, leads: number, mqls: number, sqls: number) {
+  const day = (d: number) => new Date(`${quarterStart}-${String(d).padStart(2, '0')}T00:00:00Z`)
+  return Array.from({ length: leads }, (_, i) => ({
+    providerRecordId: `c${(funnelRecordSeq += 1)}`,
+    firstEntered: {
+      lead: day(2),
+      ...(i < mqls ? { marketingqualifiedlead: day(12) } : {}),
+      ...(i < sqls ? { salesqualifiedlead: day(22) } : {})
+    }
+  }))
+}
+
+/** `current` for the given quarter, plus the same funnel shape in each of its four prior quarters. */
+function funnelWithHistory(quarterStart: string, current: [number, number, number], priors: [number, number, number][]) {
+  const quarters = [1, 2, 3, 4].map((i) => {
+    const [year, mo] = quarterStart.split('-').map(Number)
+    const total = year * 12 + (mo - 1) - 3 * i
+    return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`
+  })
+  return [quarterFunnel(quarterStart, ...current), ...priors.flatMap((p, i) => quarterFunnel(quarters[i], ...p))].flat()
+}
+
+describe('CM-06 — Funnel Conversion Rates (cohort-based, per stage, quarterly)', () => {
+  beforeEach(() => {
+    mockedGetFirstStageEntries.mockReset()
+  })
+
+  // As of Jun 2026: Lead->MQL (3-month maturation), MQL->SQL and SQL->Opportunity (2 months)
+  // all read the Jan-Mar 2026 cohort; Opportunity->Won (6 months) reads Oct-Dec 2025.
+  const AS_OF = '2026-06'
+  const stage = (result: Awaited<ReturnType<typeof computeCM06>>, key: string) => (result.data.stages as any[]).find((s) => s.key === key)
+
+  it('rates each transition on its own latest mature quarterly cohort; holds the flag back for a small cohort', async () => {
+    mockedGetFirstStageEntries.mockResolvedValue(quarterFunnel('2026-01', 10, 5, 2))
+
+    const result = await computeCM06('org1', 'hubspot', AS_OF)
+
+    expect(result.value).toBeCloseTo(40, 1) // MQL -> SQL = 2/5
+    expect(result.period).toBe('2026-01')
+    expect(stage(result, 'leadToMql')).toMatchObject({ cohortQuarter: '2026-01', cohortSize: 10, advanced: 5, ratePct: 50, maturationMonths: 3 })
+    expect(stage(result, 'mqlToSql').medianDaysToAdvance).toBeCloseTo(10, 1) // MQL on the 12th, SQL on the 22nd
+    expect(stage(result, 'opportunityToWon').cohortQuarter).toBe('2025-10')
+    expect(result.data.cohortSizeSufficient).toBe(false) // 10 leads < 100 minimum
+    expect(result.flag).toBeNull()
+  })
+
+  it('counts an advance only into the exact next stage', async () => {
+    // A contact sales created straight at SQL, skipping MQL: it is not a Lead -> MQL conversion.
+    mockedGetFirstStageEntries.mockResolvedValue([
+      { providerRecordId: 'x', firstEntered: { lead: new Date('2026-01-02T00:00:00Z'), salesqualifiedlead: new Date('2026-01-10T00:00:00Z') } }
+    ])
+
+    const result = await computeCM06('org1', 'hubspot', AS_OF)
+
+    expect(stage(result, 'leadToMql')).toMatchObject({ cohortSize: 1, advanced: 0, ratePct: 0 })
+  })
+
+  it('act now: MQL -> SQL below half its trailing four-quarter average', async () => {
+    mockedGetFirstStageEntries.mockResolvedValue(funnelWithHistory('2026-01', [150, 60, 6], Array(4).fill([150, 60, 36]))) // 10% vs. 60%
+
+    const result = await computeCM06('org1', 'hubspot', AS_OF)
+
+    expect(result.data.cohortSizeSufficient).toBe(true)
+    expect(stage(result, 'mqlToSql').trailingAvgPct).toBeCloseTo(60, 1)
+    expect(result.flag?.level).toBe('act_now')
+    expect(result.flag?.reason).toContain('below half')
+  })
+
+  it('act now: two adjacent stages more than 20% below their trailing averages', async () => {
+    // Lead -> MQL 28% vs. 40%; MQL -> SQL 35.7% vs. 60% (down, but not below half).
+    mockedGetFirstStageEntries.mockResolvedValue(funnelWithHistory('2026-01', [150, 42, 15], Array(4).fill([150, 60, 36])))
+
+    const result = await computeCM06('org1', 'hubspot', AS_OF)
+
+    expect(result.flag?.level).toBe('act_now')
+    expect(result.flag?.reason).toContain('Lead -> MQL and MQL -> SQL')
+  })
+
+  it('watch: a single stage more than 20% below its trailing average', async () => {
+    // Lead -> MQL 28% vs. 40%; MQL -> SQL 59.5% vs. 60% (steady).
+    mockedGetFirstStageEntries.mockResolvedValue(funnelWithHistory('2026-01', [150, 42, 25], Array(4).fill([150, 60, 36])))
+
+    const result = await computeCM06('org1', 'hubspot', AS_OF)
+
+    expect(result.flag?.level).toBe('watch')
+    expect(result.flag?.reason).toContain('Lead -> MQL')
+  })
+
+  it('does not false-fire on one unusually strong prior quarter once averaged over four', async () => {
+    // MQL -> SQL now 50%; prior quarters 80% (spike), 50%, 48%, 52% -> average 57.5%; 50 is not < 46.
+    mockedGetFirstStageEntries.mockResolvedValue(
+      funnelWithHistory('2026-01', [150, 100, 50], [
+        [150, 100, 80],
+        [150, 100, 50],
+        [150, 100, 48],
+        [150, 100, 52]
+      ])
+    )
+
+    const result = await computeCM06('org1', 'hubspot', AS_OF)
+
+    expect(stage(result, 'mqlToSql').trailingAvgPct).toBeCloseTo(57.5, 1)
+    expect(result.flag).toBeNull()
+  })
+
+  it('not computable with no lifecycle history at all', async () => {
+    mockedGetFirstStageEntries.mockResolvedValue([])
+    const result = await computeCM06('org1', 'hubspot', AS_OF)
     expect(result.computable).toBe(false)
   })
 })
 
 describe('CM-08 — Lead Volume vs. Plan (MQL Flow)', () => {
   beforeEach(() => {
-    mockedCountRecordsEnteringStage.mockReset()
-    mockedGetCohortRecordIds.mockReset()
-    mockedGetStageMembershipCounts.mockReset()
+    mockedCountRecordsFirstEnteringStage.mockReset()
+    mockedGetFirstStageEntries.mockReset()
+    mockedGetFirstStageEntries.mockResolvedValue([]) // CM-06's cross-check: not computable, no flag, unless a test sets it
+    mockedFindOrgById.mockReset()
+    mockedFindOrgById.mockResolvedValue({ settings: {} }) // no MQL plan unless a test sets one
+    // CM-08's CM-06 cross-check runs "as of now"; pin it so its latest mature MQL -> SQL cohort is Apr-Jun 2026.
+    jest.useFakeTimers({ now: new Date('2026-10-15T00:00:00Z'), doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] })
   })
 
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  // CM-06 deteriorating: MQL -> SQL 10% in Apr-Jun 2026 vs. 60% in each of the four prior quarters.
+  const cm06Deteriorating = () => funnelWithHistory('2026-04', [150, 60, 6], Array(4).fill([150, 60, 36]))
+
   it('watch: MQL volume declined two months running, while CM-06 is not (also) deteriorating', async () => {
-    mockedCountRecordsEnteringStage
+    mockedCountRecordsFirstEnteringStage
       .mockResolvedValueOnce(80) // this month
       .mockResolvedValueOnce(100) // last month
       .mockResolvedValueOnce(120) // two months ago
     // CM-06's internal cross-check comes back empty -> not computable -> no flag.
-    mockedGetCohortRecordIds.mockResolvedValue([])
 
     const result = await computeCM08('org1', 'hubspot', '2026-02')
     expect(result.value).toBe(80)
@@ -229,27 +437,15 @@ describe('CM-08 — Lead Volume vs. Plan (MQL Flow)', () => {
   })
 
   it('act_now: MQL volume declining two months running AND CM-06 is also deteriorating', async () => {
-    mockedCountRecordsEnteringStage.mockResolvedValueOnce(80).mockResolvedValueOnce(100).mockResolvedValueOnce(120)
-    // Current cohort, then a uniform trailing-4-month baseline for CM-06's internal cross-check.
-    mockedGetCohortRecordIds.mockResolvedValueOnce(Array(150).fill('c')).mockResolvedValue(Array(150).fill('c'))
-    mockedGetStageMembershipCounts
-      .mockResolvedValueOnce([
-        { pipeline: 'contacts-default', rawStage: 'lead', count: 150 },
-        { pipeline: 'contacts-default', rawStage: 'marketingqualifiedlead', count: 60 },
-        { pipeline: 'contacts-default', rawStage: 'salesqualifiedlead', count: 6 }
-      ])
-      .mockResolvedValue([
-        { pipeline: 'contacts-default', rawStage: 'lead', count: 150 },
-        { pipeline: 'contacts-default', rawStage: 'marketingqualifiedlead', count: 60 },
-        { pipeline: 'contacts-default', rawStage: 'salesqualifiedlead', count: 36 }
-      ])
+    mockedCountRecordsFirstEnteringStage.mockResolvedValueOnce(80).mockResolvedValueOnce(100).mockResolvedValueOnce(120)
+    mockedGetFirstStageEntries.mockResolvedValue(cm06Deteriorating())
 
     const result = await computeCM08('org1', 'hubspot', '2026-02')
     expect(result.flag?.level).toBe('act_now')
   })
 
   it('no flag when MQL volume is not declining', async () => {
-    mockedCountRecordsEnteringStage.mockResolvedValueOnce(120).mockResolvedValueOnce(100).mockResolvedValueOnce(80)
+    mockedCountRecordsFirstEnteringStage.mockResolvedValueOnce(120).mockResolvedValueOnce(100).mockResolvedValueOnce(80)
     const result = await computeCM08('org1', 'hubspot', '2026-02')
     expect(result.data.growthPct).toBeCloseTo(20, 0)
     expect(result.flag).toBeNull()
@@ -257,19 +453,8 @@ describe('CM-08 — Lead Volume vs. Plan (MQL Flow)', () => {
 
   it('act_now: a single-month MQL fall (not two months running) still escalates when CM-06 is also deteriorating', async () => {
     // current 80 < previous 100, but previous 100 is NOT < two-ago 90 -> not a two-month streak.
-    mockedCountRecordsEnteringStage.mockResolvedValueOnce(80).mockResolvedValueOnce(100).mockResolvedValueOnce(90)
-    mockedGetCohortRecordIds.mockResolvedValueOnce(Array(150).fill('c')).mockResolvedValue(Array(150).fill('c'))
-    mockedGetStageMembershipCounts
-      .mockResolvedValueOnce([
-        { pipeline: 'contacts-default', rawStage: 'lead', count: 150 },
-        { pipeline: 'contacts-default', rawStage: 'marketingqualifiedlead', count: 60 },
-        { pipeline: 'contacts-default', rawStage: 'salesqualifiedlead', count: 6 }
-      ])
-      .mockResolvedValue([
-        { pipeline: 'contacts-default', rawStage: 'lead', count: 150 },
-        { pipeline: 'contacts-default', rawStage: 'marketingqualifiedlead', count: 60 },
-        { pipeline: 'contacts-default', rawStage: 'salesqualifiedlead', count: 36 }
-      ])
+    mockedCountRecordsFirstEnteringStage.mockResolvedValueOnce(80).mockResolvedValueOnce(100).mockResolvedValueOnce(90)
+    mockedGetFirstStageEntries.mockResolvedValue(cm06Deteriorating())
 
     const result = await computeCM08('org1', 'hubspot', '2026-02')
     expect(result.flag?.level).toBe('act_now')
@@ -277,11 +462,68 @@ describe('CM-08 — Lead Volume vs. Plan (MQL Flow)', () => {
   })
 
   it('no flag on a single-month MQL fall when CM-06 is not (also) deteriorating', async () => {
-    mockedCountRecordsEnteringStage.mockResolvedValueOnce(80).mockResolvedValueOnce(100).mockResolvedValueOnce(90)
-    mockedGetCohortRecordIds.mockResolvedValue([])
+    mockedCountRecordsFirstEnteringStage.mockResolvedValueOnce(80).mockResolvedValueOnce(100).mockResolvedValueOnce(90)
 
     const result = await computeCM08('org1', 'hubspot', '2026-02')
     expect(result.flag).toBeNull()
+  })
+
+  describe('vs. the MQL plan', () => {
+    // Calls run in order: this month, last month, two months ago, then the last full quarter.
+    const counts = (month: number, previous: number, twoAgo: number, quarter: number) =>
+      mockedCountRecordsFirstEnteringStage
+        .mockResolvedValueOnce(month)
+        .mockResolvedValueOnce(previous)
+        .mockResolvedValueOnce(twoAgo)
+        .mockResolvedValueOnce(quarter)
+    // 1,200 MQLs over Jan-Dec 2025 -> 100 a month, 300 a quarter.
+    const plan = { cm08MqlTargets: [{ fromMonth: '2025-01', toMonth: '2025-12', targetCount: 1200 }] }
+
+    it('reports the month variance and the last full quarter, no flag within 15% of plan', async () => {
+      mockedFindOrgById.mockResolvedValue({ settings: plan })
+      counts(90, 90, 90, 280)
+
+      const result = await computeCM08('org1', 'hubspot', '2025-08') // last full quarter: Apr-Jun 2025
+
+      expect(result.data.plannedMqls).toBeCloseTo(100, 1)
+      expect(result.data.variancePct).toBeCloseTo(-10, 1)
+      expect(result.data.quarterStart).toBe('2025-04')
+      expect(result.data.quarterPlannedMqls).toBeCloseTo(300, 1)
+      expect(result.data.quarterVariancePct).toBeCloseTo(-6.7, 1)
+      expect(result.flag).toBeNull()
+    })
+
+    it('watch: a month more than 15% below plan', async () => {
+      mockedFindOrgById.mockResolvedValue({ settings: plan })
+      counts(80, 80, 80, 290)
+
+      const result = await computeCM08('org1', 'hubspot', '2025-08')
+
+      expect(result.data.variancePct).toBeCloseTo(-20, 1)
+      expect(result.flag?.level).toBe('watch')
+    })
+
+    it('act now: a full quarter more than 25% below plan', async () => {
+      mockedFindOrgById.mockResolvedValue({ settings: plan })
+      counts(95, 95, 95, 200)
+
+      const result = await computeCM08('org1', 'hubspot', '2025-09') // Sep closes Q3 -> quarter is Jul-Sep 2025
+
+      expect(result.data.quarterStart).toBe('2025-07')
+      expect(result.data.quarterVariancePct).toBeCloseTo(-33.3, 1)
+      expect(result.flag?.level).toBe('act_now')
+    })
+
+    it('no plan comparison for a month the plan does not cover', async () => {
+      mockedFindOrgById.mockResolvedValue({ settings: plan })
+      counts(10, 10, 10, 300) // last full quarter (Oct-Dec 2025) is still covered -- and on plan
+
+      const result = await computeCM08('org1', 'hubspot', '2026-02')
+
+      expect(result.data.plannedMqls).toBeNull()
+      expect(result.data.missingPlanMonths).toEqual(['2026-02'])
+      expect(result.flag).toBeNull()
+    })
   })
 })
 
@@ -370,6 +612,117 @@ describe('CM-05 — Marketing-Sourced Pipeline & Revenue %', () => {
   })
 })
 
+describe('CM-05 — new business only, qualification from stage history, quarterly windows', () => {
+  const stageDefs = [
+    { entityType: 'deal', pipeline: 'default', rawStage: 'appointmentscheduled', displayOrder: 1, isClosed: false, isWon: false },
+    { entityType: 'deal', pipeline: 'default', rawStage: 'qualifiedtobuy', displayOrder: 2, isClosed: false, isWon: false },
+    { entityType: 'deal', pipeline: 'default', rawStage: 'closedwon', displayOrder: 3, isClosed: true, isWon: true },
+    { entityType: 'deal', pipeline: 'default', rawStage: 'closedlost', displayOrder: 4, isClosed: true, isWon: false }
+  ]
+  const history = (...stages: string[]) => stages.map((value) => ({ value, timestamp: new Date('2026-01-15') }))
+  const fromMonth = (from: Date) => from.toISOString().slice(0, 7)
+
+  beforeEach(() => {
+    for (const mock of [mockedFindByCreateDateRange, mockedFindByCloseDateRange, mockedFindSourcesByProvider, mockedFindAllStageDefs, mockedFindOrgById]) {
+      mock.mockReset()
+    }
+    mockedFindAllStageDefs.mockResolvedValue(stageDefs)
+    mockedFindSourcesByProvider.mockResolvedValue([
+      { providerRecordId: 'c1', analyticsSource: 'PAID_SEARCH' }, // marketing
+      { providerRecordId: 'c2', analyticsSource: 'DIRECT_TRAFFIC' } // not marketing
+    ])
+    mockedFindByCloseDateRange.mockResolvedValue([])
+    mockedFindOrgById.mockResolvedValue({ settings: {} })
+  })
+
+  it('counts deals that passed qualification even if since won or lost, and skips non-new-business deals', async () => {
+    mockedFindByCreateDateRange.mockImplementation(async (_org: string, _provider: string, from: Date) =>
+      fromMonth(from) === '2026-01'
+        ? [
+            { pipeline: 'default', dealstage: 'closedwon', amount: 1000, type: 'newbusiness', contactIds: ['c1'] }, // won -- counts
+            {
+              pipeline: 'default',
+              dealstage: 'closedlost',
+              amount: 2000,
+              type: 'newbusiness',
+              contactIds: ['c2'],
+              dealStageHistory: history('appointmentscheduled', 'qualifiedtobuy', 'closedlost') // qualified, then lost -- counts
+            },
+            {
+              pipeline: 'default',
+              dealstage: 'closedlost',
+              amount: 700,
+              type: 'newbusiness',
+              contactIds: ['c1'],
+              dealStageHistory: history('appointmentscheduled', 'closedlost') // lost before qualifying -- excluded
+            },
+            { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 5000, type: 'existingbusiness', contactIds: ['c1'] } // not new business
+          ]
+        : []
+    )
+
+    const result = await computeCM05('org1', 'hubspot', '2026-02')
+
+    expect(result.period).toBe('2026-01') // the quarter, Jan-Mar 2026
+    expect(result.data.totalQualifiedPipeline).toBeCloseTo(3000, 0)
+    expect(result.data.marketingQualifiedPipeline).toBeCloseTo(1000, 0)
+    expect(result.data.attributionModel).toBe('first-touch')
+    // Pipeline window is the quarter itself; revenue window the trailing 12 months to its end.
+    expect(fromMonth(mockedFindByCreateDateRange.mock.calls[0][2])).toBe('2026-01')
+    expect(fromMonth(mockedFindByCloseDateRange.mock.calls[0][2])).toBe('2025-04')
+  })
+
+  it('excludes non-new-business deals from closed revenue', async () => {
+    mockedFindByCreateDateRange.mockImplementation(async (_org: string, _provider: string, from: Date) =>
+      fromMonth(from) === '2026-01' ? [{ pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 100, type: 'newbusiness', contactIds: ['c1'] }] : []
+    )
+    mockedFindByCloseDateRange.mockImplementation(async (_org: string, _provider: string, from: Date) =>
+      fromMonth(from) === '2025-04'
+        ? [
+            { pipeline: 'default', dealstage: 'closedwon', amount: 3000, type: 'newbusiness', contactIds: ['c1'] },
+            { pipeline: 'default', dealstage: 'closedwon', amount: 9000, type: 'existingbusiness', contactIds: ['c1'] }
+          ]
+        : []
+    )
+
+    const result = await computeCM05('org1', 'hubspot', '2026-02')
+
+    expect(result.data.totalRevenue).toBeCloseTo(3000, 0)
+    expect(result.data.revenuePct).toBeCloseTo(100, 0)
+  })
+
+  it('act now: the share is falling while pipeline coverage (CM-04) is below target', async () => {
+    const deal = (amount: number, contact: string) => ({ pipeline: 'default', dealstage: 'qualifiedtobuy', amount, type: 'newbusiness', contactIds: [contact] })
+    mockedFindByCreateDateRange.mockImplementation(async (_org: string, _provider: string, from: Date) => {
+      if (fromMonth(from) === '2026-01') return [deal(1000, 'c1'), deal(3000, 'c2')] // 25% this quarter
+      if (fromMonth(from) === '2025-10') return [deal(3000, 'c1'), deal(1000, 'c2')] // 75% last quarter
+      return []
+    })
+    // CM-04: one small open deal against a target covering every month -- coverage far below 2.0x.
+    mockedFindByCloseDateRange.mockResolvedValue([deal(100, 'c1')])
+    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2000-01', toMonth: '2099-12', targetAmount: 1e9 }] } })
+
+    const result = await computeCM05('org1', 'hubspot', '2026-02')
+
+    expect(result.value).toBeCloseTo(25, 1)
+    expect(result.flag?.level).toBe('act_now')
+    expect(result.flag?.reason).toContain('CM-04')
+  })
+
+  it('stays watch when the share is falling but coverage has no target', async () => {
+    const deal = (amount: number, contact: string) => ({ pipeline: 'default', dealstage: 'qualifiedtobuy', amount, type: 'newbusiness', contactIds: [contact] })
+    mockedFindByCreateDateRange.mockImplementation(async (_org: string, _provider: string, from: Date) => {
+      if (fromMonth(from) === '2026-01') return [deal(1000, 'c1'), deal(3000, 'c2')] // 25%
+      if (fromMonth(from) === '2025-10') return [deal(3000, 'c1'), deal(1000, 'c2')] // 75%
+      return []
+    })
+
+    const result = await computeCM05('org1', 'hubspot', '2026-02')
+
+    expect(result.flag?.level).toBe('watch') // below the 30% target, CM-04 not computable
+  })
+})
+
 describe('CM-05 (Salesforce) — Marketing-Sourced Pipeline & Revenue %, Campaign-attributed (G-23)', () => {
   const salesforceStageDefs = [
     { entityType: 'deal', pipeline: 'opportunities-default', rawStage: 'Prospecting', displayOrder: 1, isClosed: false, isWon: false },
@@ -450,7 +803,8 @@ describe('CM-07 — Marketing ROI by Channel (blended only)', () => {
       columns: ['Total'],
       income: Object.entries(income).map(([account, amount]) => ({ account, amounts: { Total: amount } })),
       cogs: [],
-      expenses: Object.entries(expenses).map(([account, amount]) => ({ account, amounts: { Total: amount } })),
+      // QuickBooks account ids are the account names here, so a test picks accounts by name.
+      expenses: Object.entries(expenses).map(([account, amount]) => ({ account, accountId: account, amounts: { Total: amount } })),
       otherExpenses: [],
       sectionTotals: {},
       startDate: '2026-01-01',
@@ -464,10 +818,12 @@ describe('CM-07 — Marketing ROI by Channel (blended only)', () => {
     mockedFindByCloseDateRange.mockReset()
     mockedFindSourcesByProvider.mockReset()
     mockedFindAllStageDefs.mockReset()
+    mockedFindOrgById.mockReset()
     mockedFindByCreateDateRange.mockResolvedValue([])
     mockedFindByCloseDateRange.mockResolvedValue([])
     mockedFindSourcesByProvider.mockResolvedValue([])
     mockedFindAllStageDefs.mockResolvedValue([])
+    mockedFindOrgById.mockResolvedValue({ settings: { marketingSpendAccountIds: ['Sales & Marketing - Advertising'] } })
   })
 
   it('computes blended pipeline ROI from marketing-sourced pipeline / marketing spend', async () => {
@@ -535,6 +891,51 @@ describe('CM-07 — Marketing ROI by Channel (blended only)', () => {
     const result = await computeCM07('org1', '2026-02')
     expect(result.value).toBeCloseTo(11, 1)
     expect(result.flag).toBeNull()
+  })
+
+  it('counts only the picked marketing accounts as spend, not sales accounts', async () => {
+    mockedFindAllStageDefs.mockResolvedValue([
+      { entityType: 'deal', pipeline: 'default', rawStage: 'intake', displayOrder: 1, isClosed: false, isWon: false },
+      { entityType: 'deal', pipeline: 'default', rawStage: 'qualified', displayOrder: 2, isClosed: false, isWon: false }
+    ])
+    mockedFindSourcesByProvider.mockResolvedValue([{ providerRecordId: 'c1', analyticsSource: 'ORGANIC_SEARCH' }])
+    mockedFindByCreateDateRange.mockResolvedValue([{ pipeline: 'default', dealstage: 'qualified', amount: 10000, contactIds: ['c1'] }])
+    mockedGetStoredPL.mockResolvedValue(pl({ Rev: 20000 }, { 'Sales & Marketing - Advertising': 2000, 'Sales & Marketing - Sales Salaries': 8000 }))
+
+    const result = await computeCM07('org1', '2026-02')
+
+    expect(result.data.marketingSpend).toBeCloseTo(2000, 0) // the 8,000 of sales salaries is not marketing spend
+    expect(result.value).toBeCloseTo(5, 1)
+  })
+
+  it('not computable until marketing accounts are picked in Settings', async () => {
+    mockedFindOrgById.mockResolvedValue({ settings: {} })
+    mockedGetStoredPL.mockResolvedValue(pl({ Rev: 20000 }, { 'Sales & Marketing - Advertising': 2000 }))
+
+    const result = await computeCM07('org1', '2026-02')
+
+    expect(result.computable).toBe(false)
+    expect(result.data.blockedOn).toBe('marketing-spend-accounts')
+  })
+
+  it('profit ROI uses revenue closed in the same quarter as the spend, not the trailing twelve months', async () => {
+    mockedFindAllStageDefs.mockResolvedValue([
+      { entityType: 'deal', pipeline: 'default', rawStage: 'intake', displayOrder: 1, isClosed: false, isWon: false },
+      { entityType: 'deal', pipeline: 'default', rawStage: 'qualified', displayOrder: 2, isClosed: false, isWon: false },
+      { entityType: 'deal', pipeline: 'default', rawStage: 'won', displayOrder: 3, isClosed: true, isWon: true }
+    ])
+    mockedFindSourcesByProvider.mockResolvedValue([{ providerRecordId: 'c1', analyticsSource: 'ORGANIC_SEARCH' }])
+    mockedFindByCreateDateRange.mockResolvedValue([{ pipeline: 'default', dealstage: 'qualified', amount: 10000, contactIds: ['c1'] }])
+    mockedFindByCloseDateRange.mockResolvedValue([
+      { pipeline: 'default', dealstage: 'won', amount: 3000, contactIds: ['c1'], closedate: new Date('2026-02-10T00:00:00Z') }, // in Jan-Mar 2026
+      { pipeline: 'default', dealstage: 'won', amount: 9000, contactIds: ['c1'], closedate: new Date('2025-08-10T00:00:00Z') } // earlier in the TTM
+    ])
+    mockedGetStoredPL.mockResolvedValue(pl({ Rev: 20000 }, { 'Sales & Marketing - Advertising': 2000 })) // no COGS -> 100% gross margin
+
+    const result = await computeCM07('org1', '2026-02')
+
+    expect(result.data.marketingSourcedRevenue).toBeCloseTo(3000, 0)
+    expect(result.data.profitRoi).toBeCloseTo(1.5, 2) // 3,000 x 100% / 2,000
   })
 })
 

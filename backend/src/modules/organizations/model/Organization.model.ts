@@ -75,6 +75,56 @@ export interface OrganizationSettings {
    */
   cacExpenseAccountIds?: string[]
   cacDurationMonths?: number
+  /**
+   * CM-07 (Marketing ROI)'s marketing spend — the QuickBooks P&L expense
+   * accounts that are marketing (programs, software, media; the guide's
+   * "accounts classified as marketing"). Same "never guess" convention and
+   * same account universe as `gaExpenseAccountIds`: account names can't tell
+   * marketing from sales spend reliably. Empty/unset means CM-07 reports
+   * `computable: false`.
+   */
+  marketingSpendAccountIds?: string[]
+  /**
+   * Where HubSpot stage history comes from. Off (the default, and how
+   * unset reads) uses HubSpot's native fields — `propertiesWithHistory`
+   * on `lifecyclestage`/`dealstage` and native `createdate`. On reads the
+   * `rl_*` custom objects/properties instead (`rl_lifecycle_change`,
+   * `rl_deal_stage_change`, `rl_source_createdate`, ...), for portals whose
+   * history was imported from CSV: HubSpot stamps every native history
+   * entry with the import date and won't accept a backdated one, so the
+   * real dates can only live in those `rl_*` fields.
+   */
+  hubspotUseImportedHistory?: boolean
+  /**
+   * CM-04 (Pipeline Coverage) new-business targets — operating-plan data no
+   * CRM holds (gap G-14), so an org enters it by hand. Each row is one
+   * target for an inclusive month range (`YYYY-MM`); the amount is the
+   * total for the whole range and is spread evenly across its months, so
+   * one row per quarter, per half or per year all work. Rows never overlap
+   * (enforced by the validator). Months with no row leave any quarter
+   * containing them `computable: false` rather than guessing a target.
+   */
+  cm04Targets?: Cm04Target[]
+  /**
+   * CM-08 (Lead Volume vs. Plan) MQL targets — the operating plan's MQL
+   * line, entered the same way as `cm04Targets`: one total MQL count per
+   * inclusive month range, spread evenly across its months, ranges never
+   * overlapping. A month with no row has no plan, so CM-08's plan
+   * comparison and plan-based flags stay off for it.
+   */
+  cm08MqlTargets?: Cm08MqlTarget[]
+}
+
+export interface Cm08MqlTarget {
+  fromMonth: string
+  toMonth: string
+  targetCount: number
+}
+
+export interface Cm04Target {
+  fromMonth: string
+  toMonth: string
+  targetAmount: number
 }
 
 export interface OrganizationDocument extends Document {
@@ -110,7 +160,35 @@ const organizationSchema = new Schema<OrganizationDocument>(
       cb10InventoryAccountId: { type: String },
       gaExpenseAccountIds: { type: [String], default: undefined },
       cacExpenseAccountIds: { type: [String], default: undefined },
-      cacDurationMonths: { type: Number, min: 1, max: 12 }
+      cacDurationMonths: { type: Number, min: 1, max: 12 },
+      marketingSpendAccountIds: { type: [String], default: undefined },
+      hubspotUseImportedHistory: { type: Boolean },
+      cm04Targets: {
+        type: [
+          new Schema(
+            {
+              fromMonth: { type: String, required: true },
+              toMonth: { type: String, required: true },
+              targetAmount: { type: Number, required: true, min: 0 }
+            },
+            { _id: false }
+          )
+        ],
+        default: undefined
+      },
+      cm08MqlTargets: {
+        type: [
+          new Schema(
+            {
+              fromMonth: { type: String, required: true },
+              toMonth: { type: String, required: true },
+              targetCount: { type: Number, required: true, min: 0 }
+            },
+            { _id: false }
+          )
+        ],
+        default: undefined
+      }
     }
   },
   { timestamps: true }

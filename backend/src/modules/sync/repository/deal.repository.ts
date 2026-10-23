@@ -86,16 +86,16 @@ export const dealRepository = {
     const DealModel = await modelForOrg(orgId)
     return DealModel.find(
       { orgId, provider, closedate: { $gte: from, $lte: to } },
-      { pipeline: 1, dealstage: 1, amount: 1, closedate: 1, contactIds: 1, competitor: 1, competitors: 1, leadSource: 1, campaignId: 1 }
+      { pipeline: 1, dealstage: 1, amount: 1, closedate: 1, contactIds: 1, competitor: 1, competitors: 1, leadSource: 1, campaignId: 1, type: 1 }
     ).lean()
   },
 
-  /** Deals created within a date range — CM-05's "qualified pipeline created this period" input, distinct from findByCloseDateRange (creation, not expected/actual close). `leadSource`/`campaignId` (Salesforce-only) feed CM-05's Salesforce marketing-attribution branch. */
+  /** Deals created within a date range — CM-05's "qualified pipeline created this period" input, distinct from findByCloseDateRange (creation, not expected/actual close). `leadSource`/`campaignId` (Salesforce-only) feed CM-05's Salesforce marketing-attribution branch; `dealStageHistory` lets CM-05 count a deal that passed qualification and has since closed. */
   async findByCreateDateRange(orgId: string | Types.ObjectId, provider: string, from: Date, to: Date) {
     const DealModel = await modelForOrg(orgId)
     return DealModel.find(
       { orgId, provider, dealCreatedAt: { $gte: from, $lte: to } },
-      { pipeline: 1, dealstage: 1, amount: 1, contactIds: 1, leadSource: 1, campaignId: 1 }
+      { pipeline: 1, dealstage: 1, amount: 1, contactIds: 1, leadSource: 1, campaignId: 1, type: 1, dealStageHistory: 1 }
     ).lean()
   },
 

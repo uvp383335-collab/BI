@@ -28,7 +28,7 @@ export interface DealDocument extends Document {
   ownerId?: string
   contactIds: string[]
   dealStageHistory: DealStageHistoryEntry[]
-  /** Salesforce-only (`Opportunity.Type`/`LeadSource`/`CampaignId`/`AccountId`) — undefined for HubSpot deals. Used by VC-03/VC-06/CM-02 (metrics guide). */
+  /** Salesforce `Opportunity.Type`, or HubSpot `dealtype` (`newbusiness`/`existingbusiness`) — CM-04 counts new-business deals only. The fields below are Salesforce-only (`LeadSource`/`CampaignId`/`AccountId`), undefined for HubSpot deals. Used by VC-03/VC-06/CM-02 (metrics guide). */
   type?: string
   leadSource?: string
   campaignId?: string

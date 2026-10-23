@@ -9,7 +9,11 @@ import {
   updateSalesforceOpportunityExtraFieldsSchema,
   updateCashMetricsAccountsSchema,
   updateGAndAAccountsSchema,
-  updateCACSettingsSchema
+  updateCACSettingsSchema,
+  updateHubSpotHistorySourceSchema,
+  updateCm04TargetsSchema,
+  updateCm08MqlTargetsSchema,
+  updateMarketingSpendAccountsSchema
 } from '../validator/organizations.validator'
 import { createOrgRateLimiter } from '../../../middleware/rateLimit'
 
@@ -84,4 +88,47 @@ organizationsRouter.patch(
   requireRole('owner', 'admin'),
   validateBody(updateCACSettingsSchema),
   organizationsController.updateCACSettings
+)
+
+// CM-07 Marketing ROI's marketing-spend account picker — options come from the same
+// GET /settings/ga-accounts listing (identical P&L expense-account universe), only the save differs.
+organizationsRouter.patch(
+  '/settings/marketing-accounts',
+  requireAuth,
+  requireOrgContext,
+  requireRole('owner', 'admin'),
+  validateBody(updateMarketingSpendAccountsSchema),
+  organizationsController.updateMarketingSpendAccounts
+)
+
+// CM-04 Pipeline Coverage's new-business targets (operating-plan data no CRM holds) —
+// owner/admin-only write, readable by every member through GET /settings like the rest.
+organizationsRouter.patch(
+  '/settings/cm04-targets',
+  requireAuth,
+  requireOrgContext,
+  requireRole('owner', 'admin'),
+  validateBody(updateCm04TargetsSchema),
+  organizationsController.updateCm04Targets
+)
+
+// CM-08 Lead Volume vs. Plan's monthly MQL plan — same shape and role split as the CM-04 targets above.
+organizationsRouter.patch(
+  '/settings/cm08-mql-targets',
+  requireAuth,
+  requireOrgContext,
+  requireRole('owner', 'admin'),
+  validateBody(updateCm08MqlTargetsSchema),
+  organizationsController.updateCm08MqlTargets
+)
+
+// HubSpot history source — whether sync reads native history or the `rl_*` imported
+// history (see Organization.model.ts). Owner/admin-only, same as every other settings write.
+organizationsRouter.patch(
+  '/settings/hubspot-history-source',
+  requireAuth,
+  requireOrgContext,
+  requireRole('owner', 'admin'),
+  validateBody(updateHubSpotHistorySourceSchema),
+  organizationsController.updateHubSpotHistorySource
 )

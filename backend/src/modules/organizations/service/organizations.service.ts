@@ -2,9 +2,11 @@ import { organizationsRepository } from '../repository/organizations.repository'
 import { membershipsRepository } from '../repository/memberships.repository'
 import { issueTokenPair } from '../../auth/service/tokenIssuer'
 import { AppError } from '../../../shared/utils/AppError'
-import { OrganizationSettings } from '../model/Organization.model'
+import { OrganizationSettings, Cm04Target, Cm08MqlTarget } from '../model/Organization.model'
 import { integrationsRepository } from '../../integrations/repository/integrations.repository'
 import { syncService } from '../../sync/service/sync.service'
+import { funnelStageEventRepository } from '../../sync/repository/funnelStageEvent.repository'
+import { syncJobRepository } from '../../sync/repository/syncJob.repository'
 import { getQuickBooksAuth } from '../../metrics/service/plReport.service'
 import { QuickBooksService } from '../../integrations/service/quickbooks.service'
 import { extractLeafAccounts, LeafAccount } from '../../metrics/service/reportParser'
@@ -199,5 +201,68 @@ export async function updateGAndAAccountSettings(orgId: string, gaExpenseAccount
 export async function updateCACSettings(orgId: string, settings: { cacExpenseAccountIds: string[]; cacDurationMonths: number }): Promise<OrganizationSettings> {
   const org = await organizationsRepository.updateCACSettings(orgId, settings)
   if (!org) throw AppError.notFound('Organization not found', 'ORGANIZATION_NOT_FOUND')
+  return org.settings ?? {}
+}
+
+/**
+ * CM-04's new-business targets (Organization.model.ts). Like the QuickBooks
+ * account pickers above, never needs a resync: CM-04 reads the targets at
+ * compute time, against deals that are already synced.
+ */
+export async function updateCm04Targets(orgId: string, targets: Cm04Target[]): Promise<OrganizationSettings> {
+  const org = await organizationsRepository.updateCm04Targets(orgId, targets)
+  if (!org) throw AppError.notFound('Organization not found', 'ORGANIZATION_NOT_FOUND')
+  return org.settings ?? {}
+}
+
+/**
+ * CM-07's marketing-spend account picker. No dedicated account-listing
+ * function — the options are the same P&L Expense/Other-Expense leaf
+ * accounts as G&A's, so callers reuse `listGAndAAccountOptions` (CAC does
+ * the same). No resync: every P&L line is already stored per quarter.
+ */
+export async function updateMarketingSpendAccountSettings(orgId: string, marketingSpendAccountIds: string[]): Promise<OrganizationSettings> {
+  const org = await organizationsRepository.updateMarketingSpendAccountSettings(orgId, marketingSpendAccountIds)
+  if (!org) throw AppError.notFound('Organization not found', 'ORGANIZATION_NOT_FOUND')
+  return org.settings ?? {}
+}
+
+/** CM-08's monthly MQL plan (Organization.model.ts) — read at compute time like CM-04's targets, so no resync. */
+export async function updateCm08MqlTargets(orgId: string, targets: Cm08MqlTarget[]): Promise<OrganizationSettings> {
+  const org = await organizationsRepository.updateCm08MqlTargets(orgId, targets)
+  if (!org) throw AppError.notFound('Organization not found', 'ORGANIZATION_NOT_FOUND')
+  return org.settings ?? {}
+}
+
+/**
+ * HubSpot history source (Organization.model.ts). Same forced-full-resync
+ * rationale as the Salesforce settings above: switching it changes where
+ * HubSpot sync reads stage history from, and an incremental sync would never
+ * revisit already-synced contacts/deals just because a *local* config changed.
+ * On an actual switch, the stored HubSpot stage events are cleared first —
+ * they only ever accumulate, so the old source's dates would otherwise sit
+ * next to the new source's and skew every funnel cohort.
+ */
+export async function updateHubSpotHistorySource(orgId: string, hubspotUseImportedHistory: boolean): Promise<OrganizationSettings> {
+  const before = await organizationsRepository.findById(orgId)
+  if (!before) throw AppError.notFound('Organization not found', 'ORGANIZATION_NOT_FOUND')
+  const switched = (before.settings?.hubspotUseImportedHistory ?? false) !== hubspotUseImportedHistory
+  // A sync already running read the old setting when it started and would keep
+  // writing that source's events after the clear below.
+  if (switched && (await syncJobRepository.findActiveByOrgAndProvider(orgId, 'hubspot'))) {
+    throw AppError.conflict('A HubSpot sync is running — try again once it finishes', 'HUBSPOT_SYNC_IN_PROGRESS')
+  }
+
+  const org = await organizationsRepository.updateHubSpotHistorySource(orgId, hubspotUseImportedHistory)
+  if (!org) throw AppError.notFound('Organization not found', 'ORGANIZATION_NOT_FOUND')
+
+  const hubspotConnected = await integrationsRepository.findByOrgAndProvider(orgId, 'hubspot')
+  if (hubspotConnected && switched) {
+    await funnelStageEventRepository.deleteForProvider(orgId, 'hubspot')
+    syncService.startSync(orgId, 'hubspot', { force: true }).catch(() => {
+      // Sync failures surface via the job status endpoint, not this settings save.
+    })
+  }
+
   return org.settings ?? {}
 }

@@ -22,6 +22,33 @@ export const HUBSPOT_SCOPES = [
   "crm.objects.products.write"
 ];
 
+/**
+ * Requested as `optional_scope`, not `scope`: custom objects only exist on
+ * Enterprise portals, and a required scope the portal can't grant would block
+ * the whole install. Only needed when an org turns on
+ * `hubspotUseImportedHistory`, which reads the `rl_*` custom objects below.
+ */
+export const HUBSPOT_OPTIONAL_SCOPES = ["crm.schemas.custom.read", "crm.objects.custom.read"];
+
+/**
+ * The imported-history format read when an org turns on
+ * `hubspotUseImportedHistory` (Organization.model.ts): one custom-object
+ * record per stage change, associated to its contact/deal, carrying the
+ * stage and the real date it was entered. This is the shape the sandbox
+ * loader writes (sandbox-data-load/hubspot) and what any CSV/Excel import
+ * of past data must follow.
+ */
+export const IMPORTED_HISTORY_OBJECTS = {
+  lifecycle: { name: "rl_lifecycle_change", stageProperty: "stage", enteredAtProperty: "changed_at" },
+  dealStage: { name: "rl_deal_stage_change", stageProperty: "dealstage_id", enteredAtProperty: "entered_at" },
+} as const;
+
+/** Imported contacts' original-source channel — HubSpot computes `hs_analytics_source` itself, so an import can't set it. */
+export const IMPORTED_ORIGINAL_SOURCE_PROPERTY = "rl_original_source";
+
+// A lifecycle change that emptied the stage — not a stage anyone entered.
+const IMPORTED_CLEARED_STAGE = "cleared";
+
 export interface HubSpotTokenResponse {
   accessToken: string;
   refreshToken: string;
@@ -95,6 +122,7 @@ export class HubSpotService {
       client_id: HUBSPOT_CLIENT_ID,
       redirect_uri: HUBSPOT_REDIRECT_URI,
       scope: HUBSPOT_SCOPES.join(" "),
+      optional_scope: HUBSPOT_OPTIONAL_SCOPES.join(" "),
       state,
     });
 
@@ -199,8 +227,10 @@ export class HubSpotService {
     limit = 100,
     after?: string,
     since?: Date,
+    extraProperties: string[] = [],
   ): Promise<HubSpotPaginatedResponse<HubSpotContact>> {
     const properties = [
+      ...extraProperties,
       "email",
       "firstname",
       "lastname",
@@ -339,6 +369,8 @@ export class HubSpotService {
       // CM-05's "qualified pipeline created this period" needs a creation
       // timestamp distinct from closedate.
       "createdate",
+      // CM-04 counts new-business deals only (`newbusiness` vs. `existingbusiness`).
+      "dealtype",
     ];
     try {
       if (since) {
@@ -496,6 +528,84 @@ export class HubSpotService {
       throw AppError.badRequest(
         "Failed to fetch line item products from HubSpot",
         "HUBSPOT_LINE_ITEM_PRODUCTS_FETCH_FAILED",
+      );
+    }
+  }
+
+  /** Custom object name -> objectTypeId (e.g. `rl_deal_stage_change` -> `2-270589493`) for the connected portal. */
+  static async getCustomObjectTypeIds(accessToken: string): Promise<Record<string, string>> {
+    try {
+      const response = await axios.get("https://api.hubapi.com/crm/v3/schemas", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const map: Record<string, string> = {};
+      for (const schema of response.data?.results ?? []) {
+        map[schema.name] = schema.objectTypeId;
+      }
+      return map;
+    } catch {
+      throw AppError.badRequest(
+        "Failed to fetch custom object schemas from HubSpot — reconnect HubSpot to grant custom object access",
+        "HUBSPOT_SCHEMAS_FETCH_FAILED",
+      );
+    }
+  }
+
+  /**
+   * Imported stage history (IMPORTED_HISTORY_OBJECTS) for a page of
+   * contacts/deals, in the same `{ value, timestamp }` shape as native
+   * `propertiesWithHistory`. Two batched hops per page, like the deal ->
+   * line item -> product lookup: record -> its change records, then the
+   * change records' stage + date. Changes that cleared the stage are dropped.
+   */
+  static async getImportedStageHistory(
+    accessToken: string,
+    fromObjectType: "contacts" | "deals",
+    history: { objectTypeId: string; stageProperty: string; enteredAtProperty: string },
+    recordIds: string[],
+  ): Promise<Record<string, { value: string; timestamp: string }[]>> {
+    if (recordIds.length === 0) return {};
+    try {
+      const associations = await axios.post(
+        `https://api.hubapi.com/crm/v4/associations/${fromObjectType}/${history.objectTypeId}/batch/read`,
+        { inputs: recordIds.map((id) => ({ id })) },
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      const recordByChange: Record<string, string> = {};
+      for (const result of associations.data?.results ?? []) {
+        for (const to of result.to ?? []) {
+          recordByChange[String(to.toObjectId)] = String(result.from.id);
+        }
+      }
+
+      const changeIds = Object.keys(recordByChange);
+      const historyByRecord: Record<string, { value: string; timestamp: string }[]> = {};
+      // batch/read takes at most 100 ids per call.
+      for (let i = 0; i < changeIds.length; i += 100) {
+        const response = await axios.post(
+          `https://api.hubapi.com/crm/v3/objects/${history.objectTypeId}/batch/read`,
+          {
+            properties: [history.stageProperty, history.enteredAtProperty],
+            inputs: changeIds.slice(i, i + 100).map((id) => ({ id })),
+          },
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        for (const change of response.data?.results ?? []) {
+          const value = change.properties?.[history.stageProperty];
+          const timestamp = change.properties?.[history.enteredAtProperty];
+          if (!value || value === IMPORTED_CLEARED_STAGE || !timestamp) continue;
+          const recordId = recordByChange[String(change.id)];
+          (historyByRecord[recordId] ??= []).push({ value, timestamp });
+        }
+      }
+      for (const entries of Object.values(historyByRecord)) {
+        entries.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+      }
+      return historyByRecord;
+    } catch {
+      throw AppError.badRequest(
+        `Failed to fetch imported ${fromObjectType} stage history from HubSpot`,
+        "HUBSPOT_IMPORTED_HISTORY_FETCH_FAILED",
       );
     }
   }

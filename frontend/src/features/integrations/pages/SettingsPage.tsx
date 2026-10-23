@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, ArrowUpRight, Plus, Trash2 } from 'lucide-react'
@@ -13,7 +13,11 @@ import {
   useGAndAAccountOptions,
   useUpdateGAndAAccounts,
   useCACAccountOptions,
-  useUpdateCACSettings
+  useUpdateCACSettings,
+  useUpdateHubSpotHistorySource,
+  useUpdateCm04Targets,
+  useUpdateCm08MqlTargets,
+  useUpdateMarketingSpendAccounts
 } from '../hooks/useOrganizationSettings'
 import { SalesforceOpportunityExtraField } from '../api/organizationSettingsApi'
 import { useProductCategories, useUpdateProductCategories } from '../hooks/useProductCategories'
@@ -528,6 +532,89 @@ const CashMetricsAccountSettings: React.FC<{ canManage: boolean; onError: (messa
 }
 
 /** Structurally mirrors CashMetricsAccountSettings above — a single checkbox multi-select for which QuickBooks P&L expense accounts count as G&A. */
+/**
+ * CM-07 (Marketing ROI)'s marketing-spend accounts (Organization.model.ts) —
+ * which QuickBooks P&L expense accounts are marketing (programs, software,
+ * media), never guessed from account names: a "Sales & Marketing" account
+ * name can't tell sales spend from marketing spend. Same account universe as
+ * G&A's picker (reuses its options query). Only shown once QuickBooks is
+ * connected; only owners/admins can change it.
+ */
+const MarketingSpendAccountSettings: React.FC<{ canManage: boolean; onError: (message: string) => void }> = ({ canManage, onError }) => {
+  const { data: settings, isLoading: settingsLoading } = useOrganizationSettings()
+  const { data: accountOptions, isLoading: optionsLoading } = useGAndAAccountOptions(true)
+  const updateAccounts = useUpdateMarketingSpendAccounts()
+
+  const [marketingIds, setMarketingIds] = useState<string[]>([])
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    setMarketingIds(settings?.marketingSpendAccountIds ?? [])
+  }, [settings?.marketingSpendAccountIds])
+
+  const toggleMarketingId = (id: string) => {
+    setMarketingIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+    setSaved(false)
+  }
+
+  const handleSave = async () => {
+    setSaved(false)
+    try {
+      await updateAccounts.mutateAsync(marketingIds)
+      setSaved(true)
+    } catch (err: any) {
+      onError(err?.response?.data?.error?.message || 'Could not save marketing spend accounts')
+    }
+  }
+
+  const isLoading = settingsLoading || optionsLoading
+  const options = accountOptions ?? []
+  const isConfigured = (settings?.marketingSpendAccountIds?.length ?? 0) > 0
+
+  return (
+    <div className="card p-6">
+      <h2 className="text-lg font-semibold text-ink">Marketing spend accounts (CM-07)</h2>
+      <p className="mt-1 text-sm text-ink-2">
+        Which expense accounts are marketing spend — programs, software and media — for Marketing ROI. Never guessed from account names, so
+        sales spend booked under "Sales &amp; Marketing" stays out.
+      </p>
+
+      {isLoading ? (
+        <p className="mt-4 text-sm text-ink-3">Loading…</p>
+      ) : canManage ? (
+        <div className="mt-4 flex flex-col gap-6">
+          <div>
+            <p className="text-sm font-medium text-ink">Marketing expense accounts</p>
+            <p className="mt-1 text-xs text-ink-3">Select every expense account that should count as marketing spend.</p>
+            {options.length === 0 ? (
+              <p className="mt-2 text-xs text-ink-3">No QuickBooks expense accounts found yet — sync QuickBooks first.</p>
+            ) : (
+              <div className="mt-2 flex max-h-48 flex-col gap-1.5 overflow-y-auto rounded-md border border-line p-3">
+                {options.map((account) => (
+                  <label key={account.id} className="flex items-center gap-2 text-sm text-ink-2">
+                    <input type="checkbox" checked={marketingIds.includes(account.id)} onChange={() => toggleMarketingId(account.id)} />
+                    {account.name}
+                    {account.section && <span className="text-xs text-ink-3">({account.section})</span>}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button type="button" className="btn-primary w-auto px-4 py-2 text-sm" onClick={handleSave} disabled={updateAccounts.isPending}>
+              {updateAccounts.isPending ? 'Saving…' : 'Save'}
+            </button>
+            {saved && <span className="text-xs text-success">Saved.</span>}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-4 text-sm text-ink-3">{isConfigured ? 'Configured by an owner/admin' : 'Not configured'}</p>
+      )}
+    </div>
+  )
+}
+
 const GAndAAccountSettings: React.FC<{ canManage: boolean; onError: (message: string) => void }> = ({ canManage, onError }) => {
   const { data: settings, isLoading: settingsLoading } = useOrganizationSettings()
   const { data: accountOptions, isLoading: optionsLoading } = useGAndAAccountOptions(true)
@@ -889,6 +976,314 @@ const ProductCategorySettings: React.FC<{ canManage: boolean; onError: (message:
  * disconnect stays on the Connect page — this is purely for keeping already-
  * connected data fresh without hunting through the dashboard.
  */
+const MAX_MONTH_RANGE_TARGETS = 60
+
+/** One month-range target row as edited (CM-04's amounts, CM-08's MQL counts). */
+interface MonthRangeTarget {
+  fromMonth: string
+  toMonth: string
+  value: number
+}
+
+interface MonthRangeTargetRow {
+  fromMonth: string
+  toMonth: string
+  /** Kept as typed text so a half-typed number doesn't fight the input. */
+  value: string
+}
+
+const formatMonth = (month: string) => {
+  const [year, mo] = month.split('-').map(Number)
+  return new Date(Date.UTC(year, mo - 1, 1)).toLocaleString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
+/** Row problems the server would reject too (organizations.validator.ts) — shown inline before saving. */
+function monthRangeRowErrors(rows: MonthRangeTargetRow[]): (string | null)[] {
+  return rows.map((row, index) => {
+    if (!row.fromMonth || !row.toMonth) return 'Pick both months'
+    if (row.fromMonth > row.toMonth) return 'From month must be on or before To month'
+    const value = Number(row.value)
+    if (!row.value.trim() || !Number.isFinite(value) || value <= 0) return 'Target must be greater than 0'
+    const overlap = rows.find((other, i) => i !== index && other.fromMonth && other.toMonth && row.fromMonth <= other.toMonth && other.fromMonth <= row.toMonth)
+    return overlap ? `Overlaps ${formatMonth(overlap.fromMonth)} – ${formatMonth(overlap.toMonth)}` : null
+  })
+}
+
+interface MonthRangeTargetSettingsProps {
+  canManage: boolean
+  onError: (message: string) => void
+  title: string
+  description: string
+  valueLabel: string
+  placeholder: string
+  /** How a saved value reads in the owner/admin-less read-only list. */
+  formatValue: (value: number) => string
+  targets: MonthRangeTarget[] | undefined
+  isLoading: boolean
+  isSaving: boolean
+  save: (targets: MonthRangeTarget[]) => Promise<unknown>
+  saveErrorMessage: string
+  savedMessage: string
+}
+
+/**
+ * Plan targets entered by month range — operating-plan data no CRM holds
+ * (CM-04's new-business amounts, CM-08's MQL counts). Each row is one total
+ * for a month range, spread evenly across its months (see
+ * Organization.model.ts). Only owners/admins can change it; no resync needed.
+ */
+const MonthRangeTargetSettings: React.FC<MonthRangeTargetSettingsProps> = ({
+  canManage,
+  onError,
+  title,
+  description,
+  valueLabel,
+  placeholder,
+  formatValue,
+  targets,
+  isLoading,
+  isSaving,
+  save,
+  saveErrorMessage,
+  savedMessage
+}) => {
+  const [rows, setRows] = useState<MonthRangeTargetRow[]>([])
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    setRows((targets ?? []).map((t) => ({ fromMonth: t.fromMonth, toMonth: t.toMonth, value: String(t.value) })))
+  }, [targets])
+
+  const errors = monthRangeRowErrors(rows)
+  const isValid = errors.every((e) => e === null)
+
+  const updateRow = (index: number, patch: Partial<MonthRangeTargetRow>) => {
+    setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)))
+    setSaved(false)
+  }
+
+  const handleSave = async () => {
+    if (!isValid) return
+    setSaved(false)
+    try {
+      await save(rows.map((r) => ({ fromMonth: r.fromMonth, toMonth: r.toMonth, value: Number(r.value) })))
+      setSaved(true)
+    } catch (err: any) {
+      onError(err?.response?.data?.error?.message || saveErrorMessage)
+    }
+  }
+
+  return (
+    <div className="card p-6">
+      <h2 className="text-lg font-semibold text-ink">{title}</h2>
+      <p className="mt-1 text-sm text-ink-2">{description}</p>
+
+      {isLoading ? (
+        <p className="mt-4 text-sm text-ink-3">Loading…</p>
+      ) : canManage ? (
+        <div className="mt-4 flex flex-col gap-3">
+          {rows.length === 0 && <p className="text-xs text-ink-3">No targets yet.</p>}
+          {rows.map((row, index) => (
+            <div key={index} className="flex flex-col gap-1">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <label className="flex items-center gap-2 text-xs text-ink-3">
+                  From
+                  <input type="month" className="form-input-dark w-full sm:w-40" value={row.fromMonth} onChange={(e) => updateRow(index, { fromMonth: e.target.value })} />
+                </label>
+                <label className="flex items-center gap-2 text-xs text-ink-3">
+                  To
+                  <input type="month" className="form-input-dark w-full sm:w-40" value={row.toMonth} onChange={(e) => updateRow(index, { toMonth: e.target.value })} />
+                </label>
+                <label className="flex items-center gap-2 text-xs text-ink-3">
+                  {valueLabel}
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    className="form-input-dark w-full sm:w-44"
+                    placeholder={placeholder}
+                    value={row.value}
+                    onChange={(e) => updateRow(index, { value: e.target.value })}
+                  />
+                </label>
+                <button
+                  type="button"
+                  aria-label="Remove target"
+                  className="shrink-0 self-start rounded-md p-2 text-ink-3 hover:bg-surface-3 hover:text-danger sm:self-auto"
+                  onClick={() => {
+                    setRows((prev) => prev.filter((_, i) => i !== index))
+                    setSaved(false)
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+              {errors[index] && <p className="text-xs text-danger">{errors[index]}</p>}
+            </div>
+          ))}
+
+          {rows.length < MAX_MONTH_RANGE_TARGETS && (
+            <button
+              type="button"
+              className="btn-outline-dark inline-flex w-auto items-center gap-1.5 self-start px-3 py-1.5 text-xs"
+              onClick={() => setRows((prev) => [...prev, { fromMonth: '', toMonth: '', value: '' }])}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add target
+            </button>
+          )}
+
+          <div className="flex items-center gap-3">
+            <button type="button" className="btn-primary w-auto px-4 py-2 text-sm" onClick={handleSave} disabled={!isValid || isSaving}>
+              {isSaving ? 'Saving…' : 'Save'}
+            </button>
+            {saved && <span className="text-xs text-success">{savedMessage}</span>}
+          </div>
+        </div>
+      ) : targets && targets.length > 0 ? (
+        <ul className="mt-4 flex flex-col gap-1 text-sm text-ink-2">
+          {targets.map((t) => (
+            <li key={t.fromMonth}>
+              {formatMonth(t.fromMonth)} – {formatMonth(t.toMonth)}: {formatValue(t.value)}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-sm text-ink-3">Not configured</p>
+      )}
+    </div>
+  )
+}
+
+/** CM-04 (Pipeline Coverage)'s new-business targets. Shown once a CRM is connected. */
+const Cm04TargetSettings: React.FC<{ canManage: boolean; onError: (message: string) => void }> = ({ canManage, onError }) => {
+  const { data: settings, isLoading } = useOrganizationSettings()
+  const updateTargets = useUpdateCm04Targets()
+  const targets = useMemo(
+    () => settings?.cm04Targets?.map((t) => ({ fromMonth: t.fromMonth, toMonth: t.toMonth, value: t.targetAmount })),
+    [settings?.cm04Targets]
+  )
+
+  return (
+    <MonthRangeTargetSettings
+      canManage={canManage}
+      onError={onError}
+      title="Pipeline Coverage targets (CM-04)"
+      description="CM-04 compares qualified new-business pipeline closing next quarter with that quarter's new-business target. Enter the target for a range of months — the amount is the total for the whole range and is spread evenly across its months, so one row per quarter, half or year all work. A quarter with any month left uncovered shows as not computable."
+      valueLabel="Target ($)"
+      placeholder="878000"
+      formatValue={(value) => `$${value.toLocaleString()}`}
+      targets={targets}
+      isLoading={isLoading}
+      isSaving={updateTargets.isPending}
+      save={(rows) => updateTargets.mutateAsync(rows.map((r) => ({ fromMonth: r.fromMonth, toMonth: r.toMonth, targetAmount: r.value })))}
+      saveErrorMessage="Could not save pipeline coverage targets"
+      savedMessage="Saved — CM-04 uses the new targets right away."
+    />
+  )
+}
+
+/** CM-08 (Lead Volume vs. Plan)'s MQL plan. Shown once HubSpot is connected — MQLs come from HubSpot lifecycle stages. */
+const Cm08MqlTargetSettings: React.FC<{ canManage: boolean; onError: (message: string) => void }> = ({ canManage, onError }) => {
+  const { data: settings, isLoading } = useOrganizationSettings()
+  const updateTargets = useUpdateCm08MqlTargets()
+  const targets = useMemo(
+    () => settings?.cm08MqlTargets?.map((t) => ({ fromMonth: t.fromMonth, toMonth: t.toMonth, value: t.targetCount })),
+    [settings?.cm08MqlTargets]
+  )
+
+  return (
+    <MonthRangeTargetSettings
+      canManage={canManage}
+      onError={onError}
+      title="MQL plan (CM-08)"
+      description="CM-08 compares the MQLs generated each month with the operating plan. Enter the planned MQLs for a range of months — the number is the total for the whole range and is spread evenly across its months. Months with no plan still show the MQL count and trend; only the plan comparison is skipped."
+      valueLabel="Planned MQLs"
+      placeholder="450"
+      formatValue={(value) => `${value.toLocaleString()} MQLs`}
+      targets={targets}
+      isLoading={isLoading}
+      isSaving={updateTargets.isPending}
+      save={(rows) => updateTargets.mutateAsync(rows.map((r) => ({ fromMonth: r.fromMonth, toMonth: r.toMonth, targetCount: r.value })))}
+      saveErrorMessage="Could not save the MQL plan"
+      savedMessage="Saved — CM-08 uses the new plan right away."
+    />
+  )
+}
+
+/**
+ * Where HubSpot stage history comes from. Off (default) uses HubSpot's own
+ * native history; on uses the `rl_*` custom objects/properties, for portals
+ * whose past data was imported from CSV — HubSpot stamps imported native
+ * history with the import date, so the real dates only survive in `rl_*`.
+ * Only shown once HubSpot is connected; only owners/admins can change it.
+ */
+const HubSpotHistorySourceSettings: React.FC<{ canManage: boolean; onError: (message: string) => void }> = ({ canManage, onError }) => {
+  const { data: settings, isLoading } = useOrganizationSettings()
+  const updateSource = useUpdateHubSpotHistorySource()
+  const [useImported, setUseImported] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    setUseImported(settings?.hubspotUseImportedHistory ?? false)
+  }, [settings?.hubspotUseImportedHistory])
+
+  const handleSave = async () => {
+    setSaved(false)
+    try {
+      await updateSource.mutateAsync(useImported)
+      setSaved(true)
+    } catch (err: any) {
+      onError(err?.response?.data?.error?.message || 'Could not save HubSpot history source')
+    }
+  }
+
+  return (
+    <div className="card p-6">
+      <h2 className="text-lg font-semibold text-ink">History source (HubSpot)</h2>
+      <p className="mt-1 text-sm text-ink-2">
+        Turn on only if this portal's past data was imported from CSV/Excel — stage history and original dates are then read from the
+        imported <code>rl_*</code> fields instead of HubSpot's own history.
+      </p>
+
+      {isLoading ? (
+        <p className="mt-4 text-sm text-ink-3">Loading…</p>
+      ) : canManage ? (
+        <div className="mt-4 flex flex-col gap-3">
+          <label className="flex items-center gap-2 text-sm text-ink-2">
+            <input
+              type="checkbox"
+              checked={useImported}
+              onChange={(e) => {
+                setUseImported(e.target.checked)
+                setSaved(false)
+              }}
+            />
+            Use imported history (<code>rl_*</code> fields)
+          </label>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="btn-primary w-auto px-4 py-2 text-sm"
+              onClick={handleSave}
+              disabled={updateSource.isPending || useImported === (settings?.hubspotUseImportedHistory ?? false)}
+            >
+              {updateSource.isPending ? 'Saving…' : 'Save'}
+            </button>
+            {saved && <span className="text-xs text-success">Saved — a full HubSpot resync has started.</span>}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-4 text-sm text-ink-3">
+          {settings?.hubspotUseImportedHistory ? 'Using imported history (rl_* fields)' : "Using HubSpot's native history"}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export const SettingsPage: React.FC = () => {
   const { organization } = useAuthContext()
   const { data: status, isLoading } = useIntegrationsStatus()
@@ -915,11 +1310,15 @@ export const SettingsPage: React.FC = () => {
         )}
       </div>
 
+      {status?.hubspot?.connected && <HubSpotHistorySourceSettings canManage={canManage} onError={setError} />}
+      {(status?.hubspot?.connected || status?.salesforce?.connected) && <Cm04TargetSettings canManage={canManage} onError={setError} />}
+      {status?.hubspot?.connected && <Cm08MqlTargetSettings canManage={canManage} onError={setError} />}
       {status?.salesforce?.connected && <CompetitorFieldSettings canManage={canManage} onError={setError} />}
       {status?.salesforce?.connected && <OpportunityExtraFieldsSettings canManage={canManage} onError={setError} />}
       {status?.quickbooks?.connected && <CashMetricsAccountSettings canManage={canManage} onError={setError} />}
       {status?.quickbooks?.connected && <GAndAAccountSettings canManage={canManage} onError={setError} />}
       {status?.quickbooks?.connected && <CACAccountSettings canManage={canManage} onError={setError} />}
+      {status?.quickbooks?.connected && <MarketingSpendAccountSettings canManage={canManage} onError={setError} />}
       {status?.quickbooks?.connected && <ProductCategorySettings canManage={canManage} onError={setError} />}
     </AppShell>
   )

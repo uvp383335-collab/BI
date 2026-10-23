@@ -7,9 +7,8 @@ import { pipelineStageDefinitionRepository } from '../../sync/repository/pipelin
 import { funnelStageEventRepository } from '../../sync/repository/funnelStageEvent.repository'
 import { salesforceCampaignRepository } from '../../sync/repository/salesforceCampaign.repository'
 import { organizationsRepository } from '../../organizations/repository/organizations.repository'
-import { CONTACTS_PIPELINE } from '../../sync/service/sync.service'
 import { getStoredProfitAndLoss, StoredQuarterSnapshot } from './plReport.service'
-import { sumExpensesByCategory } from './plParser'
+import { sumConfiguredAccountIds } from './plParser'
 import { grossMarginFromPL } from './plMetrics.service'
 import { latestClosedMonth, shiftMonth, monthToDateRange, quarterStartOf, quarterToDateRange, latestClosedQuarterStart } from './revenueRollForward.service'
 
@@ -193,16 +192,70 @@ function resolveQualifiedStageKeys(stageDefs: { entityType: string; pipeline: st
 // CM-04 — Pipeline Coverage Ratio
 // ---------------------------------------------------------------------------
 
+// The metrics guide's coverage thresholds (the guide calls the 3.0x target
+// adjustable — not per-org configurable yet): Watch under 3.0x; Act now under
+// 2.0x, or under 3.0x while the competitive win rate (CM-03) is also falling.
+const CM04_COVERAGE_THRESHOLD = 3
+const CM04_COVERAGE_ACT_NOW_THRESHOLD = 2
+
 /**
- * Coverage's denominator ("next quarter's new-business target") is
- * operating-plan data this MVP doesn't have at all (gap G-14) — not a
- * missing-comparison-period situation like most other metrics' plan legs,
- * a structurally missing input to the ratio itself. So `computable` is
- * always `false` here; what *is* real and returned is the numerator
- * (qualified pipeline closing next quarter) plus the qualified-stage-cutoff
- * work the metrics guide calls out as CM-04's actual gap (G-7) — this
- * metric lights up the moment an operating-plan feature exists, no
- * qualified-pipeline logic needs to change.
+ * The target is a *new-business* goal, so only new-business deals count
+ * toward it — HubSpot's `dealtype` (`newbusiness`) and Salesforce's
+ * `Opportunity.Type` (`New Business`) both normalize to `newbusiness`.
+ * A deal with no type recorded is kept rather than silently dropped: a
+ * portal that doesn't use the field at all would otherwise read as zero
+ * coverage. The untyped count is returned so that gap stays visible.
+ */
+function isNewBusinessOrUntyped(type: string | undefined): boolean {
+  return !type || type.toLowerCase().replace(/[^a-z]/g, '') === 'newbusiness'
+}
+
+/** Number of months in an inclusive `YYYY-MM` range. */
+function monthsInRange(fromMonth: string, toMonth: string): number {
+  const [fromYear, fromMo] = fromMonth.split('-').map(Number)
+  const [toYear, toMo] = toMonth.split('-').map(Number)
+  return (toYear - fromYear) * 12 + (toMo - fromMo) + 1
+}
+
+/**
+ * The plan for a set of months from an org's month-range target rows (CM-04's
+ * new-business amounts, CM-08's MQL counts — Organization.model.ts): each
+ * row's total is spread evenly across its months, and the set takes the share
+ * of every month it contains. `missingMonths` lists months no row covers —
+ * any gap makes the whole set's target unknown, never a partial sum.
+ */
+function targetForMonths(
+  rows: { fromMonth: string; toMonth: string; total: number }[],
+  months: string[]
+): { target: number | null; missingMonths: string[] } {
+  let target = 0
+  const missingMonths: string[] = []
+  for (const month of months) {
+    const row = rows.find((t) => t.fromMonth <= month && month <= t.toMonth)
+    if (!row) missingMonths.push(month)
+    else target += row.total / monthsInRange(row.fromMonth, row.toMonth)
+  }
+  return { target: missingMonths.length > 0 ? null : target, missingMonths }
+}
+
+/** The quarter's new-business target from the org's CM-04 target rows (see targetForMonths). */
+export function quarterTargetFromRanges(
+  targets: { fromMonth: string; toMonth: string; targetAmount: number }[],
+  quarterStart: string
+): { target: number | null; missingMonths: string[] } {
+  return targetForMonths(
+    targets.map((t) => ({ fromMonth: t.fromMonth, toMonth: t.toMonth, total: t.targetAmount })),
+    [0, 1, 2].map((i) => shiftMonth(quarterStart, i))
+  )
+}
+
+/**
+ * Qualified new-business pipeline closing next quarter vs. that quarter's
+ * new-business target. The target is operating-plan data no CRM holds (gap
+ * G-14), so it comes from the org's own CM-04 target rows (Settings); a
+ * quarter with any month left uncovered stays `computable: false`, though
+ * the numerator (plus the qualified-stage-cutoff work the metrics guide
+ * calls out as CM-04's actual gap, G-7) is still returned.
  */
 export async function computeCM04(orgId: string, provider: string, period?: string): Promise<MetricResult> {
   const month = period ?? latestClosedMonth()
@@ -210,171 +263,223 @@ export async function computeCM04(orgId: string, provider: string, period?: stri
   const nextQuarterStart = shiftMonth(quarterStart, 3)
   const range = quarterToDateRange(nextQuarterStart)
 
-  const [deals, stageDefs] = await Promise.all([
+  const [deals, stageDefs, org] = await Promise.all([
     dealRepository.findByCloseDateRange(orgId, provider, new Date(range.startDate), new Date(`${range.endDate}T23:59:59.999Z`)),
-    pipelineStageDefinitionRepository.findAllForOrg(orgId, provider)
+    pipelineStageDefinitionRepository.findAllForOrg(orgId, provider),
+    organizationsRepository.findById(orgId)
   ])
 
   const qualifiedKeys = resolveQualifiedStageKeys(stageDefs)
-  const qualifiedDeals = deals.filter((d) => d.pipeline && d.dealstage && qualifiedKeys.has(`${d.pipeline}::${d.dealstage}`))
+  const qualifiedAnyType = deals.filter((d) => d.pipeline && d.dealstage && qualifiedKeys.has(`${d.pipeline}::${d.dealstage}`))
+  const qualifiedDeals = qualifiedAnyType.filter((d) => isNewBusinessOrUntyped(d.type))
   const qualifiedPipelineAmount = qualifiedDeals.reduce((sum, d) => sum + (d.amount ?? 0), 0)
+
+  const { target, missingMonths } = quarterTargetFromRanges(org?.settings?.cm04Targets ?? [], nextQuarterStart)
+  const coverage = target !== null && target > 0 ? qualifiedPipelineAmount / target : null
+
+  let flag: MetricFlag | null = null
+  if (coverage !== null && coverage < CM04_COVERAGE_ACT_NOW_THRESHOLD) {
+    flag = {
+      level: 'act_now',
+      reason: `Pipeline coverage is ${coverage.toFixed(2)}x, below the ${CM04_COVERAGE_ACT_NOW_THRESHOLD.toFixed(1)}x floor.`
+    }
+  } else if (coverage !== null && coverage < CM04_COVERAGE_THRESHOLD) {
+    // CM-03 (competitive win rate) only exists for Salesforce; its flag is
+    // raised exactly when a competitor's win rate has fallen.
+    const winRateFalling = provider === SALESFORCE && (await computeCM03(orgId, period)).flag !== null
+    flag = winRateFalling
+      ? {
+          level: 'act_now',
+          reason: `Pipeline coverage is ${coverage.toFixed(2)}x, below the ${CM04_COVERAGE_THRESHOLD.toFixed(1)}x target, while the competitive win rate (CM-03) is also falling.`
+        }
+      : { level: 'watch', reason: `Pipeline coverage is ${coverage.toFixed(2)}x, below the ${CM04_COVERAGE_THRESHOLD.toFixed(1)}x target.` }
+  }
 
   return {
     id: 'CM-04',
     period: nextQuarterStart,
-    computable: false,
-    value: null,
+    computable: coverage !== null,
+    value: coverage !== null ? round2(coverage) : null,
     unit: 'multiple',
     data: {
       qualifiedPipelineAmount: round1(qualifiedPipelineAmount),
       qualifiedDealCount: qualifiedDeals.length,
-      nextQuarterTarget: null,
-      blockedOn: 'operating-plan-input'
+      excludedNonNewBusinessDealCount: qualifiedAnyType.length - qualifiedDeals.length,
+      untypedDealCount: qualifiedDeals.filter((d) => !d.type).length,
+      nextQuarterTarget: target !== null ? round1(target) : null,
+      missingTargetMonths: missingMonths
     },
-    flag: null,
+    flag,
     asOf: new Date().toISOString()
   }
 }
 
 // ---------------------------------------------------------------------------
-// CM-06 — Funnel Conversion Rates (Lead -> MQL -> SQL -> Won)
+// CM-06 — Funnel Conversion Rates (Lead -> MQL -> SQL -> Opportunity -> Won)
 // ---------------------------------------------------------------------------
 
 /**
  * The funnel-role mapping (metrics guide gap G-7) that CM-06/CM-08 both
- * need — which `lifecyclestage` values count as MQL/SQL/Won. HubSpot's
- * lifecycle stage is a standard, largely non-customizable enum (unlike
- * Salesforce Opportunity stages, which are always company-specific), so a
- * fixed default mapped straight from HubSpot's own value names is a safe
- * MVP default — see G-22 for the "not per-org configurable" caveat this
+ * need — which `lifecyclestage` values are the standard funnel's stages.
+ * HubSpot's lifecycle stage is a standard, largely non-customizable enum
+ * (unlike Salesforce Opportunity stages, which are always company-specific),
+ * so a fixed default mapped straight from HubSpot's own value names is a
+ * safe MVP default — see G-22 for the "not per-org configurable" caveat this
  * shares with G-13's chart-of-accounts heuristic.
  */
 const LEAD_STAGE = 'lead'
 const MQL_STAGE = 'marketingqualifiedlead'
 const SQL_STAGE = 'salesqualifiedlead'
+const OPPORTUNITY_STAGE = 'opportunity'
 const WON_STAGE = 'customer'
 const MIN_COHORT_LEADS = 100
 const MIN_COHORT_MQLS = 30
+const TRAILING_AVERAGE_QUARTERS = 4
 
-interface CohortRates {
-  leadCount: number
-  mqlCount: number
-  sqlCount: number
-  wonCount: number
-  leadToMql: number | null
-  mqlToSql: number | null
-  sqlToWon: number | null
+/**
+ * The guide's standard funnel, one transition per adjacent pair, each with
+ * its own maturation window — months a quarterly cohort is held open after
+ * the quarter ends before its rate counts as final (the answer key's
+ * 90 / 60 / 180-day windows; SQL -> Opportunity takes MQL -> SQL's). A
+ * record "advances" only by entering the exact next stage: a contact sales
+ * created straight at SQL never counts as a Lead -> MQL conversion.
+ */
+const CM06_TRANSITIONS = [
+  { key: 'leadToMql', label: 'Lead -> MQL', from: LEAD_STAGE, to: MQL_STAGE, maturationMonths: 3 },
+  { key: 'mqlToSql', label: 'MQL -> SQL', from: MQL_STAGE, to: SQL_STAGE, maturationMonths: 2 },
+  { key: 'sqlToOpportunity', label: 'SQL -> Opportunity', from: SQL_STAGE, to: OPPORTUNITY_STAGE, maturationMonths: 2 },
+  { key: 'opportunityToWon', label: 'Opportunity -> Won', from: OPPORTUNITY_STAGE, to: WON_STAGE, maturationMonths: 6 }
+] as const
+
+interface QuarterCohort {
+  quarterStart: string
+  entered: number
+  advanced: number
+  ratePct: number | null
+  medianDaysToAdvance: number | null
 }
 
-async function computeCohortRates(orgId: string, provider: string, cohortMonth: string): Promise<CohortRates | null> {
-  const { startDate, endDate } = monthToDateRange(cohortMonth)
-  const recordIds = await funnelStageEventRepository.getCohortRecordIds(orgId, provider, 'lead', {
-    from: new Date(startDate),
-    to: new Date(`${endDate}T23:59:59.999Z`)
-  })
-  if (recordIds.length === 0) return null
-
-  const stageCounts = await funnelStageEventRepository.getStageMembershipCounts(orgId, provider, 'lead', CONTACTS_PIPELINE, recordIds)
-  const countFor = (stage: string) => stageCounts.find((s) => s.rawStage === stage)?.count ?? 0
-
-  const leadCount = countFor(LEAD_STAGE)
-  const mqlCount = countFor(MQL_STAGE)
-  const sqlCount = countFor(SQL_STAGE)
-  const wonCount = countFor(WON_STAGE)
-
-  return {
-    leadCount,
-    mqlCount,
-    sqlCount,
-    wonCount,
-    leadToMql: leadCount > 0 ? (mqlCount / leadCount) * 100 : null,
-    mqlToSql: mqlCount > 0 ? (sqlCount / mqlCount) * 100 : null,
-    sqlToWon: sqlCount > 0 ? (wonCount / sqlCount) * 100 : null
+/** Records that first entered `from` during the quarter, and how many of them went on to enter `to`. */
+function quarterCohort(
+  records: { firstEntered: Record<string, Date> }[],
+  from: string,
+  to: string,
+  quarterStart: string
+): QuarterCohort {
+  const start = new Date(monthToDateRange(quarterStart).startDate).getTime()
+  const end = new Date(`${monthToDateRange(shiftMonth(quarterStart, 2)).endDate}T23:59:59.999Z`).getTime()
+  let entered = 0
+  const daysToAdvance: number[] = []
+  for (const { firstEntered } of records) {
+    const enteredAt = firstEntered[from]?.getTime()
+    if (enteredAt === undefined || enteredAt < start || enteredAt > end) continue
+    entered += 1
+    const advancedAt = firstEntered[to]?.getTime()
+    if (advancedAt !== undefined && advancedAt >= enteredAt) daysToAdvance.push((advancedAt - enteredAt) / 86_400_000)
   }
-}
-
-const TRAILING_AVERAGE_WINDOW_MONTHS = 4
-
-interface TrailingAverageRates {
-  leadToMql: number | null
-  mqlToSql: number | null
-  sqlToWon: number | null
+  daysToAdvance.sort((a, b) => a - b)
+  const mid = Math.floor(daysToAdvance.length / 2)
+  const median =
+    daysToAdvance.length === 0 ? null : daysToAdvance.length % 2 ? daysToAdvance[mid] : (daysToAdvance[mid - 1] + daysToAdvance[mid]) / 2
+  return {
+    quarterStart,
+    entered,
+    advanced: daysToAdvance.length,
+    ratePct: entered > 0 ? (daysToAdvance.length / entered) * 100 : null,
+    medianDaysToAdvance: median !== null ? round1(median) : null
+  }
 }
 
 /**
- * Doc: "down >20% vs. trailing 4-quarter average" / "falls below half its
- * trailing average" — the flag baseline is a smoothed multi-period average,
- * not a single prior data point (found during manual validation: the code
- * previously compared against just the immediately-prior cohort month,
- * which is far noisier and more prone to a false-positive single-month
- * wobble). CM-06 operates at monthly-cohort grain, so this reads "trailing
- * 4 quarters" as its natural monthly analog: the trailing 4 monthly
- * cohorts, not 4 literal calendar quarters (12+ months back). Averages only
- * over cohorts that actually have data for that leg — a thin or missing
- * month doesn't drag the average toward zero.
+ * Stage-to-stage conversion, cohort-based per the metrics guide: for each
+ * transition, records are grouped by the quarter they first entered the
+ * stage, and the rate is how many of them went on to enter the next one.
+ * Each transition reports its latest *mature* quarterly cohort (its quarter
+ * ended at least `maturationMonths` before the as-of month), compared with
+ * the average of that transition's four prior quarterly cohorts — the
+ * guide's "trailing-four-quarter average". Since maturation differs per
+ * transition, "two adjacent stages deteriorating in the same quarter" is
+ * read as both transitions' latest mature cohorts being down. The headline
+ * value is MQL -> SQL, the rate the guide singles out.
  */
-async function computeTrailingAverageRates(orgId: string, provider: string, cohortMonth: string): Promise<TrailingAverageRates> {
-  const months = Array.from({ length: TRAILING_AVERAGE_WINDOW_MONTHS }, (_, i) => shiftMonth(cohortMonth, -(i + 1)))
-  const cohorts = await Promise.all(months.map((m) => computeCohortRates(orgId, provider, m)))
-
-  const average = (key: 'leadToMql' | 'mqlToSql' | 'sqlToWon'): number | null => {
-    const values = cohorts.filter((c): c is CohortRates => c !== null).map((c) => c[key]).filter((v): v is number => v !== null)
-    return values.length > 0 ? values.reduce((sum, v) => sum + v, 0) / values.length : null
-  }
-
-  return { leadToMql: average('leadToMql'), mqlToSql: average('mqlToSql'), sqlToWon: average('sqlToWon') }
-}
-
 export async function computeCM06(orgId: string, provider = 'hubspot', period?: string): Promise<MetricResult> {
-  // A 2-month maturation buffer before a cohort's rates are treated as final
-  // (the metrics guide asks for "a stage-appropriate maturation window";
-  // exact quarter-scale windows per stage aren't modeled — see G-22).
-  const cohortMonth = period ?? shiftMonth(latestClosedMonth(), -2)
-
-  const [current, trailingAvg] = await Promise.all([
-    computeCohortRates(orgId, provider, cohortMonth),
-    computeTrailingAverageRates(orgId, provider, cohortMonth)
+  const asOfMonth = period ?? latestClosedMonth()
+  const records = await funnelStageEventRepository.getFirstStageEntries(orgId, provider, 'lead', [
+    LEAD_STAGE,
+    MQL_STAGE,
+    SQL_STAGE,
+    OPPORTUNITY_STAGE,
+    WON_STAGE
   ])
-  if (!current) return notComputable('CM-06', cohortMonth, 'percent')
 
-  const cohortSizeSufficient = current.leadCount >= MIN_COHORT_LEADS && current.mqlCount >= MIN_COHORT_MQLS
+  const transitions = CM06_TRANSITIONS.map((transition) => {
+    // Latest quarter that has fully matured for this transition by the as-of month.
+    let cohortQuarter = lastFullQuarterStart(asOfMonth)
+    while (shiftMonth(cohortQuarter, 2 + transition.maturationMonths) > asOfMonth) cohortQuarter = shiftMonth(cohortQuarter, -3)
+
+    const current = quarterCohort(records, transition.from, transition.to, cohortQuarter)
+    const priorRates = Array.from({ length: TRAILING_AVERAGE_QUARTERS }, (_, i) =>
+      quarterCohort(records, transition.from, transition.to, shiftMonth(cohortQuarter, -3 * (i + 1)))
+    )
+      .map((cohort) => cohort.ratePct)
+      .filter((rate): rate is number => rate !== null)
+    // Averages only over prior quarters that had anyone enter — an empty quarter doesn't drag it toward zero.
+    const trailingAvgPct = priorRates.length > 0 ? priorRates.reduce((sum, rate) => sum + rate, 0) / priorRates.length : null
+    const down20Pct = current.ratePct !== null && trailingAvgPct !== null && current.ratePct < trailingAvgPct * 0.8
+
+    return { ...transition, current, trailingAvgPct, down20Pct }
+  })
+  const byKey = Object.fromEntries(transitions.map((t) => [t.key, t])) as Record<(typeof CM06_TRANSITIONS)[number]['key'], (typeof transitions)[number]>
+  const mqlToSql = byKey.mqlToSql
+
+  if (transitions.every((t) => t.current.entered === 0)) return notComputable('CM-06', asOfMonth, 'percent')
+
+  // Alerts are held back when a cohort is too small to trust: fewer than 100 leads or 30 MQLs.
+  const cohortSizeSufficient = byKey.leadToMql.current.entered >= MIN_COHORT_LEADS && mqlToSql.current.entered >= MIN_COHORT_MQLS
 
   let flag: MetricFlag | null = null
   if (cohortSizeSufficient) {
-    const declinedOver20Pct = (curr: number | null, prior: number | null) => curr !== null && prior !== null && curr < prior * 0.8
-    const mqlToSqlBelowHalf = current.mqlToSql !== null && trailingAvg.mqlToSql !== null && current.mqlToSql < trailingAvg.mqlToSql / 2
-    const leadMqlDown = declinedOver20Pct(current.leadToMql, trailingAvg.leadToMql)
-    const mqlSqlDown = declinedOver20Pct(current.mqlToSql, trailingAvg.mqlToSql)
-    const sqlWonDown = declinedOver20Pct(current.sqlToWon, trailingAvg.sqlToWon)
-    const twoAdjacentDown = (leadMqlDown && mqlSqlDown) || (mqlSqlDown && sqlWonDown)
+    const mqlToSqlBelowHalf =
+      mqlToSql.current.ratePct !== null && mqlToSql.trailingAvgPct !== null && mqlToSql.current.ratePct < mqlToSql.trailingAvgPct / 2
+    const adjacentDown = transitions.findIndex((t, i) => i > 0 && t.down20Pct && transitions[i - 1].down20Pct)
+    const down = transitions.filter((t) => t.down20Pct)
 
     if (mqlToSqlBelowHalf) {
       flag = {
         level: 'act_now',
-        reason: `MQL -> SQL fell to ${current.mqlToSql!.toFixed(1)}%, below half its trailing 4-month average (${trailingAvg.mqlToSql!.toFixed(1)}%) — sales is rejecting marketing's leads.`
+        reason: `MQL -> SQL fell to ${mqlToSql.current.ratePct!.toFixed(1)}%, below half its trailing four-quarter average (${mqlToSql.trailingAvgPct!.toFixed(1)}%) — sales is rejecting marketing's leads.`
       }
-    } else if (twoAdjacentDown) {
-      flag = { level: 'act_now', reason: 'Two adjacent funnel stages deteriorated vs. their trailing 4-month average.' }
-    } else if (leadMqlDown || mqlSqlDown || sqlWonDown) {
-      flag = { level: 'watch', reason: "A funnel stage's conversion rate fell more than 20% versus its trailing 4-month average." }
+    } else if (adjacentDown > 0) {
+      flag = {
+        level: 'act_now',
+        reason: `Two adjacent funnel stages deteriorated: ${transitions[adjacentDown - 1].label} and ${transitions[adjacentDown].label} are both more than 20% below their trailing four-quarter averages.`
+      }
+    } else if (down.length > 0) {
+      flag = {
+        level: 'watch',
+        reason: `${down.map((t) => t.label).join(', ')} fell more than 20% below ${down.length > 1 ? 'their' : 'its'} trailing four-quarter average.`
+      }
     }
   }
 
   return {
     id: 'CM-06',
-    period: cohortMonth,
-    computable: current.mqlToSql !== null,
-    value: current.mqlToSql !== null ? round1(current.mqlToSql) : null,
+    period: mqlToSql.current.quarterStart,
+    computable: mqlToSql.current.ratePct !== null,
+    value: mqlToSql.current.ratePct !== null ? round1(mqlToSql.current.ratePct) : null,
     unit: 'percent',
     data: {
-      leadToMqlPct: current.leadToMql !== null ? round1(current.leadToMql) : null,
-      mqlToSqlPct: current.mqlToSql !== null ? round1(current.mqlToSql) : null,
-      sqlToWonPct: current.sqlToWon !== null ? round1(current.sqlToWon) : null,
-      leadCount: current.leadCount,
-      mqlCount: current.mqlCount,
-      sqlCount: current.sqlCount,
-      wonCount: current.wonCount,
-      trailingAvgMqlToSqlPct: trailingAvg.mqlToSql !== null ? round1(trailingAvg.mqlToSql) : null,
+      stages: transitions.map((t) => ({
+        key: t.key,
+        label: t.label,
+        cohortQuarter: t.current.quarterStart,
+        maturationMonths: t.maturationMonths,
+        cohortSize: t.current.entered,
+        advanced: t.current.advanced,
+        ratePct: t.current.ratePct !== null ? round1(t.current.ratePct) : null,
+        trailingAvgPct: t.trailingAvgPct !== null ? round1(t.trailingAvgPct) : null,
+        medianDaysToAdvance: t.current.medianDaysToAdvance
+      })),
       cohortSizeSufficient
     },
     flag: cohortSizeSufficient ? flag : null,
@@ -386,49 +491,80 @@ export async function computeCM06(orgId: string, provider = 'hubspot', period?: 
 // CM-08 — Lead Volume vs. Plan (MQL Flow)
 // ---------------------------------------------------------------------------
 
+// The metrics guide's plan thresholds: Watch when a month runs more than 15%
+// below plan, Act now when a full quarter runs more than 25% below it.
+const CM08_MONTH_BELOW_PLAN_PCT = 15
+const CM08_QUARTER_BELOW_PLAN_PCT = 25
+
+/** The last full calendar quarter ending on or before `month` — `month` itself when it closes a quarter. */
+function lastFullQuarterStart(month: string): string {
+  const quarterStart = quarterStartOf(month)
+  return shiftMonth(quarterStart, 2) <= month ? quarterStart : shiftMonth(quarterStart, -3)
+}
+
+/**
+ * MQLs generated in the month vs. the org's MQL plan (Settings — operating
+ * plan data no CRM holds, gap G-14), plus month-over-month growth. A contact
+ * counts in the month it *first* became an MQL (once per journey). With no
+ * plan for the month the count, growth and plan-independent flags still
+ * work; only the plan comparison and plan-based flags stay off.
+ */
 export async function computeCM08(orgId: string, provider = 'hubspot', period?: string): Promise<MetricResult> {
   const month = period ?? latestClosedMonth()
   const previousMonth = shiftMonth(month, -1)
   const twoAgoMonth = shiftMonth(month, -2)
+  const quarterStart = lastFullQuarterStart(month)
+  const quarterMonths = [0, 1, 2].map((i) => shiftMonth(quarterStart, i))
 
-  const counts = await Promise.all(
-    [month, previousMonth, twoAgoMonth].map((m) => {
-      const { startDate, endDate } = monthToDateRange(m)
-      return funnelStageEventRepository.countRecordsEnteringStage(orgId, provider, 'lead', MQL_STAGE, {
-        from: new Date(startDate),
-        to: new Date(`${endDate}T23:59:59.999Z`)
-      })
+  const countMqls = (fromMonth: string, toMonth: string) =>
+    funnelStageEventRepository.countRecordsFirstEnteringStage(orgId, provider, 'lead', MQL_STAGE, {
+      from: new Date(monthToDateRange(fromMonth).startDate),
+      to: new Date(`${monthToDateRange(toMonth).endDate}T23:59:59.999Z`)
     })
-  )
-  const [current, previous, twoAgo] = counts
+
+  const [current, previous, twoAgo, quarterMqls, org] = await Promise.all([
+    countMqls(month, month),
+    countMqls(previousMonth, previousMonth),
+    countMqls(twoAgoMonth, twoAgoMonth),
+    countMqls(quarterMonths[0], quarterMonths[2]),
+    organizationsRepository.findById(orgId)
+  ])
 
   const growthPct = previous > 0 ? ((current - previous) / previous) * 100 : null
   const decliningTwoMonthsRunning = current < previous && previous < twoAgo
 
-  // The plan-relative legs (>15%/>25% below plan) need operating-plan data
-  // this MVP doesn't have (gap G-14). "Declining two months running" and
-  // "falling while CM-06 is also deteriorating" are both plan-independent —
-  // computed here for real, not stubbed out.
-  //
-  // These are two separate doc-worded legs, not one condition gating the other:
-  // watch needs a genuine two-month streak; act-now only needs a plain single-month
-  // fall paired with CM-06 also deteriorating (no "two months running" in that leg's
-  // wording) — so a one-month drop alongside a red CM-06 must still escalate even
-  // when there wasn't yet a second down month.
+  const planRows = (org?.settings?.cm08MqlTargets ?? []).map((t) => ({ fromMonth: t.fromMonth, toMonth: t.toMonth, total: t.targetCount }))
+  const { target: plannedMqls, missingMonths: missingPlanMonths } = targetForMonths(planRows, [month])
+  const { target: quarterPlannedMqls } = targetForMonths(planRows, quarterMonths)
+  const variancePct = plannedMqls !== null && plannedMqls > 0 ? ((current - plannedMqls) / plannedMqls) * 100 : null
+  const quarterVariancePct = quarterPlannedMqls !== null && quarterPlannedMqls > 0 ? ((quarterMqls - quarterPlannedMqls) / quarterPlannedMqls) * 100 : null
+
+  // Each leg is the guide's own wording, independent of the others. "Falling
+  // while CM-06 is also deteriorating" needs only a plain one-month fall (no
+  // "two months running" in that leg), so a single drop alongside a red CM-06
+  // still escalates.
   const fallingThisMonth = current < previous
+  const cm06Deteriorating = fallingThisMonth && (await computeCM06(orgId, provider)).flag !== null
+  const quarterFarBelowPlan = quarterVariancePct !== null && quarterVariancePct < -CM08_QUARTER_BELOW_PLAN_PCT
+  const monthBelowPlan = variancePct !== null && variancePct < -CM08_MONTH_BELOW_PLAN_PCT
+
   let flag: MetricFlag | null = null
-  if (decliningTwoMonthsRunning || fallingThisMonth) {
-    const cm06 = await computeCM06(orgId, provider)
-    if (cm06.flag !== null) {
-      flag = {
-        level: 'act_now',
-        reason: decliningTwoMonthsRunning
-          ? `MQL volume has declined two months running (${twoAgo} -> ${previous} -> ${current}) while funnel conversion (CM-06) is also deteriorating.`
-          : `MQL volume fell to ${current} (from ${previous}) while funnel conversion (CM-06) is also deteriorating.`
-      }
-    } else if (decliningTwoMonthsRunning) {
-      flag = { level: 'watch', reason: `MQL volume has declined two months running: ${twoAgo} -> ${previous} -> ${current}.` }
+  if (quarterFarBelowPlan) {
+    flag = {
+      level: 'act_now',
+      reason: `MQLs for the quarter (${quarterMqls}) ran ${Math.abs(quarterVariancePct!).toFixed(1)}% below plan (${Math.round(quarterPlannedMqls!)}).`
     }
+  } else if (cm06Deteriorating) {
+    flag = {
+      level: 'act_now',
+      reason: decliningTwoMonthsRunning
+        ? `MQL volume has declined two months running (${twoAgo} -> ${previous} -> ${current}) while funnel conversion (CM-06) is also deteriorating.`
+        : `MQL volume fell to ${current} (from ${previous}) while funnel conversion (CM-06) is also deteriorating.`
+    }
+  } else if (monthBelowPlan) {
+    flag = { level: 'watch', reason: `MQLs (${current}) ran ${Math.abs(variancePct!).toFixed(1)}% below plan (${Math.round(plannedMqls!)}) this month.` }
+  } else if (decliningTwoMonthsRunning) {
+    flag = { level: 'watch', reason: `MQL volume has declined two months running: ${twoAgo} -> ${previous} -> ${current}.` }
   }
 
   return {
@@ -442,6 +578,13 @@ export async function computeCM08(orgId: string, provider = 'hubspot', period?: 
       previousMonthMqlCount: previous,
       twoMonthsAgoMqlCount: twoAgo,
       growthPct: growthPct !== null ? round1(growthPct) : null,
+      plannedMqls: plannedMqls !== null ? round1(plannedMqls) : null,
+      variancePct: variancePct !== null ? round1(variancePct) : null,
+      missingPlanMonths,
+      quarterStart,
+      quarterMqlCount: quarterMqls,
+      quarterPlannedMqls: quarterPlannedMqls !== null ? round1(quarterPlannedMqls) : null,
+      quarterVariancePct: quarterVariancePct !== null ? round1(quarterVariancePct) : null,
       benchmarkAvailable: false
     },
     flag,
@@ -466,25 +609,59 @@ const HUBSPOT = 'hubspot'
 const SALESFORCE = 'salesforce'
 const MARKETING_SOURCES = new Set(['ORGANIC_SEARCH', 'PAID_SEARCH', 'EMAIL_MARKETING', 'SOCIAL_MEDIA', 'PAID_SOCIAL', 'OTHER_CAMPAIGNS', 'AI_REFERRALS'])
 const UNSOURCED_HOLDBACK_SHARE = 0.25
+const ATTRIBUTION_MODEL = 'first-touch'
+
+/**
+ * CM-05's two windows for a quarter: pipeline *created* in the quarter itself
+ * (the guide's "created this period" — quarterly, the grain its alerts
+ * compare at), revenue *closed* over the trailing twelve months ending with
+ * that quarter.
+ */
+function attributionWindows(quarterStart: string) {
+  const quarterEnd = shiftMonth(quarterStart, 2)
+  const endOf = (month: string) => new Date(`${monthToDateRange(month).endDate}T23:59:59.999Z`)
+  return {
+    pipelineFrom: new Date(monthToDateRange(quarterStart).startDate),
+    revenueFrom: new Date(monthToDateRange(shiftMonth(quarterEnd, -11)).startDate),
+    to: endOf(quarterEnd)
+  }
+}
+
+/**
+ * "Qualified pipeline" per the guide (same as CM-04): deals that passed the
+ * qualification stage. Unlike CM-04's *open* pipeline, a deal created in the
+ * period that has since been won — or lost after qualifying — still counts,
+ * so the stage history is checked, not just the current stage. A deal lost
+ * before ever qualifying doesn't.
+ */
+function passedQualification(
+  deal: { pipeline?: string; dealstage?: string; dealStageHistory?: { value: string }[] },
+  qualifiedKeys: Set<string>,
+  wonKeys: Set<string>
+): boolean {
+  if (!deal.pipeline) return false
+  const stages = [deal.dealstage, ...(deal.dealStageHistory ?? []).map((entry) => entry.value)]
+  return stages.some((stage) => !!stage && (qualifiedKeys.has(`${deal.pipeline}::${stage}`) || wonKeys.has(`${deal.pipeline}::${stage}`)))
+}
 
 interface AttributionTotals {
   totalPipeline: number
   marketingPipeline: number
   totalRevenue: number
   marketingRevenue: number
+  /** Marketing-sourced new-business revenue closed in the quarter itself (not the trailing 12 months) — CM-07's profit ROI sets it against the same quarter's spend. */
+  marketingRevenueInQuarter: number
   unsourcedPipelineShare: number | null
   /** Salesforce-only: named-campaign breakdown of marketing-sourced pipeline (metrics guide gap G-23) — HubSpot's `hs_analytics_source` has no equivalent named entity to break out this way. */
   topCampaigns?: { label: string; pipeline: number; revenue: number; dealCount: number }[]
 }
 
-async function computeAttributionTotals(orgId: string, endMonth: string): Promise<AttributionTotals> {
-  const startMonth = shiftMonth(endMonth, -11)
-  const from = new Date(monthToDateRange(startMonth).startDate)
-  const to = new Date(`${monthToDateRange(endMonth).endDate}T23:59:59.999Z`)
+async function computeAttributionTotals(orgId: string, quarterStart: string): Promise<AttributionTotals> {
+  const { pipelineFrom, revenueFrom, to } = attributionWindows(quarterStart)
 
   const [createdDeals, closedDeals, contacts, stageDefs] = await Promise.all([
-    dealRepository.findByCreateDateRange(orgId, HUBSPOT, from, to),
-    dealRepository.findByCloseDateRange(orgId, HUBSPOT, from, to),
+    dealRepository.findByCreateDateRange(orgId, HUBSPOT, pipelineFrom, to),
+    dealRepository.findByCloseDateRange(orgId, HUBSPOT, revenueFrom, to),
     contactRepository.findSourcesByProvider(orgId, HUBSPOT),
     pipelineStageDefinitionRepository.findAllForOrg(orgId, HUBSPOT)
   ])
@@ -506,7 +683,7 @@ async function computeAttributionTotals(orgId: string, endMonth: string): Promis
   let marketingPipeline = 0
   let unsourcedPipeline = 0
   for (const deal of createdDeals) {
-    if (!deal.pipeline || !deal.dealstage || !qualifiedKeys.has(`${deal.pipeline}::${deal.dealstage}`)) continue
+    if (!isNewBusinessOrUntyped(deal.type) || !passedQualification(deal, qualifiedKeys, wonKeys)) continue
     const amount = deal.amount ?? 0
     totalPipeline += amount
     const source = sourceForDeal(deal.contactIds ?? [])
@@ -516,12 +693,16 @@ async function computeAttributionTotals(orgId: string, endMonth: string): Promis
 
   let totalRevenue = 0
   let marketingRevenue = 0
+  let marketingRevenueInQuarter = 0
   for (const deal of closedDeals) {
-    if (!deal.pipeline || !deal.dealstage || !wonKeys.has(`${deal.pipeline}::${deal.dealstage}`)) continue
+    if (!isNewBusinessOrUntyped(deal.type) || !deal.pipeline || !deal.dealstage || !wonKeys.has(`${deal.pipeline}::${deal.dealstage}`)) continue
     const amount = deal.amount ?? 0
     totalRevenue += amount
     const source = sourceForDeal(deal.contactIds ?? [])
-    if (source && MARKETING_SOURCES.has(source)) marketingRevenue += amount
+    if (source && MARKETING_SOURCES.has(source)) {
+      marketingRevenue += amount
+      if (deal.closedate && deal.closedate >= pipelineFrom) marketingRevenueInQuarter += amount
+    }
   }
 
   return {
@@ -529,6 +710,7 @@ async function computeAttributionTotals(orgId: string, endMonth: string): Promis
     marketingPipeline,
     totalRevenue,
     marketingRevenue,
+    marketingRevenueInQuarter,
     unsourcedPipelineShare: totalPipeline > 0 ? unsourcedPipeline / totalPipeline : null
   }
 }
@@ -548,14 +730,12 @@ async function computeAttributionTotals(orgId: string, endMonth: string): Promis
  * contact hop is needed here (unlike the HubSpot path) since the signal
  * lives directly on the deal.
  */
-async function computeSalesforceAttributionTotals(orgId: string, endMonth: string): Promise<AttributionTotals> {
-  const startMonth = shiftMonth(endMonth, -11)
-  const from = new Date(monthToDateRange(startMonth).startDate)
-  const to = new Date(`${monthToDateRange(endMonth).endDate}T23:59:59.999Z`)
+async function computeSalesforceAttributionTotals(orgId: string, quarterStart: string): Promise<AttributionTotals> {
+  const { pipelineFrom, revenueFrom, to } = attributionWindows(quarterStart)
 
   const [createdDeals, closedDeals, stageDefs, campaigns] = await Promise.all([
-    dealRepository.findByCreateDateRange(orgId, SALESFORCE, from, to),
-    dealRepository.findByCloseDateRange(orgId, SALESFORCE, from, to),
+    dealRepository.findByCreateDateRange(orgId, SALESFORCE, pipelineFrom, to),
+    dealRepository.findByCloseDateRange(orgId, SALESFORCE, revenueFrom, to),
     pipelineStageDefinitionRepository.findAllForOrg(orgId, SALESFORCE),
     salesforceCampaignRepository.findAll(orgId, SALESFORCE)
   ])
@@ -572,7 +752,7 @@ async function computeSalesforceAttributionTotals(orgId: string, endMonth: strin
   let marketingPipeline = 0
   let unsourcedPipeline = 0
   for (const deal of createdDeals) {
-    if (!deal.pipeline || !deal.dealstage || !qualifiedKeys.has(`${deal.pipeline}::${deal.dealstage}`)) continue
+    if (!isNewBusinessOrUntyped(deal.type) || !passedQualification(deal, qualifiedKeys, wonKeys)) continue
     const amount = deal.amount ?? 0
     totalPipeline += amount
     if (deal.campaignId) {
@@ -586,12 +766,14 @@ async function computeSalesforceAttributionTotals(orgId: string, endMonth: strin
 
   let totalRevenue = 0
   let marketingRevenue = 0
+  let marketingRevenueInQuarter = 0
   for (const deal of closedDeals) {
-    if (!deal.pipeline || !deal.dealstage || !wonKeys.has(`${deal.pipeline}::${deal.dealstage}`)) continue
+    if (!isNewBusinessOrUntyped(deal.type) || !deal.pipeline || !deal.dealstage || !wonKeys.has(`${deal.pipeline}::${deal.dealstage}`)) continue
     const amount = deal.amount ?? 0
     totalRevenue += amount
     if (deal.campaignId) {
       marketingRevenue += amount
+      if (deal.closedate && deal.closedate >= pipelineFrom) marketingRevenueInQuarter += amount
       campaignRevenue.set(deal.campaignId, (campaignRevenue.get(deal.campaignId) ?? 0) + amount)
     }
   }
@@ -610,25 +792,32 @@ async function computeSalesforceAttributionTotals(orgId: string, endMonth: strin
     marketingPipeline,
     totalRevenue,
     marketingRevenue,
+    marketingRevenueInQuarter,
     unsourcedPipelineShare: totalPipeline > 0 ? unsourcedPipeline / totalPipeline : null,
     topCampaigns
   }
 }
 
+/**
+ * Marketing-sourced share of the qualified new-business pipeline created in
+ * the latest closed quarter, plus of new-business revenue closed over the
+ * trailing twelve months — both new-business only (same filter as CM-04),
+ * compared quarter over quarter for the alerts.
+ */
 export async function computeCM05(orgId: string, provider: string = 'hubspot', period?: string): Promise<MetricResult> {
-  const endMonth = period ?? latestClosedMonth()
-  const prevEndMonth = shiftMonth(endMonth, -3)
-  const twoAgoEndMonth = shiftMonth(endMonth, -6)
+  const quarterStart = latestClosedQuarterStart(period ?? latestClosedMonth())
+  const prevQuarterStart = shiftMonth(quarterStart, -3)
+  const twoAgoQuarterStart = shiftMonth(quarterStart, -6)
 
   const computeTotals = provider === SALESFORCE ? computeSalesforceAttributionTotals : computeAttributionTotals
 
   const [current, previous, twoAgo] = await Promise.all([
-    computeTotals(orgId, endMonth),
-    computeTotals(orgId, prevEndMonth),
-    computeTotals(orgId, twoAgoEndMonth)
+    computeTotals(orgId, quarterStart),
+    computeTotals(orgId, prevQuarterStart),
+    computeTotals(orgId, twoAgoQuarterStart)
   ])
 
-  if (current.totalPipeline <= 0) return notComputable('CM-05', endMonth, 'percent')
+  if (current.totalPipeline <= 0) return notComputable('CM-05', quarterStart, 'percent')
 
   const pipelinePct = (current.marketingPipeline / current.totalPipeline) * 100
   const revenuePct = current.totalRevenue > 0 ? (current.marketingRevenue / current.totalRevenue) * 100 : null
@@ -642,9 +831,18 @@ export async function computeCM05(orgId: string, provider: string = 'hubspot', p
 
   let flag: MetricFlag | null = null
   if (dataQualityOk) {
-    const fallingTwoQuarters = prevPipelinePct !== null && twoAgoPipelinePct !== null && pipelinePct < prevPipelinePct && prevPipelinePct < twoAgoPipelinePct
+    const falling = prevPipelinePct !== null && pipelinePct < prevPipelinePct
+    // Act now: the share is falling while pipeline coverage (CM-04) is also
+    // below its target — CM-04 flags exactly when coverage is under 3.0x.
+    const coverageBelowTarget = falling && (await computeCM04(orgId, provider)).flag !== null
+    const fallingTwoQuarters = falling && twoAgoPipelinePct !== null && prevPipelinePct! < twoAgoPipelinePct
     const belowTarget = pipelinePct < 30
-    if (fallingTwoQuarters || belowTarget) {
+    if (coverageBelowTarget) {
+      flag = {
+        level: 'act_now',
+        reason: `Marketing-sourced pipeline share fell to ${pipelinePct.toFixed(1)}% (from ${prevPipelinePct!.toFixed(1)}%) while pipeline coverage (CM-04) is also below target.`
+      }
+    } else if (fallingTwoQuarters || belowTarget) {
       flag = {
         level: 'watch',
         reason: fallingTwoQuarters
@@ -653,12 +851,10 @@ export async function computeCM05(orgId: string, provider: string = 'hubspot', p
       }
     }
   }
-  // Act-now needs pipeline coverage (CM-04) also below target — CM-04's own target is unavailable
-  // (operating-plan data, gap G-14), so that cross-check can't fire, same dependency shape as G-19.
 
   return {
     id: 'CM-05',
-    period: endMonth,
+    period: quarterStart,
     computable: true,
     value: round1(pipelinePct),
     unit: 'percent',
@@ -669,8 +865,10 @@ export async function computeCM05(orgId: string, provider: string = 'hubspot', p
       totalQualifiedPipeline: round1(current.totalPipeline),
       marketingRevenue: round1(current.marketingRevenue),
       totalRevenue: round1(current.totalRevenue),
+      marketingRevenueInQuarter: round1(current.marketingRevenueInQuarter),
       unsourcedPipelineSharePct: current.unsourcedPipelineShare !== null ? round1(current.unsourcedPipelineShare * 100) : null,
       dataQualityOk,
+      attributionModel: ATTRIBUTION_MODEL,
       ...(current.topCampaigns ? { topCampaigns: current.topCampaigns } : {})
     },
     flag: dataQualityOk ? flag : null,
@@ -698,7 +896,7 @@ export async function computeCM07(orgId: string, period?: string): Promise<Metri
   const prevQuarterStart = shiftMonth(quarterStart, -3)
   const twoAgoQuarterStart = shiftMonth(quarterStart, -6)
 
-  const [cm05, prevCm05, twoAgoCm05, snapshot, prevSnapshot, twoAgoSnapshot] = await Promise.all([
+  const [cm05, prevCm05, twoAgoCm05, snapshot, prevSnapshot, twoAgoSnapshot, org] = await Promise.all([
     // CM-07 stays HubSpot-only (G-23) — it needs marketing spend split out of the
     // QuickBooks P&L, which has no per-CRM equivalent, so there's no Salesforce leg to add here.
     computeCM05(orgId, 'hubspot', month),
@@ -706,15 +904,24 @@ export async function computeCM07(orgId: string, period?: string): Promise<Metri
     computeCM05(orgId, 'hubspot', twoAgoQuarterStart),
     getStoredProfitAndLoss(orgId, 'quickbooks', quarterStart),
     getStoredProfitAndLoss(orgId, 'quickbooks', prevQuarterStart),
-    getStoredProfitAndLoss(orgId, 'quickbooks', twoAgoQuarterStart)
+    getStoredProfitAndLoss(orgId, 'quickbooks', twoAgoQuarterStart),
+    organizationsRepository.findById(orgId)
   ])
+  // Marketing spend is the org's own picked marketing accounts (Settings) — never the
+  // keyword-guessed "sales & marketing" bucket, which would fold sales spend in too.
+  const marketingAccountIds = new Set(org?.settings?.marketingSpendAccountIds ?? [])
+  if (marketingAccountIds.size === 0) {
+    return { ...notComputable('CM-07', quarterStart, 'multiple'), data: { configured: false, blockedOn: 'marketing-spend-accounts' } }
+  }
   if (!snapshot) return notComputable('CM-07', quarterStart, 'multiple')
 
-  const marketingSpend = sumExpensesByCategory(snapshot, 'sales_marketing', 'Total')
+  const marketingSpend = sumConfiguredAccountIds(snapshot, marketingAccountIds, 'Total')
   const grossMarginPct = grossMarginFromPL(snapshot)
 
+  // Both ROIs set the quarter's spend against the same quarter: pipeline created in it,
+  // and new-business revenue closed in it (not CM-05's trailing-twelve-month revenue).
   const marketingSourcedPipeline = (cm05.data.marketingQualifiedPipeline as number | undefined) ?? 0
-  const marketingSourcedRevenue = (cm05.data.marketingRevenue as number | undefined) ?? 0
+  const marketingSourcedRevenue = (cm05.data.marketingRevenueInQuarter as number | undefined) ?? 0
 
   const pipelineRoi = marketingSpend > 0 ? marketingSourcedPipeline / marketingSpend : null
   const profitRoi = marketingSpend > 0 && grossMarginPct !== null ? (marketingSourcedRevenue * grossMarginPct) / marketingSpend : null
@@ -724,7 +931,7 @@ export async function computeCM07(orgId: string, period?: string): Promise<Metri
   // same fix already applied to VC-07/CM-06 for the identical bug shape.
   const roiForQuarter = (cm05Result: MetricResult, plSnapshot: StoredQuarterSnapshot | null): number | null => {
     if (!plSnapshot) return null
-    const spend = sumExpensesByCategory(plSnapshot, 'sales_marketing', 'Total')
+    const spend = sumConfiguredAccountIds(plSnapshot, marketingAccountIds, 'Total')
     const pipeline = cm05Result.computable ? ((cm05Result.data.marketingQualifiedPipeline as number | undefined) ?? null) : null
     return spend > 0 && pipeline !== null ? pipeline / spend : null
   }
@@ -736,12 +943,16 @@ export async function computeCM07(orgId: string, period?: string): Promise<Metri
     const belowTarget = pipelineRoi < 5
     const declining =
       prevPipelineRoi !== null && twoAgoPipelineRoi !== null && pipelineRoi < prevPipelineRoi && prevPipelineRoi < twoAgoPipelineRoi
+    // "Pipeline ROI leads and profit ROI confirms ... every alert reports both."
+    const profitNote = profitRoi !== null ? ` Profit ROI is ${profitRoi.toFixed(2)}x.` : ''
     if (belowTarget || declining) {
       flag = {
         level: 'watch',
-        reason: belowTarget
-          ? `Blended pipeline ROI is ${pipelineRoi.toFixed(2)}x, below the 5x target.`
-          : `Blended pipeline ROI has fallen two quarters running: ${twoAgoPipelineRoi!.toFixed(2)}x → ${prevPipelineRoi!.toFixed(2)}x → ${pipelineRoi.toFixed(2)}x.`
+        reason:
+          (belowTarget
+            ? `Blended pipeline ROI is ${pipelineRoi.toFixed(2)}x, below the 5x target.`
+            : `Blended pipeline ROI has fallen two quarters running: ${twoAgoPipelineRoi!.toFixed(2)}x → ${prevPipelineRoi!.toFixed(2)}x → ${pipelineRoi.toFixed(2)}x.`) +
+          profitNote
       }
     }
   }
@@ -761,6 +972,7 @@ export async function computeCM07(orgId: string, period?: string): Promise<Metri
       marketingSourcedPipeline: round1(marketingSourcedPipeline),
       marketingSourcedRevenue: round1(marketingSourcedRevenue),
       grossMarginPct: grossMarginPct !== null ? round1(grossMarginPct * 100) : null,
+      configured: true,
       perChannelAvailable: false
     },
     flag,

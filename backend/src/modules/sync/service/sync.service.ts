@@ -18,7 +18,13 @@ import { extractSectionTotals, extractFlatReportGrandTotal, leafAccountAmounts }
 import { funnelStageEventRepository, FunnelStageEventInput } from '../repository/funnelStageEvent.repository'
 import { pipelineStageDefinitionRepository, PipelineStageDefinitionInput } from '../repository/pipelineStageDefinition.repository'
 import { productRepository, ProductCategoryUpdate } from '../repository/product.repository'
-import { HubSpotService, HubSpotContact, HubSpotDeal } from '../../integrations/service/hubspot.service'
+import {
+  HubSpotService,
+  HubSpotContact,
+  HubSpotDeal,
+  IMPORTED_HISTORY_OBJECTS,
+  IMPORTED_ORIGINAL_SOURCE_PROPERTY
+} from '../../integrations/service/hubspot.service'
 import { SalesforceService } from '../../integrations/service/salesforce.service'
 import { QuickBooksService, mapWithConcurrency } from '../../integrations/service/quickbooks.service'
 import * as integrationsService from '../../integrations/service/integrations.service'
@@ -150,10 +156,11 @@ async function executeSyncJob(orgId: string, provider: string, jobId: string, fo
       await syncQuickBooksItemProfitAndLoss(orgId, provider, jobId, accessToken, realmId, items)
       await syncQuickBooksCashBalance(orgId, provider, jobId, accessToken, realmId)
     } else {
+      const importedHistory = await resolveImportedHistory(orgId, accessToken)
       await syncPipelineStageDefinitions(orgId, provider, accessToken)
       await syncProducts(orgId, provider, accessToken)
-      await syncContacts(orgId, provider, jobId, accessToken, since)
-      await syncDeals(orgId, provider, jobId, accessToken, since)
+      await syncContacts(orgId, provider, jobId, accessToken, since, importedHistory)
+      await syncDeals(orgId, provider, jobId, accessToken, since, importedHistory)
     }
 
     await integrationsRepository.updateLastSyncedAt(orgId, provider as IntegrationProvider, syncStartedAt)
@@ -163,6 +170,43 @@ async function executeSyncJob(orgId: string, provider: string, jobId: string, fo
   } catch (error) {
     await syncJobRepository.updateStatus(jobId, 'failed')
     await syncJobRepository.setError(jobId, error instanceof Error ? error.message : 'Unknown error')
+  }
+}
+
+interface ImportedHistorySource {
+  objectTypeId: string
+  stageProperty: string
+  enteredAtProperty: string
+}
+
+interface ImportedHistory {
+  lifecycle: ImportedHistorySource
+  dealStage: ImportedHistorySource
+}
+
+/**
+ * `undefined` (the default) means HubSpot's native history is used. When the
+ * org has turned on `hubspotUseImportedHistory` (Organization.model.ts),
+ * resolves the portal's `rl_*` history objects once per sync job — and fails
+ * the sync loudly if they're missing, rather than silently syncing an empty
+ * history the dashboards would then read as real.
+ */
+async function resolveImportedHistory(orgId: string, accessToken: string): Promise<ImportedHistory | undefined> {
+  const org = await organizationsRepository.findById(orgId)
+  if (!org?.settings?.hubspotUseImportedHistory) return undefined
+
+  const typeIds = await HubSpotService.getCustomObjectTypeIds(accessToken)
+  const { lifecycle, dealStage } = IMPORTED_HISTORY_OBJECTS
+  const missing = [lifecycle.name, dealStage.name].filter((name) => !typeIds[name])
+  if (missing.length > 0) {
+    throw AppError.badRequest(
+      `Imported history is turned on, but this HubSpot portal has no ${missing.join(' or ')} custom object`,
+      'HUBSPOT_IMPORTED_HISTORY_MISSING'
+    )
+  }
+  return {
+    lifecycle: { ...lifecycle, objectTypeId: typeIds[lifecycle.name] },
+    dealStage: { ...dealStage, objectTypeId: typeIds[dealStage.name] }
   }
 }
 
@@ -233,7 +277,8 @@ async function syncContacts(
   provider: string,
   jobId: string,
   accessToken: string,
-  since?: Date
+  since?: Date,
+  importedHistory?: ImportedHistory
 ): Promise<void> {
   await syncJobRepository.updateEntityProgress(jobId, 'contacts', { status: 'syncing' })
   await syncJobRepository.updateProgress(jobId, 15, since ? 'Syncing contacts (changes since last sync)' : 'Syncing contacts')
@@ -242,17 +287,34 @@ async function syncContacts(
   let totalSynced = 0
 
   do {
-    const response = await HubSpotService.getContacts(accessToken, PAGE_SIZE, after, since)
+    const response = await HubSpotService.getContacts(
+      accessToken,
+      PAGE_SIZE,
+      after,
+      since,
+      importedHistory ? [IMPORTED_ORIGINAL_SOURCE_PROPERTY] : []
+    )
 
-    // HubSpot's Search API (used when `since` is set) can't return
-    // propertiesWithHistory, so backfill each changed contact's lifecycle
-    // stage history with one follow-up detail request — bounded to just
-    // this page's contacts, not the whole portal (same pattern as deals).
-    const lifecycleHistories = since
-      ? await Promise.all(
-          response.results.map((contact) => HubSpotService.getContactLifecycleHistory(accessToken, contact.id))
-        )
-      : undefined
+    // Imported history: the page's rl_lifecycle_change records, batched once
+    // per page. Native, incremental: HubSpot's Search API (used when `since`
+    // is set) can't return propertiesWithHistory, so backfill each changed
+    // contact's lifecycle stage history with one follow-up detail request —
+    // bounded to just this page's contacts, not the whole portal (same
+    // pattern as deals).
+    let lifecycleHistories: { value: string; timestamp: string }[][] | undefined
+    if (importedHistory) {
+      const byContact = await HubSpotService.getImportedStageHistory(
+        accessToken,
+        'contacts',
+        importedHistory.lifecycle,
+        response.results.map((contact) => contact.id)
+      )
+      lifecycleHistories = response.results.map((contact) => byContact[contact.id] ?? [])
+    } else if (since) {
+      lifecycleHistories = await Promise.all(
+        response.results.map((contact) => HubSpotService.getContactLifecycleHistory(accessToken, contact.id))
+      )
+    }
 
     const contacts = response.results.map((contact: HubSpotContact, index: number) => ({
       providerRecordId: contact.id,
@@ -261,7 +323,8 @@ async function syncContacts(
       lastname: contact.properties.lastname,
       lifecycleStage: contact.properties.lifecyclestage,
       leadStatus: contact.properties.hs_lead_status,
-      analyticsSource: contact.properties.hs_analytics_source,
+      analyticsSource:
+        (importedHistory && contact.properties[IMPORTED_ORIGINAL_SOURCE_PROPERTY]) || contact.properties.hs_analytics_source,
       lifecycleStageHistory: (lifecycleHistories ? lifecycleHistories[index] : contact.propertiesWithHistory?.lifecyclestage || []).map(
         (entry) => ({
           value: entry.value,
@@ -298,7 +361,8 @@ async function syncDeals(
   provider: string,
   jobId: string,
   accessToken: string,
-  since?: Date
+  since?: Date,
+  importedHistory?: ImportedHistory
 ): Promise<void> {
   await syncJobRepository.updateEntityProgress(jobId, 'deals', { status: 'syncing' })
   await syncJobRepository.updateProgress(jobId, 55, since ? 'Syncing deals (changes since last sync)' : 'Syncing deals')
@@ -309,13 +373,25 @@ async function syncDeals(
   do {
     const response = await HubSpotService.getDeals(accessToken, PAGE_SIZE, after, since)
 
-    // HubSpot's Search API (used when `since` is set) can't return
-    // propertiesWithHistory, so backfill each changed deal's stage history
-    // with one follow-up detail request — bounded to just this page's deals,
-    // not the whole portal.
-    const dealStageHistories = since
-      ? await Promise.all(response.results.map((deal) => HubSpotService.getDealStageHistory(accessToken, deal.id)))
-      : undefined
+    // Imported history: the page's rl_deal_stage_change records, batched
+    // once per page. Native, incremental: HubSpot's Search API (used when
+    // `since` is set) can't return propertiesWithHistory, so backfill each
+    // changed deal's stage history with one follow-up detail request —
+    // bounded to just this page's deals, not the whole portal.
+    let dealStageHistories: { value: string; timestamp: string }[][] | undefined
+    if (importedHistory) {
+      const byDeal = await HubSpotService.getImportedStageHistory(
+        accessToken,
+        'deals',
+        importedHistory.dealStage,
+        response.results.map((deal) => deal.id)
+      )
+      dealStageHistories = response.results.map((deal) => byDeal[deal.id] ?? [])
+    } else if (since) {
+      dealStageHistories = await Promise.all(
+        response.results.map((deal) => HubSpotService.getDealStageHistory(accessToken, deal.id))
+      )
+    }
 
     // Batched once for the whole page (not per-deal) — mirrors the
     // anti-N+1 shape already used for the history backfills above.
@@ -356,6 +432,7 @@ async function syncDeals(
       dealstage: deal.properties.dealstage,
       ownerId: deal.properties.hubspot_owner_id,
       dealCreatedAt: deal.properties.createdate ? new Date(deal.properties.createdate) : undefined,
+      type: deal.properties.dealtype || undefined,
       contactIds: associations[deal.id] ?? [],
       productIds: dealToProductIds[deal.id] ?? [],
       dealStageHistory: (dealStageHistories ? dealStageHistories[index] : deal.propertiesWithHistory?.dealstage || []).map(
