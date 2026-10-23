@@ -1,0 +1,14 @@
+{
+ "2-270589493": {
+  "input": 10847,
+  "created": 10827,
+  "updated": 20,
+  "failed": 0,
+  "mapped": 10847
+ },
+ "deal_stage_changes_to_deal": {
+  "input": 10847,
+  "linked": 10847,
+  "failed": 0
+ }
+}

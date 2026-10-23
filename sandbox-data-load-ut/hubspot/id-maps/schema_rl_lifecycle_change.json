@@ -1,0 +1,523 @@
+{
+ "labels": {
+  "singular": "Lifecycle Change",
+  "plural": "Lifecycle Changes"
+ },
+ "requiredProperties": [
+  "rl_change_key"
+ ],
+ "searchableProperties": [
+  "contact_ridgeline_id",
+  "rl_change_key"
+ ],
+ "primaryDisplayProperty": "rl_change_key",
+ "secondaryDisplayProperties": [
+  "stage",
+  "changed_at"
+ ],
+ "description": "Contact lifecycle stage history loaded from contact_property_history_lifecyclestage.csv (sandbox only).",
+ "allowsSensitiveProperties": true,
+ "archived": false,
+ "restorable": true,
+ "metaType": "PORTAL_SPECIFIC",
+ "id": "270364297",
+ "fullyQualifiedName": "p247726307_rl_lifecycle_change",
+ "createdAt": "2026-10-18T14:04:35.165Z",
+ "updatedAt": "2026-10-18T14:04:35.165Z",
+ "createdByUserId": 96152582,
+ "updatedByUserId": 96152582,
+ "objectTypeId": "2-270364297",
+ "properties": [
+  {
+   "updatedAt": "2026-10-18T14:04:35.365Z",
+   "createdAt": "2026-10-18T14:04:35.365Z",
+   "name": "source_type",
+   "label": "Source Type",
+   "type": "enumeration",
+   "fieldType": "select",
+   "description": "",
+   "groupName": "rl_lifecycle_change_information",
+   "options": [
+    {
+     "label": "FORM",
+     "value": "FORM",
+     "displayOrder": 0,
+     "hidden": false
+    },
+    {
+     "label": "AUTOMATION_PLATFORM",
+     "value": "AUTOMATION_PLATFORM",
+     "displayOrder": 1,
+     "hidden": false
+    },
+    {
+     "label": "SALESFORCE",
+     "value": "SALESFORCE",
+     "displayOrder": 2,
+     "hidden": false
+    },
+    {
+     "label": "IMPORT",
+     "value": "IMPORT",
+     "displayOrder": 3,
+     "hidden": false
+    }
+   ],
+   "displayOrder": -1,
+   "calculated": false,
+   "externalOptions": false,
+   "archived": false,
+   "hasUniqueValue": false,
+   "hidden": false,
+   "modificationMetadata": {
+    "archivable": true,
+    "readOnlyDefinition": false,
+    "readOnlyValue": false
+   },
+   "formField": false,
+   "dataSensitivity": "non_sensitive"
+  },
+  {
+   "updatedAt": "2026-10-18T14:04:35.365Z",
+   "createdAt": "2026-10-18T14:04:35.365Z",
+   "name": "stage",
+   "label": "Stage",
+   "type": "enumeration",
+   "fieldType": "select",
+   "description": "",
+   "groupName": "rl_lifecycle_change_information",
+   "options": [
+    {
+     "label": "Subscriber",
+     "value": "subscriber",
+     "displayOrder": 0,
+     "hidden": false
+    },
+    {
+     "label": "Lead",
+     "value": "lead",
+     "displayOrder": 1,
+     "hidden": false
+    },
+    {
+     "label": "Marketing Qualified Lead",
+     "value": "marketingqualifiedlead",
+     "displayOrder": 2,
+     "hidden": false
+    },
+    {
+     "label": "Sales Qualified Lead",
+     "value": "salesqualifiedlead",
+     "displayOrder": 3,
+     "hidden": false
+    },
+    {
+     "label": "Opportunity",
+     "value": "opportunity",
+     "displayOrder": 4,
+     "hidden": false
+    },
+    {
+     "label": "Customer",
+     "value": "customer",
+     "displayOrder": 5,
+     "hidden": false
+    },
+    {
+     "label": "(cleared)",
+     "value": "cleared",
+     "displayOrder": 6,
+     "hidden": false
+    }
+   ],
+   "displayOrder": -1,
+   "calculated": false,
+   "externalOptions": false,
+   "archived": false,
+   "hasUniqueValue": false,
+   "hidden": false,
+   "modificationMetadata": {
+    "archivable": true,
+    "readOnlyDefinition": false,
+    "readOnlyValue": false
+   },
+   "formField": false,
+   "dataSensitivity": "non_sensitive"
+  },
+  {
+   "updatedAt": "2026-10-18T14:04:35.365Z",
+   "createdAt": "2026-10-18T14:04:35.365Z",
+   "name": "rl_change_key",
+   "label": "Change Key",
+   "type": "string",
+   "fieldType": "text",
+   "description": "",
+   "groupName": "rl_lifecycle_change_information",
+   "options": [],
+   "displayOrder": -1,
+   "calculated": false,
+   "externalOptions": false,
+   "archived": false,
+   "hasUniqueValue": true,
+   "hidden": false,
+   "modificationMetadata": {
+    "archivable": true,
+    "readOnlyDefinition": false,
+    "readOnlyValue": false
+   },
+   "formField": false,
+   "dataSensitivity": "non_sensitive"
+  },
+  {
+   "updatedAt": "2026-10-18T14:04:35.365Z",
+   "createdAt": "2026-10-18T14:04:35.365Z",
+   "name": "source_id",
+   "label": "Source ID",
+   "type": "string",
+   "fieldType": "text",
+   "description": "",
+   "groupName": "rl_lifecycle_change_information",
+   "options": [],
+   "displayOrder": -1,
+   "calculated": false,
+   "externalOptions": false,
+   "archived": false,
+   "hasUniqueValue": false,
+   "hidden": false,
+   "modificationMetadata": {
+    "archivable": true,
+    "readOnlyDefinition": false,
+    "readOnlyValue": false
+   },
+   "formField": false,
+   "dataSensitivity": "non_sensitive"
+  },
+  {
+   "updatedAt": "2026-10-18T14:04:35.365Z",
+   "createdAt": "2026-10-18T14:04:35.365Z",
+   "name": "sequence",
+   "label": "Sequence",
+   "type": "number",
+   "fieldType": "number",
+   "description": "",
+   "groupName": "rl_lifecycle_change_information",
+   "options": [],
+   "displayOrder": -1,
+   "calculated": false,
+   "externalOptions": false,
+   "archived": false,
+   "hasUniqueValue": false,
+   "hidden": false,
+   "modificationMetadata": {
+    "archivable": true,
+    "readOnlyDefinition": false,
+    "readOnlyValue": false
+   },
+   "formField": false,
+   "dataSensitivity": "non_sensitive"
+  },
+  {
+   "updatedAt": "2026-10-18T14:04:35.365Z",
+   "createdAt": "2026-10-18T14:04:35.365Z",
+   "name": "changed_at",
+   "label": "Changed At",
+   "type": "datetime",
+   "fieldType": "date",
+   "description": "",
+   "groupName": "rl_lifecycle_change_information",
+   "options": [],
+   "displayOrder": -1,
+   "calculated": false,
+   "externalOptions": false,
+   "archived": false,
+   "hasUniqueValue": false,
+   "hidden": false,
+   "modificationMetadata": {
+    "archivable": true,
+    "readOnlyDefinition": false,
+    "readOnlyValue": false
+   },
+   "formField": false,
+   "dataSensitivity": "non_sensitive"
+  },
+  {
+   "updatedAt": "2026-10-18T14:04:35.365Z",
+   "createdAt": "2026-10-18T14:04:35.365Z",
+   "name": "contact_ridgeline_id",
+   "label": "Contact Ridgeline ID",
+   "type": "string",
+   "fieldType": "text",
+   "description": "",
+   "groupName": "rl_lifecycle_change_information",
+   "options": [],
+   "displayOrder": -1,
+   "calculated": false,
+   "externalOptions": false,
+   "archived": false,
+   "hasUniqueValue": false,
+   "hidden": false,
+   "modificationMetadata": {
+    "archivable": true,
+    "readOnlyDefinition": false,
+    "readOnlyValue": false
+   },
+   "formField": false,
+   "dataSensitivity": "non_sensitive"
+  }
+ ],
+ "associations": [
+  {
+   "fromObjectTypeId": "2-270364297",
+   "toObjectTypeId": "0-1",
+   "name": "contact_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 500000,
+   "maxFromObjectIds": 500000,
+   "id": "19",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "0-1",
+   "toObjectTypeId": "2-270364297",
+   "name": "contact_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 500000,
+   "maxFromObjectIds": 500000,
+   "id": "20",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "2-270364297",
+   "toObjectTypeId": "0-27",
+   "name": "rl_lifecycle_change_to_task",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 250000,
+   "maxFromObjectIds": 10000,
+   "id": "1",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "0-27",
+   "toObjectTypeId": "2-270364297",
+   "name": "rl_lifecycle_change_to_task",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 10000,
+   "maxFromObjectIds": 250000,
+   "id": "2",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "2-270364297",
+   "toObjectTypeId": "0-51",
+   "name": "conversation_session_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 250000,
+   "maxFromObjectIds": 10000,
+   "id": "5",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "0-51",
+   "toObjectTypeId": "2-270364297",
+   "name": "conversation_session_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 10000,
+   "maxFromObjectIds": 250000,
+   "id": "6",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "2-270364297",
+   "toObjectTypeId": "0-46",
+   "name": "note_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 250000,
+   "maxFromObjectIds": 10000,
+   "id": "7",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "0-46",
+   "toObjectTypeId": "2-270364297",
+   "name": "note_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 10000,
+   "maxFromObjectIds": 250000,
+   "id": "8",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "2-270364297",
+   "toObjectTypeId": "0-48",
+   "name": "call_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 250000,
+   "maxFromObjectIds": 10000,
+   "id": "9",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "0-48",
+   "toObjectTypeId": "2-270364297",
+   "name": "call_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 10000,
+   "maxFromObjectIds": 250000,
+   "id": "10",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "2-270364297",
+   "toObjectTypeId": "0-18",
+   "name": "communication_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 250000,
+   "maxFromObjectIds": 10000,
+   "id": "11",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "0-18",
+   "toObjectTypeId": "2-270364297",
+   "name": "communication_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 10000,
+   "maxFromObjectIds": 250000,
+   "id": "12",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "2-270364297",
+   "toObjectTypeId": "0-49",
+   "name": "email_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 250000,
+   "maxFromObjectIds": 10000,
+   "id": "13",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "0-49",
+   "toObjectTypeId": "2-270364297",
+   "name": "email_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 10000,
+   "maxFromObjectIds": 250000,
+   "id": "14",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "0-116",
+   "toObjectTypeId": "2-270364297",
+   "name": "postal_mail_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 10000,
+   "maxFromObjectIds": 250000,
+   "id": "16",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "2-270364297",
+   "toObjectTypeId": "0-116",
+   "name": "postal_mail_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 250000,
+   "maxFromObjectIds": 10000,
+   "id": "15",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "2-270364297",
+   "toObjectTypeId": "0-47",
+   "name": "meeting_event_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 250000,
+   "maxFromObjectIds": 10000,
+   "id": "17",
+   "createdAt": null,
+   "updatedAt": null
+  },
+  {
+   "fromObjectTypeId": "0-47",
+   "toObjectTypeId": "2-270364297",
+   "name": "meeting_event_to_rl_lifecycle_change",
+   "cardinality": "ONE_TO_MANY",
+   "inverseCardinality": "ONE_TO_MANY",
+   "hasUserEnforcedMaxToObjectIds": false,
+   "hasUserEnforcedMaxFromObjectIds": false,
+   "maxToObjectIds": 10000,
+   "maxFromObjectIds": 250000,
+   "id": "18",
+   "createdAt": null,
+   "updatedAt": null
+  }
+ ],
+ "name": "rl_lifecycle_change"
+}

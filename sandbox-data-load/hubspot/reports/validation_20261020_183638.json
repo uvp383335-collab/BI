@@ -1,0 +1,125 @@
+{
+ "results": [
+  {
+   "check": "owners: mapped",
+   "pass": true,
+   "detail": "source 77, mapped 77"
+  },
+  {
+   "check": "pipeline stages",
+   "pass": true,
+   "detail": "7 source stages, 7 in HubSpot, mismatched: none"
+  },
+  {
+   "check": "companies: record count",
+   "pass": true,
+   "detail": "source 41590, HubSpot 41590"
+  },
+  {
+   "check": "contacts: record count",
+   "pass": true,
+   "detail": "source 43076, HubSpot 43076"
+  },
+  {
+   "check": "deals: record count",
+   "pass": true,
+   "detail": "source 3769, HubSpot 3769"
+  },
+  {
+   "check": "companies: field values",
+   "pass": true,
+   "detail": "2000 records x 15 fields compared; mismatches: none"
+  },
+  {
+   "check": "contacts: field values",
+   "pass": true,
+   "detail": "2000 records x 33 fields compared; mismatches: none"
+  },
+  {
+   "check": "deals: field values",
+   "pass": true,
+   "detail": "2000 records x 16 fields compared; mismatches: none"
+  },
+  {
+   "check": "contact to company: links",
+   "pass": true,
+   "detail": "2000 source links, 2000 resolvable, 0 wrong or missing (each must be 'Primary')"
+  },
+  {
+   "check": "deal to company: links",
+   "pass": true,
+   "detail": "2000 source links, 2000 resolvable, 0 wrong or missing (each must be 'Primary')"
+  },
+  {
+   "check": "deal to contact: links",
+   "pass": true,
+   "detail": "2000 source links, 2000 resolvable, 0 wrong or missing"
+  },
+  {
+   "check": "child to parent company: links",
+   "pass": true,
+   "detail": "6 source links, 6 resolvable, 0 wrong or missing (each must be 'Parent Company')"
+  },
+  {
+   "check": "lifecycle_changes: record count",
+   "pass": true,
+   "detail": "source 57994, HubSpot 57994"
+  },
+  {
+   "check": "lifecycle_changes: field values",
+   "pass": true,
+   "detail": "2000 records x 7 fields compared; mismatches: none"
+  },
+  {
+   "check": "lifecycle_changes to contact: links",
+   "pass": true,
+   "detail": "2000 source links, 2000 resolvable, 0 wrong or missing"
+  },
+  {
+   "check": "form_submissions: record count",
+   "pass": true,
+   "detail": "source 50740, HubSpot 50740"
+  },
+  {
+   "check": "form_submissions: field values",
+   "pass": true,
+   "detail": "2000 records x 7 fields compared; mismatches: none"
+  },
+  {
+   "check": "form_submissions to contact: links",
+   "pass": true,
+   "detail": "2000 source links, 2000 resolvable, 0 wrong or missing"
+  },
+  {
+   "check": "crosswalk: HubSpot companies",
+   "pass": true,
+   "detail": "751 crosswalk rows, 751 resolve, 751 carry the matching Salesforce Account ID"
+  },
+  {
+   "check": "deals: historical dates",
+   "pass": true,
+   "detail": "10 oldest/newest records, createdate, closedate mismatches: 0"
+  },
+  {
+   "check": "contacts: historical dates",
+   "pass": true,
+   "detail": "10 oldest/newest records, rl_source_createdate mismatches: 0; native createdate is the load date on 10 of 10 (HubSpot read-only, known deviation)"
+  },
+  {
+   "check": "companies: historical dates",
+   "pass": true,
+   "detail": "10 oldest/newest records, rl_source_createdate mismatches: 0; native createdate is the load date on 10 of 10 (HubSpot read-only, known deviation)"
+  },
+  {
+   "check": "goals",
+   "pass": true,
+   "detail": "3 source goals, mismatched or missing: none"
+  },
+  {
+   "check": "campaigns: loaded",
+   "pass": false,
+   "detail": "source 198, HubSpot 2 (campaigns step disabled in config)"
+  }
+ ],
+ "load_summary": null
+}

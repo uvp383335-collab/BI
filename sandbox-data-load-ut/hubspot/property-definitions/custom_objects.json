@@ -1,0 +1,385 @@
+{
+ "rl_lifecycle_change": {
+  "name": "rl_lifecycle_change",
+  "labels": {
+   "singular": "Lifecycle Change",
+   "plural": "Lifecycle Changes"
+  },
+  "description": "Contact lifecycle stage history loaded from contact_property_history_lifecyclestage.csv (sandbox only).",
+  "primaryDisplayProperty": "rl_change_key",
+  "secondaryDisplayProperties": [
+   "stage",
+   "changed_at"
+  ],
+  "requiredProperties": [
+   "rl_change_key"
+  ],
+  "searchableProperties": [
+   "contact_ridgeline_id",
+   "rl_change_key"
+  ],
+  "associatedObjects": [
+   "CONTACT"
+  ],
+  "properties": [
+   {
+    "name": "source_type",
+    "label": "Source Type",
+    "type": "enumeration",
+    "fieldType": "select",
+    "options": [
+     {
+      "label": "FORM",
+      "value": "FORM",
+      "displayOrder": 0
+     },
+     {
+      "label": "AUTOMATION_PLATFORM",
+      "value": "AUTOMATION_PLATFORM",
+      "displayOrder": 1
+     },
+     {
+      "label": "SALESFORCE",
+      "value": "SALESFORCE",
+      "displayOrder": 2
+     },
+     {
+      "label": "IMPORT",
+      "value": "IMPORT",
+      "displayOrder": 3
+     }
+    ]
+   },
+   {
+    "name": "stage",
+    "label": "Stage",
+    "type": "enumeration",
+    "fieldType": "select",
+    "options": [
+     {
+      "label": "Subscriber",
+      "value": "subscriber",
+      "displayOrder": 0
+     },
+     {
+      "label": "Lead",
+      "value": "lead",
+      "displayOrder": 1
+     },
+     {
+      "label": "Marketing Qualified Lead",
+      "value": "marketingqualifiedlead",
+      "displayOrder": 2
+     },
+     {
+      "label": "Sales Qualified Lead",
+      "value": "salesqualifiedlead",
+      "displayOrder": 3
+     },
+     {
+      "label": "Opportunity",
+      "value": "opportunity",
+      "displayOrder": 4
+     },
+     {
+      "label": "Customer",
+      "value": "customer",
+      "displayOrder": 5
+     },
+     {
+      "label": "(cleared)",
+      "value": "cleared",
+      "displayOrder": 6
+     }
+    ]
+   },
+   {
+    "name": "rl_change_key",
+    "label": "Change Key",
+    "type": "string",
+    "fieldType": "text",
+    "hasUniqueValue": true
+   },
+   {
+    "name": "source_id",
+    "label": "Source ID",
+    "type": "string",
+    "fieldType": "text"
+   },
+   {
+    "name": "sequence",
+    "label": "Sequence",
+    "type": "number",
+    "fieldType": "number"
+   },
+   {
+    "name": "changed_at",
+    "label": "Changed At",
+    "type": "datetime",
+    "fieldType": "date"
+   },
+   {
+    "name": "contact_ridgeline_id",
+    "label": "Contact Ridgeline ID",
+    "type": "string",
+    "fieldType": "text"
+   }
+  ]
+ },
+ "rl_form_submission": {
+  "name": "rl_form_submission",
+  "labels": {
+   "singular": "Form Submission",
+   "plural": "Form Submissions"
+  },
+  "description": "Form submissions loaded from form_submissions.csv (sandbox only).",
+  "primaryDisplayProperty": "rl_submission_key",
+  "secondaryDisplayProperties": [
+   "form_name",
+   "submitted_at"
+  ],
+  "requiredProperties": [
+   "rl_submission_key"
+  ],
+  "searchableProperties": [
+   "contact_ridgeline_id",
+   "rl_submission_key"
+  ],
+  "associatedObjects": [
+   "CONTACT"
+  ],
+  "properties": [
+   {
+    "name": "submitted_at",
+    "label": "Submitted At",
+    "type": "datetime",
+    "fieldType": "date"
+   },
+   {
+    "name": "contact_ridgeline_id",
+    "label": "Contact Ridgeline ID",
+    "type": "string",
+    "fieldType": "text"
+   },
+   {
+    "name": "rl_submission_key",
+    "label": "Submission Key",
+    "type": "string",
+    "fieldType": "text",
+    "hasUniqueValue": true
+   },
+   {
+    "name": "form_name",
+    "label": "Form Name",
+    "type": "enumeration",
+    "fieldType": "select",
+    "options": [
+     {
+      "label": "Content Download",
+      "value": "Content Download",
+      "displayOrder": 0
+     },
+     {
+      "label": "Request a Demo",
+      "value": "Request a Demo",
+      "displayOrder": 1
+     },
+     {
+      "label": "Webinar Registration",
+      "value": "Webinar Registration",
+      "displayOrder": 2
+     },
+     {
+      "label": "Start Free Trial",
+      "value": "Start Free Trial",
+      "displayOrder": 3
+     },
+     {
+      "label": "Pricing Inquiry",
+      "value": "Pricing Inquiry",
+      "displayOrder": 4
+     },
+     {
+      "label": "Event Badge Scan (import)",
+      "value": "Event Badge Scan (import)",
+      "displayOrder": 5
+     },
+     {
+      "label": "SoftwareScout Lead (integration)",
+      "value": "SoftwareScout Lead (integration)",
+      "displayOrder": 6
+     },
+     {
+      "label": "Contact Us",
+      "value": "Contact Us",
+      "displayOrder": 7
+     },
+     {
+      "label": "Newsletter Signup",
+      "value": "Newsletter Signup",
+      "displayOrder": 8
+     }
+    ]
+   },
+   {
+    "name": "sequence",
+    "label": "Sequence",
+    "type": "number",
+    "fieldType": "number"
+   },
+   {
+    "name": "page_url",
+    "label": "Page URL",
+    "type": "string",
+    "fieldType": "text"
+   },
+   {
+    "name": "form_guid",
+    "label": "Form GUID",
+    "type": "string",
+    "fieldType": "text"
+   }
+  ]
+ },
+ "rl_deal_stage_change": {
+  "name": "rl_deal_stage_change",
+  "labels": {
+   "singular": "Deal Stage Change",
+   "plural": "Deal Stage Changes"
+  },
+  "description": "Deal stage history loaded from salesforce/OpportunityHistory.csv (sandbox only).",
+  "primaryDisplayProperty": "rl_stage_change_key",
+  "secondaryDisplayProperties": [
+   "stage",
+   "entered_at"
+  ],
+  "requiredProperties": [
+   "rl_stage_change_key"
+  ],
+  "searchableProperties": [
+   "deal_ridgeline_id",
+   "rl_stage_change_key"
+  ],
+  "associatedObjects": [
+   "DEAL"
+  ],
+  "properties": [
+   {
+    "name": "rl_stage_change_key",
+    "label": "Stage Change Key",
+    "type": "string",
+    "fieldType": "text",
+    "hasUniqueValue": true
+   },
+   {
+    "name": "stage",
+    "label": "Stage",
+    "type": "enumeration",
+    "fieldType": "select",
+    "options": [
+     {
+      "label": "1 - Prospecting",
+      "value": "1 - Prospecting",
+      "displayOrder": 0
+     },
+     {
+      "label": "2 - Qualification",
+      "value": "2 - Qualification",
+      "displayOrder": 1
+     },
+     {
+      "label": "3 - Discovery & Demo",
+      "value": "3 - Discovery & Demo",
+      "displayOrder": 2
+     },
+     {
+      "label": "4 - Proposal",
+      "value": "4 - Proposal",
+      "displayOrder": 3
+     },
+     {
+      "label": "5 - Negotiation",
+      "value": "5 - Negotiation",
+      "displayOrder": 4
+     },
+     {
+      "label": "Closed Won",
+      "value": "Closed Won",
+      "displayOrder": 5
+     },
+     {
+      "label": "Closed Lost",
+      "value": "Closed Lost",
+      "displayOrder": 6
+     }
+    ]
+   },
+   {
+    "name": "dealstage_id",
+    "label": "Deal Stage ID",
+    "type": "string",
+    "fieldType": "text"
+   },
+   {
+    "name": "entered_at",
+    "label": "Entered At",
+    "type": "datetime",
+    "fieldType": "date"
+   },
+   {
+    "name": "sequence",
+    "label": "Sequence",
+    "type": "number",
+    "fieldType": "number"
+   },
+   {
+    "name": "amount",
+    "label": "Amount",
+    "type": "number",
+    "fieldType": "number"
+   },
+   {
+    "name": "expected_revenue",
+    "label": "Expected Revenue",
+    "type": "number",
+    "fieldType": "number"
+   },
+   {
+    "name": "probability",
+    "label": "Probability",
+    "type": "number",
+    "fieldType": "number"
+   },
+   {
+    "name": "forecast_category",
+    "label": "Forecast Category",
+    "type": "string",
+    "fieldType": "text"
+   },
+   {
+    "name": "close_date",
+    "label": "Close Date",
+    "type": "date",
+    "fieldType": "date"
+   },
+   {
+    "name": "deal_ridgeline_id",
+    "label": "Deal Ridgeline ID",
+    "type": "string",
+    "fieldType": "text"
+   },
+   {
+    "name": "salesforce_opportunity_id",
+    "label": "Salesforce Opportunity ID",
+    "type": "string",
+    "fieldType": "text"
+   },
+   {
+    "name": "salesforce_history_id",
+    "label": "Salesforce History ID",
+    "type": "string",
+    "fieldType": "text"
+   }
+  ]
+ }
+}

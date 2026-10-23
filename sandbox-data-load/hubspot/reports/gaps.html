@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Ridgeline HubSpot Load - Gaps</title>
+<style>
+  @page { size: A4; margin: 18mm; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; color: #000; line-height: 1.4; }
+  h1 { font-size: 16pt; margin: 0 0 2pt; }
+  .sub { font-size: 9.5pt; color: #444; margin: 0 0 14pt; }
+  h2 { font-size: 12pt; margin: 16pt 0 6pt; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #999; padding: 5pt 6pt; text-align: left; vertical-align: top; }
+  th { background: #eee; }
+  code { font-family: Consolas, monospace; font-size: 9.5pt; }
+  td.n { white-space: nowrap; }
+</style>
+</head>
+<body>
+<h1>Ridgeline HubSpot Load - Gaps</h1>
+<p class="sub">HubSpot test account 247726307 &middot; as of 2026-10-20</p>
+
+<h2>1. Data not loaded</h2>
+<table>
+  <tr><th>Gap</th><th>Source file</th><th class="n">Rows</th><th>What it blocks</th><th>Possible fix</th></tr>
+  <tr>
+    <td>Deal stage history</td>
+    <td><code>salesforce/OpportunityHistory.csv</code></td>
+    <td class="n">10,847</td>
+    <td>Time in each stage, stage-to-stage conversion, pipeline as of a past date</td>
+    <td>Deferred: covered in the Salesforce phase (source is a Salesforce file)</td>
+  </tr>
+  <tr>
+    <td>Line items and products (optional)</td>
+    <td><code>salesforce/Product2.csv</code>, <code>PricebookEntry.csv</code>, <code>OpportunityLineItem.csv</code></td>
+    <td class="n">12 / 12 / 11,740</td>
+    <td>Product-level revenue (subscription, services, hardware)</td>
+    <td>Load products and line items; pilot first, because line items don't add up to the deal amount on 1,676 deals</td>
+  </tr>
+  <tr>
+    <td>Campaigns</td>
+    <td><code>hubspot/campaigns.csv</code></td>
+    <td class="n">198</td>
+    <td>Campaign records in HubSpot</td>
+    <td>Not loaded. All 198 will be loaded at once after the decision on 24 names with parentheses, which HubSpot rejects</td>
+  </tr>
+  <tr>
+    <td>Campaign budget and spend</td>
+    <td><code>hubspot/campaign_budget_spend_items.csv</code></td>
+    <td class="n">309</td>
+    <td>Budget and spend per campaign in HubSpot</td>
+    <td>Not loaded; loaded together with the campaigns</td>
+  </tr>
+</table>
+
+<h2>2. Open question</h2>
+<table>
+  <tr><th>Gap</th><th>Source file</th><th class="n">Rows</th><th>Question</th></tr>
+  <tr>
+    <td>Campaign-contact touches</td>
+    <td><code>hubspot/campaign_contact_associations.csv</code></td>
+    <td class="n">86,713</td>
+    <td><b>Do we really need these inserted?</b> HubSpot calculates first-touch and influenced attribution itself from tracked clicks and opens. Contacts can be linked to campaigns explicitly, but HubSpot's attribution numbers stay at 0. Options: explicit links, a custom object for the BI, or skip.</td>
+  </tr>
+</table>
+
+<h2>3. Differences from the source</h2>
+<table>
+  <tr><th>Gap</th><th>Detail</th></tr>
+  <tr>
+    <td>Create date on contacts and companies</td>
+    <td>HubSpot treats it as read-only, so the native Create date shows 2026-10-18. The original date is in <code>rl_source_createdate</code>. Deals keep their original create date.</td>
+  </tr>
+  <tr>
+    <td>Archived owners</td>
+    <td>23 owners are <code>archived = true</code> in <code>owners.csv</code> but are active users in HubSpot. Kept active by decision.</td>
+  </tr>
+  <tr>
+    <td>Duplicate emails</td>
+    <td>4 contacts are loaded without an email, because another contact already has it. The email is kept in <code>rl_duplicate_email</code>.</td>
+  </tr>
+  <tr>
+    <td>MQL goal progress</td>
+    <td>The 3 goals are loaded, but HubSpot calculates progress from its own MQL entry dates, which show the load date. Progress in HubSpot won't match the data; use <code>rl_date_became_mql</code> in the BI. Goals are assigned to Zachary Wood, the Marketing owner who created them in the source.</td>
+  </tr>
+  <tr>
+    <td>HubSpot deal lifecycle sync</td>
+    <td>HubSpot automatically moves companies and contacts linked to a Closed Won deal to <code>customer</code>. It changed 3 companies the source keeps at <code>opportunity</code>; they were set back, and the loader restores lifecycle stages after every load. Records may change again if deals are edited by hand.</td>
+  </tr>
+</table>
+</body>
+</html>
