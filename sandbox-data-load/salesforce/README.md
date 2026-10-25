@@ -47,6 +47,7 @@ trial, sandbox or Developer Edition, and stops otherwise.
 | `campaigns` | Parents first, then the member statuses each campaign uses (Attended, Downloaded, ...) |
 | `products` | `Product2`, then standard `PricebookEntry` prices |
 | `opportunities` | Stage, Amount, CloseDate, CreatedDate, LastModifiedDate and the custom fields |
+| `line_items` | `OpportunityLineItem` on the standard price book entries. Salesforce then sets `Amount` to the line-item sum, so the loader and validation use that sum as the expected `Amount` |
 | `campaign_members` | Loaded on the lead, before conversion |
 | `convert_leads` | `convertLead` into the loaded account, contact and opportunity (Salesforce then adds the contact to the campaign members), then puts the account/contact/opportunity fields back to the source values |
 
@@ -54,8 +55,7 @@ Each step matches on `Ridgeline_Id__c`: new records are inserted with their hist
 existing ones updated, so a re-run doesn't duplicate. ID maps go to `id-maps/`, validation reports
 to `reports/`.
 
-Not loaded on purpose: `OpportunityLineItem` (Salesforce would overwrite `Amount` with the line-item
-sum on 1,714 opportunities; pending decision), and `OpportunityContactRole`, `OpportunityCompetitor`,
+Not loaded on purpose: `OpportunityContactRole`, `OpportunityCompetitor`,
 `OpportunityHistory`, `OpportunitySplit`, `ForecastingQuota` (not in the guide's list; skipped by
 decision). `UserRole` is used only for the role name on `Ridgeline_User__c`.
 
@@ -73,5 +73,7 @@ decision). `UserRole` is used only for the role name on `Ridgeline_User__c`.
   load date.
 - **Campaign member first responded date:** set by Salesforce from the status; the original is in
   `Ridgeline_First_Responded_Date__c`.
+- **Opportunity Amount:** on the 3,552 opportunities with line items, `Amount` is the line-item sum, which
+  differs from `Amount` in `Opportunity.csv` on 1,706 of them (decided 2026-10-25).
 - **Campaign roll-ups** (`NumberOfLeads`, `AmountWonOpportunities`, ...) are calculated by Salesforce
   from the loaded records, not copied from the file.

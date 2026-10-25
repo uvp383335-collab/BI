@@ -40,6 +40,7 @@ FIELDS = {
     ],
     "Campaign": [EXT_ID, OWNER, ("UTM_Campaign__c", "Text", 255), ("Ridgeline_Created_Date__c", "DateTime", None)],
     "CampaignMember": [EXT_ID, ("Ridgeline_First_Responded_Date__c", "Date", None)],
+    "OpportunityLineItem": [EXT_ID],
     "Product2": [EXT_ID, ("Recurring__c", "Checkbox", None), ("Ridgeline_Created_Date__c", "DateTime", None)],
     "Opportunity": [
         EXT_ID, OWNER,

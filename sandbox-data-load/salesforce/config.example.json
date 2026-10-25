@@ -14,6 +14,7 @@
     "campaigns",
     "products",
     "opportunities",
+    "line_items",
     "campaign_members",
     "convert_leads"
   ]

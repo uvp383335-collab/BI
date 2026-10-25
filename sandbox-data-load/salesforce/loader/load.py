@@ -3,7 +3,7 @@ inserted (with their historical CreatedDate), existing ones updated."""
 import time
 
 from . import schema
-from .transform import Transformer, norm, read_csv
+from .transform import Transformer, line_totals, norm, read_csv
 
 # step/map name -> (source file, sObject, self-reference column loaded parents-first)
 OBJECTS = {
@@ -14,6 +14,7 @@ OBJECTS = {
     "campaigns": ("Campaign.csv", "Campaign", "ParentId"),
     "products": ("Product2.csv", "Product2", None),
     "opportunities": ("Opportunity.csv", "Opportunity", None),
+    "line_items": ("OpportunityLineItem.csv", "OpportunityLineItem", None),
     "campaign_members": ("CampaignMember.csv", "CampaignMember", None),
 }
 
@@ -33,7 +34,8 @@ class Loader:
         username = cfg.owner_username or sf.username
         self.owner_id = next(sf.query_all(f"SELECT Id FROM User WHERE Username = '{username}'"))["Id"]
         account_fields = {f["name"] for f in sf.describe("Account")["fields"]}
-        self.tx = Transformer(_LazyMaps(self), self.owner_id, address_codes="BillingStateCode" in account_fields)
+        self.tx = Transformer(_LazyMaps(self), self.owner_id, address_codes="BillingStateCode" in account_fields,
+                              line_totals=line_totals(cfg.salesforce_dir))
 
     # -- helpers ---------------------------------------------------------------
     def idmap(self, name):
@@ -217,6 +219,9 @@ class Loader:
     def step_opportunities(self):
         std = next(self.sf.query_all("SELECT Id FROM Pricebook2 WHERE IsStandard = true"))["Id"]
         self.upsert("opportunities", extra_fields=lambda r, insert: {"Pricebook2Id": std} if r["Pricebook2Id"] else {})
+
+    def step_line_items(self):
+        self.upsert("line_items")
 
     def step_campaign_members(self):
         self.upsert("campaign_members")

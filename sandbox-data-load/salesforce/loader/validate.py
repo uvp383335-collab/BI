@@ -7,7 +7,7 @@ import random
 import time
 
 from .load import OBJECTS, log
-from .transform import ADDRESS_CODES, SPECS, Transformer, norm as _norm, read_csv
+from .transform import ADDRESS_CODES, SPECS, Transformer, line_totals, norm as _norm, read_csv
 
 # Salesforce stamps LastModifiedDate on every later write (lead conversion, the restore after it),
 # so it is reported separately instead of failing the field check.
@@ -25,7 +25,8 @@ class Validator:
         self.owner_id = next(sf.query_all(f"SELECT Id FROM User WHERE Username = '{username}'"))["Id"]
         address_codes = "BillingStateCode" in {f["name"] for f in sf.describe("Account")["fields"]}
         self._maps = {}
-        self.tx = Transformer(self, self.owner_id, address_codes=address_codes)
+        self.tx = Transformer(self, self.owner_id, address_codes=address_codes,
+                              line_totals=line_totals(cfg.salesforce_dir))
 
     def __getitem__(self, name):  # map lookup for the transformer
         if name not in self._maps:
@@ -82,7 +83,8 @@ class Validator:
             codes = dict(ADDRESS_CODES[name])
             targets = [codes.get(t, t) for t in targets]
         extra = {"leads": ["IsConverted"], "campaign_members": ["ContactId", "HasResponded"],
-                 "opportunities": ["IsClosed", "IsWon"], "users": ["Name"]}.get(name, [])
+                 "opportunities": ["IsClosed", "IsWon"], "users": ["Name"],
+                 "line_items": ["TotalPrice"]}.get(name, [])
         soql_fields = sorted(set(targets + extra + (["Ridgeline_Owner_Id__c"] if name in ("accounts", "contacts", "leads", "campaigns", "opportunities") else [])))
         actual = {r["Ridgeline_Id__c"]: r for r in self.sf.query_all(
             f"SELECT Ridgeline_Id__c, {', '.join(soql_fields)} FROM {sobject} WHERE Ridgeline_Id__c != null")}
@@ -100,6 +102,8 @@ class Validator:
             if name == "opportunities":
                 want["IsClosed"] = row["IsClosed"] == "true"
                 want["IsWon"] = row["IsWon"] == "true"
+            if name == "line_items":
+                want["TotalPrice"] = float(row["TotalPrice"])
             if name == "leads":
                 want["IsConverted"] = row["IsConverted"] == "true"
             for f in soql_fields:

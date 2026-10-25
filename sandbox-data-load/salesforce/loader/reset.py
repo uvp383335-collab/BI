@@ -7,7 +7,7 @@ loaded products. The schema (fields, picklist values, permission set) is left in
 from .load import log
 
 # Children first.
-DELETE_ORDER = ["CampaignMember", "Opportunity", "Lead", "Contact", "Account", "Campaign",
+DELETE_ORDER = ["CampaignMember", "OpportunityLineItem", "Opportunity", "Lead", "Contact", "Account", "Campaign",
                 "PricebookEntry", "Product2", "Ridgeline_User__c"]
 
 

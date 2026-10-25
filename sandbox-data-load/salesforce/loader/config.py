@@ -11,6 +11,7 @@ ALL_STEPS = [
     "campaigns",         # parents before children, plus member statuses per campaign
     "products",          # Product2, then standard PricebookEntry
     "opportunities",
+    "line_items",        # OpportunityLineItem; Salesforce then sets Amount to the line-item sum
     "campaign_members",  # before lead conversion, so conversion attaches the contact
     "convert_leads",     # convertLead into the loaded account/contact/opportunity, then restore source values
 ]

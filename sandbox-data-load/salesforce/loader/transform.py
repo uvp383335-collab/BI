@@ -85,6 +85,12 @@ SPECS = {
         ("Description", "Description", "str"),
         ("CreatedDate", "CreatedDate", "date"), ("LastModifiedDate", "LastModifiedDate", "date"),
     ],
+    "line_items": [
+        ("OpportunityId", "OpportunityId", "ref:opportunities"),
+        ("PricebookEntryId", "PricebookEntryId", "ref:pricebook_entries"),
+        ("Quantity", "Quantity", "num"), ("UnitPrice", "UnitPrice", "num"),  # TotalPrice is derived from these
+        ("ServiceDate", "ServiceDate", "date"),
+    ],
     "campaign_members": [
         ("CampaignId", "CampaignId", "ref:campaigns"), ("LeadId", "LeadId", "ref:leads"),
         ("Status", "Status", "str"), ("Ridgeline_First_Responded_Date__c", "FirstRespondedDate", "date"),
@@ -95,6 +101,7 @@ CREATE_ONLY = {
     "*": {"CreatedDate", "LastModifiedDate"},
     "campaign_members": {"CampaignId", "LeadId"},
     "pricebook_entries": {"Product2Id"},
+    "line_items": {"OpportunityId", "PricebookEntryId"},
 }
 # Objects whose records carry the source owner and are owned by the loading user.
 OWNED = {"accounts", "contacts", "leads", "campaigns", "opportunities"}
@@ -112,6 +119,14 @@ def read_csv(path, limit=None):
     return rows[:limit] if limit else rows
 
 
+def line_totals(salesforce_dir):
+    """Opportunity source id -> sum of its line items' TotalPrice."""
+    totals = {}
+    for r in read_csv(salesforce_dir / "OpportunityLineItem.csv"):
+        totals[r["OpportunityId"]] = totals.get(r["OpportunityId"], 0.0) + float(r["TotalPrice"])
+    return {k: round(v, 2) for k, v in totals.items()}
+
+
 def convert(value, kind):
     if value == "":
         return None
@@ -125,8 +140,9 @@ def convert(value, kind):
 
 
 class Transformer:
-    def __init__(self, maps, owner_id, address_codes=False):
+    def __init__(self, maps, owner_id, address_codes=False, line_totals=None):
         self.maps = maps          # name -> {source id: salesforce id}
+        self.line_totals = line_totals or {}  # opportunity source id -> line-item sum
         self.owner_id = owner_id
         self.address_codes = address_codes
         self.unresolved = []      # (object, source id, column, missing ref)
@@ -151,6 +167,10 @@ class Transformer:
             if value is None and for_insert:
                 continue
             rec[target] = value
+        # Salesforce keeps Amount equal to the line-item sum once an opportunity has line items, and
+        # 1,706 source opportunities differ from their sum. The sum is used (decided 2026-10-25).
+        if obj == "opportunities" and row["Id"] in self.line_totals:
+            rec["Amount"] = self.line_totals[row["Id"]]
         # 29 source accounts were "modified" before they were created; Salesforce rejects that,
         # so the closest valid value (the created date) is used.
         if rec.get("LastModifiedDate") and rec.get("CreatedDate") and rec["LastModifiedDate"] < rec["CreatedDate"]:
