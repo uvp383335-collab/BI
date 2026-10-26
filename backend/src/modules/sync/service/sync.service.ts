@@ -767,12 +767,23 @@ async function syncSalesforceOpportunitiesAsDeals(
   const competitorField = competitorSource === 'field' ? org?.settings?.salesforceCompetitorField : undefined
   const useCompetitorJunctionObject = competitorSource === 'junction'
   const extraFields = org?.settings?.salesforceOpportunityExtraFields
+  // Fields hidden by field-level security are left out of the query instead of failing the sync.
+  const availableFields = await SalesforceService.getOpportunityFieldNames(accessToken, instanceUrl)
 
   let nextRecordsUrl: string | undefined
   let totalSynced = 0
 
   do {
-    const response = await SalesforceService.getOpportunities(accessToken, instanceUrl, PAGE_SIZE, since, nextRecordsUrl, competitorField, extraFields)
+    const response = await SalesforceService.getOpportunities(
+      accessToken,
+      instanceUrl,
+      PAGE_SIZE,
+      since,
+      nextRecordsUrl,
+      competitorField,
+      extraFields,
+      availableFields
+    )
     const opportunityIds = response.records.map((opportunity) => opportunity.Id)
 
     const [stageHistories, convertedLeadsByOpportunity, competitorsByOpportunity, productIdsByOpportunity] = await Promise.all([

@@ -380,6 +380,44 @@ export class SalesforceService {
   // organizations settings validator — since this value gets interpolated into SOQL.
   private static readonly FIELD_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_]*$/;
 
+  // Opportunity fields the sync can live without, paired with the field that
+  // must be visible for the SELECT expression to be valid. Field-level
+  // security can hide any of these from the connected user (e.g. IsPrivate and
+  // ExpectedRevenue on some Enterprise orgs), and SOQL fails the whole query
+  // with INVALID_FIELD if even one is hidden.
+  private static readonly OPTIONAL_OPPORTUNITY_FIELDS: [select: string, field: string][] = [
+    ["Type", "Type"],
+    ["LeadSource", "LeadSource"],
+    ["CampaignId", "CampaignId"],
+    ["Campaign.Name", "CampaignId"],
+    ["AccountId", "AccountId"],
+    ["Account.Name", "AccountId"],
+    ["CreatedBy.Name", "CreatedById"],
+    ["LastModifiedBy.Name", "LastModifiedById"],
+    ["IsPrivate", "IsPrivate"],
+    ["ExpectedRevenue", "ExpectedRevenue"],
+    ["NextStep", "NextStep"],
+    ["Probability", "Probability"],
+    ["Description", "Description"],
+  ];
+
+  /**
+   * Names of the Opportunity fields the connected user can see (describe
+   * call). Used once per sync to leave hidden fields out of the SOQL rather
+   * than failing the sync. Returns undefined if describe itself fails, in
+   * which case the caller queries every field as before.
+   */
+  static async getOpportunityFieldNames(accessToken: string, instanceUrl: string): Promise<Set<string> | undefined> {
+    try {
+      const response = await axios.get(`${instanceUrl}/services/data/${SALESFORCE_API_VERSION}/sobjects/Opportunity/describe`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      return new Set((response.data.fields as { name: string }[]).map((field) => field.name));
+    } catch {
+      return undefined;
+    }
+  }
+
   /**
    * Fetches a page of Opportunities — this app's Deal entity for Salesforce.
    * `competitorField` is the org's configured competitor field (CM-03, gap
@@ -397,6 +435,10 @@ export class SalesforceService {
    * fields (`Owner.Name` comes back as `{Owner: {Name: ...}}`, not a flat
    * `OwnerName` key), so every page needs the same flattening, not just the
    * page that built the SOQL.
+   *
+   * `availableFields` (from getOpportunityFieldNames) drops optional,
+   * competitor and extra fields the connected user can't see; those come back
+   * as null instead of failing the query.
    */
   static async getOpportunities(
     accessToken: string,
@@ -406,10 +448,16 @@ export class SalesforceService {
     nextRecordsUrl?: string,
     competitorField?: string,
     extraFields?: { apiName: string; label: string }[],
+    availableFields?: Set<string>,
   ): Promise<SalesforcePaginatedResponse<SalesforceOpportunity>> {
     try {
-      const safeCompetitorField = competitorField && this.FIELD_NAME_REGEX.test(competitorField) ? competitorField : undefined;
-      const safeExtraFields = (extraFields ?? []).filter((f) => this.FIELD_NAME_REGEX.test(f.apiName));
+      const isVisible = (field: string) => !availableFields || availableFields.has(field);
+      const safeCompetitorField =
+        competitorField && this.FIELD_NAME_REGEX.test(competitorField) && isVisible(competitorField) ? competitorField : undefined;
+      const safeExtraFields = (extraFields ?? []).filter((f) => this.FIELD_NAME_REGEX.test(f.apiName) && isVisible(f.apiName));
+      const optionalSelect = this.OPTIONAL_OPPORTUNITY_FIELDS.filter(([, field]) => isVisible(field))
+        .map(([select]) => `, ${select}`)
+        .join("");
 
       if (nextRecordsUrl) {
         const response = await this.runQueryPage<Record<string, unknown>>(accessToken, instanceUrl, nextRecordsUrl);
@@ -419,12 +467,15 @@ export class SalesforceService {
       const whereClause = since ? ` WHERE LastModifiedDate >= ${since.toISOString()}` : "";
       const competitorSelect = safeCompetitorField ? `, ${safeCompetitorField}` : "";
       const extraSelect = safeExtraFields.length > 0 ? `, ${safeExtraFields.map((f) => f.apiName).join(", ")}` : "";
-      const soql = `SELECT Id, Name, Amount, CloseDate, StageName, OwnerId, Owner.Name, Type, LeadSource, CampaignId, Campaign.Name, AccountId, Account.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name, IsPrivate, ExpectedRevenue, NextStep, Probability, Description${competitorSelect}${extraSelect} FROM Opportunity${whereClause} ORDER BY LastModifiedDate ASC`;
+      const soql = `SELECT Id, Name, Amount, CloseDate, StageName, OwnerId, Owner.Name, CreatedDate, LastModifiedDate${optionalSelect}${competitorSelect}${extraSelect} FROM Opportunity${whereClause} ORDER BY LastModifiedDate ASC`;
       const response = await this.runQuery<Record<string, unknown>>(accessToken, instanceUrl, soql, limit);
       return this.mapOpportunityResponse(response, safeCompetitorField, safeExtraFields);
-    } catch {
+    } catch (error) {
+      // Salesforce's own errorCode (e.g. INVALID_FIELD) goes into the message
+      // so a failed sync job says why, not just that it failed.
+      const errorCode = axios.isAxiosError(error) ? (error.response?.data as { errorCode?: string }[] | undefined)?.[0]?.errorCode : undefined;
       throw AppError.badRequest(
-        "Failed to fetch opportunities from Salesforce",
+        errorCode ? `Failed to fetch opportunities from Salesforce (${errorCode})` : "Failed to fetch opportunities from Salesforce",
         "SALESFORCE_OPPORTUNITIES_FETCH_FAILED",
       );
     }
