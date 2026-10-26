@@ -35,10 +35,13 @@ export interface SyncJob {
 }
 
 export interface EntityCounts {
+  /** For Salesforce this is the Lead count. */
   contacts: number
   deals: number
   customers: number
   invoices: number
+  /** Salesforce Contact-object count; 0 for other providers. */
+  salesforceContacts: number
 }
 
 export interface FunnelStage {

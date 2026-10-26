@@ -338,9 +338,6 @@ export const CrmDashboardPage: React.FC = () => {
     }
   }
 
-  const combinedContacts = (hubspotCounts.data?.contacts ?? 0) + (salesforceCounts.data?.contacts ?? 0)
-  const combinedDeals = (hubspotCounts.data?.deals ?? 0) + (salesforceCounts.data?.deals ?? 0)
-
   const quickbooksMetricsEnabled = isQuickbooksVisible && isQuickbooksSettled
   const { data: quickbooksProducts } = useProducts('quickbooks', quickbooksMetricsEnabled)
   const quickbooksItemFilter = quickbooksProductFilter || undefined
@@ -559,17 +556,65 @@ export const CrmDashboardPage: React.FC = () => {
             <section className="space-y-4">
               <div>
                 <h2 className="text-lg font-semibold text-ink">Connected data</h2>
-                <p className="text-sm text-ink-2">What's synced from your connected sources right now.</p>
+                <p className="text-sm text-ink-2">
+                  What's synced from your connected sources right now. Each source is counted on its own — records that exist in
+                  more than one source aren't merged.
+                </p>
               </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {(isHubspotVisible || isSalesforceVisible) && (
-                  <>
-                    <StatsCard title="Contacts" value={combinedContacts} description="Total contacts synced" icon={<Users className="h-5 w-5" />} accent="brand" />
-                    <StatsCard title="Deals" value={combinedDeals} description="Total deals synced" icon={<Briefcase className="h-5 w-5" />} accent="violet" />
-                  </>
-                )}
-                {isQuickbooksVisible && (
-                  <>
+              {/* One group per source, never summed across sources: the same deal or person can live in both CRMs. */}
+              {isHubspotVisible && (
+                <div>
+                  <p className="mb-3 text-sm font-medium text-ink-2">{PROVIDER_LABELS.hubspot}</p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <StatsCard
+                      title="Contacts"
+                      value={hubspotCounts.data?.contacts ?? 0}
+                      description="HubSpot contacts synced"
+                      icon={<Users className="h-5 w-5" />}
+                      accent="brand"
+                    />
+                    <StatsCard
+                      title="Deals"
+                      value={hubspotCounts.data?.deals ?? 0}
+                      description="HubSpot deals synced"
+                      icon={<Briefcase className="h-5 w-5" />}
+                      accent="violet"
+                    />
+                  </div>
+                </div>
+              )}
+              {isSalesforceVisible && (
+                <div>
+                  <p className="mb-3 text-sm font-medium text-ink-2">{PROVIDER_LABELS.salesforce}</p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <StatsCard
+                      title="Leads"
+                      value={salesforceCounts.data?.contacts ?? 0}
+                      description="Salesforce leads synced"
+                      icon={<Users className="h-5 w-5" />}
+                      accent="brand"
+                    />
+                    <StatsCard
+                      title="Contacts"
+                      value={salesforceCounts.data?.salesforceContacts ?? 0}
+                      description="Salesforce contacts synced"
+                      icon={<Users className="h-5 w-5" />}
+                      accent="teal"
+                    />
+                    <StatsCard
+                      title="Opportunities"
+                      value={salesforceCounts.data?.deals ?? 0}
+                      description="Salesforce opportunities synced"
+                      icon={<Briefcase className="h-5 w-5" />}
+                      accent="violet"
+                    />
+                  </div>
+                </div>
+              )}
+              {isQuickbooksVisible && (
+                <div>
+                  <p className="mb-3 text-sm font-medium text-ink-2">QuickBooks</p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <StatsCard
                       title="Customers"
                       value={quickbooksCounts.data?.customers ?? 0}
@@ -584,9 +629,9 @@ export const CrmDashboardPage: React.FC = () => {
                       icon={<FileText className="h-5 w-5" />}
                       accent="success"
                     />
-                  </>
-                )}
-              </div>
+                  </div>
+                </div>
+              )}
             </section>
 
             {/* Level 3 — Sales & Pipeline analysis. */}

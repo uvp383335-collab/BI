@@ -33,6 +33,12 @@ export const contactRepository = {
     return ContactModel.countDocuments({ orgId, provider, salesforceObject: { $ne: 'Contact' } })
   },
 
+  /** Salesforce Contact-object rows only — always 0 for other providers. */
+  async countSalesforceContacts(orgId: string | Types.ObjectId, provider: string) {
+    const ContactModel = await modelForOrg(orgId)
+    return ContactModel.countDocuments({ orgId, provider, salesforceObject: 'Contact' })
+  },
+
   async bulkUpsert(orgId: string | Types.ObjectId, provider: string, contacts: ContactUpsertInput[]) {
     if (contacts.length === 0) return
     const ContactModel = await modelForOrg(orgId)

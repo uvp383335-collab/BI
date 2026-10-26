@@ -95,13 +95,15 @@ export const syncService = {
   },
 
   async getEntityCounts(orgId: string, provider: string) {
-    const [contacts, deals, customers, invoices] = await Promise.all([
+    // For Salesforce, `contacts` is the Lead count and `salesforceContacts` the Contact-object count.
+    const [contacts, deals, customers, invoices, salesforceContacts] = await Promise.all([
       contactRepository.count(orgId, provider),
       dealRepository.count(orgId, provider),
       quickBooksCustomerRepository.count(orgId, provider),
-      invoiceRepository.count(orgId, provider)
+      invoiceRepository.count(orgId, provider),
+      contactRepository.countSalesforceContacts(orgId, provider)
     ])
-    return { contacts, deals, customers, invoices }
+    return { contacts, deals, customers, invoices, salesforceContacts }
   },
 
   /** The Settings page's product-category picker contents — every synced product with its current category/billingFrequency. */
