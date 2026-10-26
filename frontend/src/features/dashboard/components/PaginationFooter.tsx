@@ -7,7 +7,7 @@ interface PaginationFooterProps {
   onPageChange: (page: number) => void
 }
 
-/** Prev/next pager shared by the raw record tables (Opportunities, Campaigns) — small collections don't need jump-to-page. */
+/** Prev/next pager shared by the raw record tables (Opportunities, Campaigns, Contacts) — small collections don't need jump-to-page. */
 export const PaginationFooter: React.FC<PaginationFooterProps> = ({ page, pageSize, total, onPageChange }) => {
   if (total === 0) return null
   const totalPages = Math.max(1, Math.ceil(total / pageSize))

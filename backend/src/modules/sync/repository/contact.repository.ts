@@ -47,6 +47,29 @@ export const contactRepository = {
     await ContactModel.bulkWrite(operations, { ordered: false })
   },
 
+  /** Salesforce Contact-object rows (not Leads) for the dashboard's Contacts browse table, paginated, most-recently-synced first. */
+  async findSalesforceContactsPaginated(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    opts: { page?: number; pageSize?: number } = {}
+  ) {
+    const ContactModel = await modelForOrg(orgId)
+    const page = Math.max(1, opts.page ?? 1)
+    const pageSize = Math.max(1, Math.min(100, opts.pageSize ?? 20))
+    const filter = { orgId, provider, salesforceObject: 'Contact' as const }
+
+    const [items, total] = await Promise.all([
+      ContactModel.find(filter, { providerRecordId: 1, email: 1, firstname: 1, lastname: 1, accountRecordId: 1 })
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .lean(),
+      ContactModel.countDocuments(filter)
+    ])
+
+    return { items, total, page, pageSize }
+  },
+
   /** Just id + original-source per contact — CM-05/CM-07's channel-attribution join key. */
   async findSourcesByProvider(orgId: string | Types.ObjectId, provider: string) {
     const ContactModel = await modelForOrg(orgId)

@@ -36,5 +36,12 @@ export const salesforceAccountRepository = {
   async findAll(orgId: string | Types.ObjectId, provider: string) {
     const Model = await modelForOrg(orgId)
     return Model.find({ orgId, provider }).lean()
+  },
+
+  /** Id + name for just the given accounts — one batched lookup per page of contacts. */
+  async findNamesByIds(orgId: string | Types.ObjectId, provider: string, recordIds: string[]) {
+    if (recordIds.length === 0) return []
+    const Model = await modelForOrg(orgId)
+    return Model.find({ orgId, provider, providerRecordId: { $in: recordIds } }, { providerRecordId: 1, name: 1 }).lean()
   }
 }

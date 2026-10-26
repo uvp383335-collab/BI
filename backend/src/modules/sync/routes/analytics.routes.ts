@@ -29,3 +29,10 @@ analyticsRouter.get(
   validateQuery(paginationQuerySchema),
   analyticsController.getCampaigns
 )
+analyticsRouter.get(
+  '/:provider/contacts',
+  requireAuth,
+  requireOrgContext,
+  validateQuery(paginationQuerySchema),
+  analyticsController.getContacts
+)

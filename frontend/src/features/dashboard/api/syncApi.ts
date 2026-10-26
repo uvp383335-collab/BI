@@ -201,3 +201,25 @@ export async function getCampaignsRequest(
   })
   return res.data.data
 }
+
+/** A Salesforce Contact-object record (not a Lead) — Salesforce-only. */
+export interface SalesforceContact {
+  _id: string
+  providerRecordId: string
+  email?: string
+  firstname?: string
+  lastname?: string
+  accountRecordId?: string
+  accountName?: string
+}
+
+export async function getSalesforceContactsRequest(
+  provider: IntegrationProvider,
+  page: number,
+  pageSize: number
+): Promise<PaginatedResult<SalesforceContact>> {
+  const res = await httpClient.get<ApiEnvelope<PaginatedResult<SalesforceContact>>>(`/analytics/${provider}/contacts`, {
+    params: { page, pageSize }
+  })
+  return res.data.data
+}

@@ -71,6 +71,15 @@ export function useCampaigns(provider: IntegrationProvider, page: number, pageSi
   })
 }
 
+export function useSalesforceContacts(provider: IntegrationProvider, page: number, pageSize: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ['analytics', 'contacts', provider, page, pageSize],
+    queryFn: () => syncApi.getSalesforceContactsRequest(provider, page, pageSize),
+    enabled,
+    placeholderData: keepPreviousData
+  })
+}
+
 export function useStartSync(provider: IntegrationProvider) {
   const queryClient = useQueryClient()
   return useMutation({

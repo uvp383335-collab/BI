@@ -49,3 +49,11 @@ export const getCampaigns = asyncHandler(async (req: Request, res: Response): Pr
   const data = await analyticsService.getCampaigns(orgId, provider, { page, pageSize })
   sendSuccess(res, data)
 })
+
+export const getContacts = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const provider = String(req.params.provider)
+  const orgId = req.auth!.orgId!
+  const { page, pageSize } = req.query as unknown as PaginationQuery
+  const data = await analyticsService.getSalesforceContacts(orgId, provider, { page, pageSize })
+  sendSuccess(res, data)
+})

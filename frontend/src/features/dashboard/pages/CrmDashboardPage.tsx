@@ -21,7 +21,17 @@ import {
 } from 'lucide-react'
 import { useIntegrationsStatus } from '../../integrations/hooks/useIntegrations'
 import { IntegrationProvider } from '../../integrations/api/integrationsApi'
-import { useCampaigns, useEntityCounts, useFunnels, useOpportunities, usePipelines, useProducts, useStartSync, useSyncStatus } from '../hooks/useSync'
+import {
+  useCampaigns,
+  useEntityCounts,
+  useFunnels,
+  useOpportunities,
+  usePipelines,
+  useProducts,
+  useSalesforceContacts,
+  useStartSync,
+  useSyncStatus
+} from '../hooks/useSync'
 import { Campaign, FunnelsResponse, Opportunity, Product } from '../api/syncApi'
 import { useMetric, useMetricTrend } from '../hooks/useMetrics'
 import { useAuthContext } from '../../../shared/context/AuthContext'
@@ -44,6 +54,7 @@ import { CustomerChurnTrendChart } from '../components/CustomerChurnTrendChart'
 import { CustomerRetentionTrendChart } from '../components/CustomerRetentionTrendChart'
 import { OpportunitiesTable } from '../components/OpportunitiesTable'
 import { CampaignsTable } from '../components/CampaignsTable'
+import { ContactsTable } from '../components/ContactsTable'
 import { OpportunityDetailPanel } from '../components/OpportunityDetailPanel'
 import { CampaignDetailPanel } from '../components/CampaignDetailPanel'
 import { CampaignAttributionTable, CampaignAttributionRow } from '../components/CampaignAttributionTable'
@@ -252,6 +263,7 @@ export const CrmDashboardPage: React.FC = () => {
   const [hubspotOpportunitiesPage, setHubspotOpportunitiesPage] = useState(1)
   const [salesforceOpportunitiesPage, setSalesforceOpportunitiesPage] = useState(1)
   const [salesforceCampaignsPage, setSalesforceCampaignsPage] = useState(1)
+  const [salesforceContactsPage, setSalesforceContactsPage] = useState(1)
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null)
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null)
 
@@ -421,6 +433,12 @@ export const CrmDashboardPage: React.FC = () => {
   const { data: salesforceCampaigns, isLoading: isSalesforceCampaignsLoading } = useCampaigns(
     'salesforce',
     salesforceCampaignsPage,
+    10,
+    salesforceMetricsEnabled
+  )
+  const { data: salesforceContacts, isLoading: isSalesforceContactsLoading } = useSalesforceContacts(
+    'salesforce',
+    salesforceContactsPage,
     10,
     salesforceMetricsEnabled
   )
@@ -944,6 +962,15 @@ export const CrmDashboardPage: React.FC = () => {
                     isLoading={isSalesforceCampaignsLoading}
                     onPageChange={setSalesforceCampaignsPage}
                     onRowClick={setSelectedCampaign}
+                  />
+                </div>
+
+                <div className="mt-6">
+                  <p className="mb-3 text-sm font-medium text-ink-2">Contacts</p>
+                  <ContactsTable
+                    data={salesforceContacts}
+                    isLoading={isSalesforceContactsLoading}
+                    onPageChange={setSalesforceContactsPage}
                   />
                 </div>
               </CollapsibleSection>
