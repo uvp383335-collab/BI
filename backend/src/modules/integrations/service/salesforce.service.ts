@@ -275,6 +275,39 @@ export class SalesforceService {
     };
   }
 
+  // Ids per `IN (...)` clause. The SOQL travels in the GET query string, and
+  // Salesforce rejects long URLs with HTTP 431 — 1,000 ids is already too many.
+  // The list loops can't cap ids per page themselves: `batchSize` only applies
+  // to a query's first page, so `nextRecordsUrl` pages come back with up to 2,000.
+  private static readonly ID_CHUNK_SIZE = 200;
+
+  /**
+   * Runs a `WHERE x IN (...)` lookup for any number of record ids: splits
+   * them into ID_CHUNK_SIZE chunks and follows `nextRecordsUrl` so no result
+   * rows are dropped. `buildSoql` gets the quoted, comma-joined id list.
+   */
+  private static async queryByIds<T>(
+    accessToken: string,
+    instanceUrl: string,
+    recordIds: string[],
+    buildSoql: (quotedIds: string) => string,
+  ): Promise<T[]> {
+    const records: T[] = [];
+    for (let i = 0; i < recordIds.length; i += this.ID_CHUNK_SIZE) {
+      const ids = recordIds
+        .slice(i, i + this.ID_CHUNK_SIZE)
+        .map((id) => `'${id}'`)
+        .join(",");
+      let response = await this.runQuery<T>(accessToken, instanceUrl, buildSoql(ids));
+      records.push(...response.records);
+      while (!response.done && response.nextRecordsUrl) {
+        response = await this.runQueryPage<T>(accessToken, instanceUrl, response.nextRecordsUrl);
+        records.push(...response.records);
+      }
+    }
+    return records;
+  }
+
   /**
    * Fetches a page of Leads — this app's Contact entity for Salesforce.
    * Pagination follows Salesforce's own `nextRecordsUrl` cursor (SOQL OFFSET
@@ -337,14 +370,13 @@ export class SalesforceService {
   ): Promise<SalesforceStageHistoryEntry[]> {
     if (leadIds.length === 0) return [];
     try {
-      const ids = leadIds.map((id) => `'${id}'`).join(",");
-      const soql = `SELECT LeadId, NewValue, CreatedDate FROM LeadHistory WHERE Field = 'Status' AND LeadId IN (${ids}) ORDER BY CreatedDate ASC`;
-      const response = await this.runQuery<{ LeadId: string; NewValue: string; CreatedDate: string }>(
+      const records = await this.queryByIds<{ LeadId: string; NewValue: string; CreatedDate: string }>(
         accessToken,
         instanceUrl,
-        soql,
+        leadIds,
+        (ids) => `SELECT LeadId, NewValue, CreatedDate FROM LeadHistory WHERE Field = 'Status' AND LeadId IN (${ids}) ORDER BY CreatedDate ASC`,
       );
-      return response.records.map((r) => ({ recordId: r.LeadId, value: r.NewValue, timestamp: r.CreatedDate }));
+      return records.map((r) => ({ recordId: r.LeadId, value: r.NewValue, timestamp: r.CreatedDate }));
     } catch {
       return [];
     }
@@ -532,14 +564,13 @@ export class SalesforceService {
   ): Promise<SalesforceStageHistoryEntry[]> {
     if (opportunityIds.length === 0) return [];
     try {
-      const ids = opportunityIds.map((id) => `'${id}'`).join(",");
-      const soql = `SELECT OpportunityId, StageName, CreatedDate FROM OpportunityHistory WHERE OpportunityId IN (${ids}) ORDER BY CreatedDate ASC`;
-      const response = await this.runQuery<{ OpportunityId: string; StageName: string; CreatedDate: string }>(
+      const records = await this.queryByIds<{ OpportunityId: string; StageName: string; CreatedDate: string }>(
         accessToken,
         instanceUrl,
-        soql,
+        opportunityIds,
+        (ids) => `SELECT OpportunityId, StageName, CreatedDate FROM OpportunityHistory WHERE OpportunityId IN (${ids}) ORDER BY CreatedDate ASC`,
       );
-      return response.records.map((r) => ({ recordId: r.OpportunityId, value: r.StageName, timestamp: r.CreatedDate }));
+      return records.map((r) => ({ recordId: r.OpportunityId, value: r.StageName, timestamp: r.CreatedDate }));
     } catch {
       throw AppError.badRequest(
         "Failed to fetch opportunity stage history from Salesforce",
@@ -590,15 +621,14 @@ export class SalesforceService {
   ): Promise<Record<string, string[]>> {
     if (opportunityIds.length === 0) return {};
     try {
-      const ids = opportunityIds.map((id) => `'${id}'`).join(",");
-      const soql = `SELECT Id, ConvertedOpportunityId FROM Lead WHERE IsConverted = true AND ConvertedOpportunityId IN (${ids})`;
-      const response = await this.runQuery<{ Id: string; ConvertedOpportunityId: string }>(
+      const records = await this.queryByIds<{ Id: string; ConvertedOpportunityId: string }>(
         accessToken,
         instanceUrl,
-        soql,
+        opportunityIds,
+        (ids) => `SELECT Id, ConvertedOpportunityId FROM Lead WHERE IsConverted = true AND ConvertedOpportunityId IN (${ids})`,
       );
       const map: Record<string, string[]> = {};
-      for (const record of response.records) {
+      for (const record of records) {
         const list = map[record.ConvertedOpportunityId] ?? [];
         list.push(record.Id);
         map[record.ConvertedOpportunityId] = list;
@@ -626,15 +656,14 @@ export class SalesforceService {
   ): Promise<Record<string, string[]>> {
     if (opportunityIds.length === 0) return {};
     try {
-      const ids = opportunityIds.map((id) => `'${id}'`).join(",");
-      const soql = `SELECT OpportunityId, CompetitorName FROM OpportunityCompetitor WHERE OpportunityId IN (${ids})`;
-      const response = await this.runQuery<{ OpportunityId: string; CompetitorName: string }>(
+      const records = await this.queryByIds<{ OpportunityId: string; CompetitorName: string }>(
         accessToken,
         instanceUrl,
-        soql,
+        opportunityIds,
+        (ids) => `SELECT OpportunityId, CompetitorName FROM OpportunityCompetitor WHERE OpportunityId IN (${ids})`,
       );
       const map: Record<string, string[]> = {};
-      for (const record of response.records) {
+      for (const record of records) {
         if (!record.CompetitorName) continue;
         const list = map[record.OpportunityId] ?? [];
         list.push(record.CompetitorName);
@@ -664,15 +693,14 @@ export class SalesforceService {
   ): Promise<Record<string, string[]>> {
     if (opportunityIds.length === 0) return {};
     try {
-      const ids = opportunityIds.map((id) => `'${id}'`).join(",");
-      const soql = `SELECT OpportunityId, Product2Id FROM OpportunityLineItem WHERE OpportunityId IN (${ids}) AND Product2Id != null`;
-      const response = await this.runQuery<{ OpportunityId: string; Product2Id: string }>(
+      const records = await this.queryByIds<{ OpportunityId: string; Product2Id: string }>(
         accessToken,
         instanceUrl,
-        soql,
+        opportunityIds,
+        (ids) => `SELECT OpportunityId, Product2Id FROM OpportunityLineItem WHERE OpportunityId IN (${ids}) AND Product2Id != null`,
       );
       const map: Record<string, string[]> = {};
-      for (const record of response.records) {
+      for (const record of records) {
         const list = map[record.OpportunityId] ?? [];
         if (!list.includes(record.Product2Id)) list.push(record.Product2Id);
         map[record.OpportunityId] = list;
