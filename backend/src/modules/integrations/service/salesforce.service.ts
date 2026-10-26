@@ -41,6 +41,15 @@ export interface SalesforceLead {
   FirstName: string | null;
   LastName: string | null;
   Status: string | null;
+  ConvertedContactId: string | null;
+}
+
+export interface SalesforceContact {
+  Id: string;
+  Email: string | null;
+  FirstName: string | null;
+  LastName: string | null;
+  AccountId: string | null;
 }
 
 export interface SalesforceOpportunity {
@@ -129,11 +138,11 @@ export interface SalesforceCampaign {
 }
 
 /**
- * Thin wrapper around Salesforce's OAuth + SOQL query endpoints. Leads are
- * synced into this app's generic Contact entity and Opportunities into its
- * generic Deal entity — see crm-integrations skill, Salesforce section, for
- * why (this app treats a Lead as "the contact" rather than Salesforce's
- * separate Contact object).
+ * Thin wrapper around Salesforce's OAuth + SOQL query endpoints. Leads and
+ * Contacts are both synced into this app's generic Contact entity (told apart
+ * by `salesforceObject`), Opportunities into its generic Deal entity — see
+ * crm-integrations skill, Salesforce section. Leads remain the entity that
+ * drives the lead funnel and the deal↔contact link.
  */
 export class SalesforceService {
   static getAuthorizationUrl(state: string, codeChallenge: string): string {
@@ -282,10 +291,34 @@ export class SalesforceService {
       if (nextRecordsUrl) return await this.runQueryPage<SalesforceLead>(accessToken, instanceUrl, nextRecordsUrl);
 
       const whereClause = since ? ` WHERE LastModifiedDate >= ${since.toISOString()}` : "";
-      const soql = `SELECT Id, Email, FirstName, LastName, Status FROM Lead${whereClause} ORDER BY LastModifiedDate ASC`;
+      const soql = `SELECT Id, Email, FirstName, LastName, Status, ConvertedContactId FROM Lead${whereClause} ORDER BY LastModifiedDate ASC`;
       return await this.runQuery<SalesforceLead>(accessToken, instanceUrl, soql, limit);
     } catch {
       throw AppError.badRequest("Failed to fetch leads from Salesforce", "SALESFORCE_LEADS_FETCH_FAILED");
+    }
+  }
+
+  /**
+   * Fetches a page of Salesforce's own Contact object. Stored in the same
+   * generic Contact pool as Leads, tagged `salesforceObject: 'Contact'` so
+   * lead counts and the lead funnel can leave them out. Same
+   * `nextRecordsUrl` pagination as getLeads.
+   */
+  static async getContacts(
+    accessToken: string,
+    instanceUrl: string,
+    limit: number,
+    since?: Date,
+    nextRecordsUrl?: string,
+  ): Promise<SalesforcePaginatedResponse<SalesforceContact>> {
+    try {
+      if (nextRecordsUrl) return await this.runQueryPage<SalesforceContact>(accessToken, instanceUrl, nextRecordsUrl);
+
+      const whereClause = since ? ` WHERE LastModifiedDate >= ${since.toISOString()}` : "";
+      const soql = `SELECT Id, Email, FirstName, LastName, AccountId FROM Contact${whereClause} ORDER BY LastModifiedDate ASC`;
+      return await this.runQuery<SalesforceContact>(accessToken, instanceUrl, soql, limit);
+    } catch {
+      throw AppError.badRequest("Failed to fetch contacts from Salesforce", "SALESFORCE_CONTACTS_FETCH_FAILED");
     }
   }
 

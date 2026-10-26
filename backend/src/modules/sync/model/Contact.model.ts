@@ -25,6 +25,12 @@ export interface ContactDocument extends Document {
   leadStatus?: string
   /** HubSpot-only (`hs_analytics_source`) — original-source channel attribution. Undefined for Salesforce leads. Used by CM-05/CM-07 (metrics guide). */
   analyticsSource?: string
+  /** Salesforce-only — which Salesforce object the row came from. Undefined for HubSpot contacts. Lead counts and the lead funnel exclude `'Contact'` rows. */
+  salesforceObject?: 'Lead' | 'Contact'
+  /** Salesforce Contact-only — the Account (`AccountId`) the contact belongs to. */
+  accountRecordId?: string
+  /** Salesforce Lead-only — the Contact (`ConvertedContactId`) a converted lead became, so a person isn't counted twice. */
+  convertedContactRecordId?: string
   lifecycleStageHistory: LifecycleStageHistoryEntry[]
   createdAt: Date
   updatedAt: Date
@@ -49,6 +55,9 @@ const contactSchema = new Schema<ContactDocument>(
     lifecycleStage: { type: String },
     leadStatus: { type: String },
     analyticsSource: { type: String },
+    salesforceObject: { type: String, enum: ['Lead', 'Contact'] },
+    accountRecordId: { type: String },
+    convertedContactRecordId: { type: String },
     lifecycleStageHistory: { type: [stageHistorySchema], default: [] }
   },
   { timestamps: true }

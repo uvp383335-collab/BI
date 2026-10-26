@@ -12,6 +12,7 @@ export type EntityKey =
   | 'items'
   | 'plItemSnapshots'
   | 'plMonthlySnapshots'
+  | 'salesforceContacts'
 
 export const syncJobRepository = {
   create(orgId: string | Types.ObjectId, provider: string) {

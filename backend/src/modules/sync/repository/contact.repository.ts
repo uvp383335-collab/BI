@@ -10,6 +10,9 @@ export interface ContactUpsertInput {
   lifecycleStage?: string
   leadStatus?: string
   analyticsSource?: string
+  salesforceObject?: 'Lead' | 'Contact'
+  accountRecordId?: string
+  convertedContactRecordId?: string
   lifecycleStageHistory: { value: string; timestamp: Date }[]
 }
 
@@ -20,9 +23,14 @@ async function modelForOrg(orgId: string | Types.ObjectId) {
 }
 
 export const contactRepository = {
+  /**
+   * Lead-entity count: every HubSpot contact, Salesforce Leads only. Salesforce
+   * Contact rows are left out — they'd double-count converted leads in the
+   * funnel's Total Leads.
+   */
   async count(orgId: string | Types.ObjectId, provider: string) {
     const ContactModel = await modelForOrg(orgId)
-    return ContactModel.countDocuments({ orgId, provider })
+    return ContactModel.countDocuments({ orgId, provider, salesforceObject: { $ne: 'Contact' } })
   },
 
   async bulkUpsert(orgId: string | Types.ObjectId, provider: string, contacts: ContactUpsertInput[]) {

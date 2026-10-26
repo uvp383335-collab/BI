@@ -142,6 +142,7 @@ async function executeSyncJob(orgId: string, provider: string, jobId: string, fo
       await syncSalesforceCampaigns(orgId, provider, accessToken, instanceUrl)
       await syncSalesforceAccounts(orgId, provider, jobId, accessToken, instanceUrl, since)
       await syncSalesforceLeadsAsContacts(orgId, provider, jobId, accessToken, instanceUrl, since)
+      await syncSalesforceContacts(orgId, provider, jobId, accessToken, instanceUrl, since)
       await syncSalesforceOpportunitiesAsDeals(orgId, provider, jobId, accessToken, instanceUrl, since)
     } else if (provider === 'quickbooks') {
       const realmId = integration?.accountId
@@ -625,8 +626,8 @@ async function syncSalesforceAccounts(
 
 /**
  * Syncs Salesforce Leads into this app's generic Contact entity — see
- * crm-integrations skill, Salesforce section, for why a Lead (not
- * Salesforce's separate Contact object) plays that role here.
+ * crm-integrations skill, Salesforce section. Leads (not Salesforce's
+ * separate Contact object, see syncSalesforceContacts) drive the lead funnel.
  */
 async function syncSalesforceLeadsAsContacts(
   orgId: string,
@@ -662,6 +663,8 @@ async function syncSalesforceLeadsAsContacts(
       firstname: lead.FirstName ?? undefined,
       lastname: lead.LastName ?? undefined,
       lifecycleStage: lead.Status ?? undefined,
+      salesforceObject: 'Lead' as const,
+      convertedContactRecordId: lead.ConvertedContactId ?? undefined,
       lifecycleStageHistory: historyByLead.get(lead.Id) ?? []
     }))
 
@@ -686,6 +689,52 @@ async function syncSalesforceLeadsAsContacts(
   } while (nextRecordsUrl)
 
   await syncJobRepository.updateEntityProgress(jobId, 'contacts', { total: totalSynced, status: 'completed' })
+}
+
+/**
+ * Syncs Salesforce's own Contact object into the same generic Contact pool as
+ * Leads, tagged `salesforceObject: 'Contact'`. No stage history and no funnel
+ * events — Contacts have no status field; the lead funnel stays Lead-driven.
+ * Progress goes to its own `salesforceContacts` entity so it doesn't overwrite
+ * the leads' `contacts` progress.
+ */
+async function syncSalesforceContacts(
+  orgId: string,
+  provider: string,
+  jobId: string,
+  accessToken: string,
+  instanceUrl: string,
+  since?: Date
+): Promise<void> {
+  await syncJobRepository.updateEntityProgress(jobId, 'salesforceContacts', { status: 'syncing' })
+  await syncJobRepository.updateProgress(jobId, 45, since ? 'Syncing contacts (changes since last sync)' : 'Syncing contacts')
+
+  let nextRecordsUrl: string | undefined
+  let totalSynced = 0
+
+  do {
+    const response = await SalesforceService.getContacts(accessToken, instanceUrl, PAGE_SIZE, since, nextRecordsUrl)
+
+    const contacts = response.records.map((contact) => ({
+      providerRecordId: contact.Id,
+      email: contact.Email ?? undefined,
+      firstname: contact.FirstName ?? undefined,
+      lastname: contact.LastName ?? undefined,
+      salesforceObject: 'Contact' as const,
+      accountRecordId: contact.AccountId ?? undefined,
+      lifecycleStageHistory: []
+    }))
+
+    await contactRepository.bulkUpsert(orgId, provider, contacts)
+
+    totalSynced += contacts.length
+    await syncJobRepository.updateEntityProgress(jobId, 'salesforceContacts', { synced: totalSynced })
+    await syncJobRepository.updateProgress(jobId, 50, `Syncing contacts (${totalSynced})`)
+
+    nextRecordsUrl = response.done ? undefined : response.nextRecordsUrl
+  } while (nextRecordsUrl)
+
+  await syncJobRepository.updateEntityProgress(jobId, 'salesforceContacts', { total: totalSynced, status: 'completed' })
 }
 
 /**
