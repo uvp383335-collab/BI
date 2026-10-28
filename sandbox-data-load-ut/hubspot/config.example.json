@@ -1,0 +1,28 @@
+{
+  "portal_id": 247726307,
+  "token_file": "~/.hubspot/token.txt",
+  "dataset_dir": "../../../ridgeline_dataset",
+  "output_dir": ".",
+  "definitions_dir": "property-definitions",
+  "patches_dir": "source-patches",
+  "batch_size": 100,
+  "steps": [
+    "properties",
+    "owners",
+    "pipeline",
+    "companies",
+    "contacts",
+    "deals",
+    "associations",
+    "lifecycle_changes",
+    "deal_stage_changes",
+    "form_submissions",
+    "goals",
+    "campaigns"
+  ],
+  "remove_unused_default_stages": true,
+  "campaigns": {
+    "enabled": false,
+    "name_replacements": { "(": "[", ")": "]" }
+  }
+}

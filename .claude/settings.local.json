@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(jobs -l)",
+      "Bash(brew services *)",
+      "Bash(grep -n 'getRevenueByCategoryAndMonth\\\\|getMonthlyRevenueByCustomer\\\\|$group\\\\|$dateTrunc\\\\|aggregate\\(' backend/src/modules/sync/repository/invoice.repository.ts)"
+    ]
+  }
+}

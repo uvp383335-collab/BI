@@ -1,0 +1,25 @@
+{"name": "ridgeline_id", "label": "Ridgeline ID", "type": "string", "fieldType": "text", "groupName": "contactinformation", "hasUniqueValue": true}
+{"name": "rl_date_became_subscriber", "label": "RL Date Became Subscriber", "type": "datetime", "fieldType": "date", "groupName": "contactinformation"}
+{"name": "rl_date_became_lead", "label": "RL Date Became Lead", "type": "datetime", "fieldType": "date", "groupName": "contactinformation"}
+{"name": "rl_date_became_mql", "label": "RL Date Became MQL", "type": "datetime", "fieldType": "date", "groupName": "contactinformation"}
+{"name": "rl_date_became_sql", "label": "RL Date Became SQL", "type": "datetime", "fieldType": "date", "groupName": "contactinformation"}
+{"name": "rl_date_became_opportunity", "label": "RL Date Became Opportunity", "type": "datetime", "fieldType": "date", "groupName": "contactinformation"}
+{"name": "rl_date_became_customer", "label": "RL Date Became Customer", "type": "datetime", "fieldType": "date", "groupName": "contactinformation"}
+{"name": "rl_original_source", "label": "RL Original Source", "type": "string", "fieldType": "text", "groupName": "contactinformation"}
+{"name": "rl_original_source_data_1", "label": "RL Original Source Drill-Down 1", "type": "string", "fieldType": "text", "groupName": "contactinformation"}
+{"name": "rl_original_source_data_2", "label": "RL Original Source Drill-Down 2", "type": "string", "fieldType": "text", "groupName": "contactinformation"}
+{"name": "rl_latest_source", "label": "RL Latest Source", "type": "string", "fieldType": "text", "groupName": "contactinformation"}
+{"name": "rl_hubspot_score", "label": "RL HubSpot Score", "type": "number", "fieldType": "number", "groupName": "contactinformation"}
+{"name": "salesforceleadid", "label": "Salesforce Lead ID", "type": "string", "fieldType": "text", "groupName": "contactinformation"}
+{"name": "salesforcecontactid", "label": "Salesforce Contact ID", "type": "string", "fieldType": "text", "groupName": "contactinformation"}
+{"name": "rl_source_company_id", "label": "RL Source Company ID", "type": "string", "fieldType": "text", "groupName": "contactinformation"}
+{"name": "rl_first_conversion_event_name", "label": "RL First Conversion", "type": "string", "fieldType": "text", "groupName": "contactinformation"}
+{"name": "rl_first_conversion_date", "label": "RL First Conversion Date", "type": "datetime", "fieldType": "date", "groupName": "contactinformation"}
+{"name": "rl_recent_conversion_event_name", "label": "RL Recent Conversion", "type": "string", "fieldType": "text", "groupName": "contactinformation"}
+{"name": "rl_recent_conversion_date", "label": "RL Recent Conversion Date", "type": "datetime", "fieldType": "date", "groupName": "contactinformation"}
+{"name": "rl_num_conversion_events", "label": "RL Number of Form Submissions", "type": "number", "fieldType": "number", "groupName": "contactinformation"}
+{"name": "rl_email_optout", "label": "RL Email Opt Out", "type": "bool", "fieldType": "booleancheckbox", "groupName": "contactinformation", "options": [{"label": "Yes", "value": "true", "displayOrder": 0}, {"label": "No", "value": "false", "displayOrder": 1}]}
+{"name": "rl_ip_country", "label": "RL IP Country", "type": "string", "fieldType": "text", "groupName": "contactinformation"}
+{"name": "rl_source_lastmodifieddate", "label": "RL Source Last Modified Date", "type": "datetime", "fieldType": "date", "groupName": "contactinformation"}
+{"name": "rl_duplicate_email", "label": "RL Duplicate Email", "type": "string", "fieldType": "text", "groupName": "contactinformation"}
+{"name": "rl_source_createdate", "label": "RL Source Create Date", "type": "datetime", "fieldType": "date", "groupName": "contactinformation"}

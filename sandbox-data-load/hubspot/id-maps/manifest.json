@@ -1,0 +1,41 @@
+{
+ "portal_id": 247726307,
+ "account_type": "DEVELOPER_TEST",
+ "loaded_on": "2026-10-18",
+ "saved_on": "2026-10-20",
+ "custom_objects": {
+  "rl_lifecycle_change": {
+   "objectTypeId": "2-270364297",
+   "fullyQualifiedName": "p247726307_rl_lifecycle_change",
+   "contact_association_type_id": 19
+  },
+  "rl_form_submission": {
+   "objectTypeId": "2-270366718",
+   "fullyQualifiedName": "p247726307_rl_form_submission",
+   "contact_association_type_id": 39
+  }
+ },
+ "association_type_ids": {
+  "contact_to_company_primary": 1,
+  "contact_to_company": 279,
+  "deal_to_company_primary": 5,
+  "deal_to_company": 341,
+  "deal_to_contact": 3,
+  "child_to_parent_company": 14
+ },
+ "row_counts": {
+  "owners": 77,
+  "pipeline_stages": 7,
+  "companies": 41590,
+  "contacts": 43076,
+  "deals": 3769,
+  "lifecycle_changes": 57994,
+  "form_submissions": 50740,
+  "campaigns": 0,
+  "goals": 3
+ },
+ "notes": [
+  "Contacts and companies: native createdate is the load date; original in rl_source_createdate.",
+  "Campaigns: none loaded (2 pilot campaigns and the test contact link removed 2026-10-20); all 198 to be loaded at once after the name decision."
+ ]
+}
