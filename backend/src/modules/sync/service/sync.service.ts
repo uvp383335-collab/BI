@@ -22,6 +22,7 @@ import {
   HubSpotService,
   HubSpotContact,
   HubSpotDeal,
+  IMPORTED_CREATEDATE_PROPERTY,
   IMPORTED_HISTORY_OBJECTS,
   IMPORTED_ORIGINAL_SOURCE_PROPERTY
 } from '../../integrations/service/hubspot.service'
@@ -371,7 +372,13 @@ async function syncDeals(
   let totalSynced = 0
 
   do {
-    const response = await HubSpotService.getDeals(accessToken, PAGE_SIZE, after, since)
+    const response = await HubSpotService.getDeals(
+      accessToken,
+      PAGE_SIZE,
+      after,
+      since,
+      importedHistory ? [IMPORTED_CREATEDATE_PROPERTY] : []
+    )
 
     // Imported history: the page's rl_deal_stage_change records, batched
     // once per page. Native, incremental: HubSpot's Search API (used when
@@ -423,25 +430,28 @@ async function syncDeals(
       console.error(`Deal product association skipped for org ${orgId} (likely missing product/line-item scope):`, err)
     }
 
-    const deals = response.results.map((deal: HubSpotDeal, index: number) => ({
-      providerRecordId: deal.id,
-      dealname: deal.properties.dealname,
-      amount: deal.properties.amount ? parseFloat(deal.properties.amount) : undefined,
-      closedate: deal.properties.closedate ? new Date(deal.properties.closedate) : undefined,
-      pipeline: deal.properties.pipeline,
-      dealstage: deal.properties.dealstage,
-      ownerId: deal.properties.hubspot_owner_id,
-      dealCreatedAt: deal.properties.createdate ? new Date(deal.properties.createdate) : undefined,
-      type: deal.properties.dealtype || undefined,
-      contactIds: associations[deal.id] ?? [],
-      productIds: dealToProductIds[deal.id] ?? [],
-      dealStageHistory: (dealStageHistories ? dealStageHistories[index] : deal.propertiesWithHistory?.dealstage || []).map(
-        (entry) => ({
-          value: entry.value,
-          timestamp: new Date(entry.timestamp)
-        })
-      )
-    }))
+    const deals = response.results.map((deal: HubSpotDeal, index: number) => {
+      const createdate = (importedHistory && deal.properties[IMPORTED_CREATEDATE_PROPERTY]) || deal.properties.createdate
+      return {
+        providerRecordId: deal.id,
+        dealname: deal.properties.dealname,
+        amount: deal.properties.amount ? parseFloat(deal.properties.amount) : undefined,
+        closedate: deal.properties.closedate ? new Date(deal.properties.closedate) : undefined,
+        pipeline: deal.properties.pipeline,
+        dealstage: deal.properties.dealstage,
+        ownerId: deal.properties.hubspot_owner_id,
+        dealCreatedAt: createdate ? new Date(createdate) : undefined,
+        type: deal.properties.dealtype || undefined,
+        contactIds: associations[deal.id] ?? [],
+        productIds: dealToProductIds[deal.id] ?? [],
+        dealStageHistory: (dealStageHistories ? dealStageHistories[index] : deal.propertiesWithHistory?.dealstage || []).map(
+          (entry) => ({
+            value: entry.value,
+            timestamp: new Date(entry.timestamp)
+          })
+        )
+      }
+    })
 
     await dealRepository.bulkUpsert(orgId, provider, deals)
 

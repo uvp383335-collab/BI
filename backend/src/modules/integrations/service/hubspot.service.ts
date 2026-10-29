@@ -46,6 +46,9 @@ export const IMPORTED_HISTORY_OBJECTS = {
 /** Imported contacts' original-source channel — HubSpot computes `hs_analytics_source` itself, so an import can't set it. */
 export const IMPORTED_ORIGINAL_SOURCE_PROPERTY = "rl_original_source";
 
+/** Imported deals' real creation date — HubSpot sets native `createdate` to the import date and won't accept a backdated one. */
+export const IMPORTED_CREATEDATE_PROPERTY = "rl_source_createdate";
+
 // A lifecycle change that emptied the stage — not a stage anyone entered.
 const IMPORTED_CLEARED_STAGE = "cleared";
 
@@ -358,8 +361,10 @@ export class HubSpotService {
     limit = 100,
     after?: string,
     since?: Date,
+    extraProperties: string[] = [],
   ): Promise<HubSpotPaginatedResponse<HubSpotDeal>> {
     const properties = [
+      ...extraProperties,
       "dealname",
       "amount",
       "closedate",
