@@ -61,7 +61,7 @@ import {
 } from '../hooks/useProductRevenueGrowth'
 import { useProductCategories } from '../../integrations/hooks/useProductCategories'
 import { CustomerUpgradesTrendGranularity } from '../api/productRevenueGrowthApi'
-import { DateRangeFilter } from '../components/DateRangeFilter'
+import { FunnelDateFilter } from '../components/FunnelDateFilter'
 import { MetricResult } from '../api/metricsApi'
 import { Banner } from '../../../shared/components/Banner'
 import { AppShell } from '../../../widgets/AppShell'
@@ -162,7 +162,7 @@ const FunnelsBody: React.FC<{
   onDateChange
 }) => (
   <div className="flex flex-col gap-6">
-    <div className="flex justify-end gap-3">
+    <div className="flex flex-wrap justify-end gap-3">
       {pipelines && pipelines.length > 1 && (
         <select className="form-input-dark w-auto" value={pipelineFilter} onChange={(e) => onPipelineFilterChange(e.target.value)}>
           {pipelines.map((p) => (
@@ -182,13 +182,13 @@ const FunnelsBody: React.FC<{
           ))}
         </select>
       )}
-      <DateRangeFilter from={fromDate || undefined} to={toDate || undefined} onChange={onDateChange} />
+      <FunnelDateFilter from={fromDate || undefined} to={toDate || undefined} onChange={onDateChange} />
     </div>
 
     {isLoading ? (
       <div className="flex h-64 items-center justify-center text-sm text-ink-3">Loading funnel data…</div>
     ) : (
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="flex flex-col gap-4">
         <div className="card border-line-strong p-4">
           <FunnelChart title="Lead Stage Funnel" description="Contacts by lifecycle stage" data={funnels?.leadStage} />
         </div>

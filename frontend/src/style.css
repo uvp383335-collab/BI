@@ -121,60 +121,6 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* react-day-picker theming — the library ships variables + bare class names
-   (no default colors baked into layout rules), so this is the whole job. */
-.dashboard-daypicker .rdp-root {
-  --rdp-accent-color: var(--color-brand);
-  --rdp-accent-background-color: color-mix(in srgb, var(--color-brand) 22%, var(--color-surface-2));
-  --rdp-day-width: 36px;
-  --rdp-day-height: 36px;
-  --rdp-day_button-width: 32px;
-  --rdp-day_button-height: 32px;
-  --rdp-range_middle-background-color: color-mix(in srgb, var(--color-brand) 22%, var(--color-surface-2));
-  --rdp-range_middle-color: var(--color-ink);
-  --rdp-range_start-color: white;
-  --rdp-range_end-color: white;
-  --rdp-today-color: var(--color-brand);
-  --rdp-nav_button-width: 28px;
-  --rdp-nav_button-height: 28px;
-  --rdp-months-gap: 1.5rem;
-  color: var(--color-ink);
-  font-family: inherit;
-}
-
-.dashboard-daypicker .rdp-weekday {
-  color: var(--color-ink-3);
-}
-
-.dashboard-daypicker .rdp-month_caption {
-  color: var(--color-ink);
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.dashboard-daypicker .rdp-day_button:hover:not(:disabled) {
-  background-color: var(--color-surface-3);
-}
-
-.dashboard-daypicker .rdp-button_previous,
-.dashboard-daypicker .rdp-button_next {
-  color: var(--color-ink-2);
-  border-radius: 0.5rem;
-}
-
-.dashboard-daypicker .rdp-button_previous:hover:not(:disabled),
-.dashboard-daypicker .rdp-button_next:hover:not(:disabled) {
-  background-color: var(--color-surface-3);
-}
-
-.dashboard-daypicker .rdp-chevron {
-  fill: var(--color-ink-2);
-}
-
-.dashboard-daypicker .rdp-outside {
-  opacity: 0.35;
-}
-
 /* Custom scrollbar styling for metric trend charts */
 .metric-trend-scroll::-webkit-scrollbar {
   height: 8px;
