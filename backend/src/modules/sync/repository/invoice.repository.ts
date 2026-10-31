@@ -215,6 +215,98 @@ export const invoiceRepository = {
   },
 
   /**
+   * Every individual invoice line billed against one product (`itemId`),
+   * over `[from, to]`, with its customer's display name joined in — the
+   * "Revenue growth by product" chart's nearest local, invoice-level
+   * backing data for its "export to Excel" verification button. Unlike
+   * getCustomerRevenueByMonthForItem above, this is deliberately ungrouped
+   * (one row per invoice line, not summed per customer/month): the point is
+   * to let someone open one specific invoice in QuickBooks and check it
+   * against a row here, not to re-derive the same monthly total a different
+   * way. See productRevenueGrowth.service.ts's getProductRevenueGrowthDetail
+   * for why this won't tie out exactly to the chart's own number (that's
+   * read live off QuickBooks' accrual P&L report, not summed from synced
+   * invoices).
+   */
+  async getInvoiceLinesForItem(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    from: Date,
+    to: Date,
+    itemId: string
+  ): Promise<{ providerRecordId: string; customerRecordId: string; customerName: string | null; txnDate: Date; lineAmount: number; invoiceTotalAmount: number }[]> {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const results = await Model.aggregate<{
+      providerRecordId: string
+      customerRecordId: string
+      customerName: string | null
+      txnDate: Date
+      lineAmount: number
+      invoiceTotalAmount: number
+    }>([
+      { $match: { orgId: orgObjectId, provider, txnDate: { $gte: from, $lte: to }, 'lines.itemId': itemId } },
+      { $unwind: '$lines' },
+      { $match: { 'lines.itemId': itemId } },
+      {
+        $lookup: {
+          from: 'quickbookscustomers',
+          let: { customerId: '$customerRecordId' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$orgId', orgObjectId] }, { $eq: ['$provider', provider] }, { $eq: ['$providerRecordId', '$$customerId'] }] } } }
+          ],
+          as: 'customer'
+        }
+      },
+      { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
+      { $sort: { txnDate: 1 } },
+      {
+        $project: {
+          _id: 0,
+          providerRecordId: 1,
+          customerRecordId: 1,
+          customerName: { $ifNull: ['$customer.displayName', null] },
+          txnDate: 1,
+          lineAmount: '$lines.amount',
+          invoiceTotalAmount: '$totalAmount'
+        }
+      }
+    ])
+    return results
+  },
+
+  /**
+   * Total invoiced revenue per calendar month, over `[from, to]`, grouped by
+   * line item (`itemId`) — every product's monthly revenue in one query,
+   * read entirely from this org's own synced `Invoice` line items. Backs the
+   * dashboard's invoice-data version of "Revenue growth by product"
+   * (productRevenueGrowth.service.ts's getInvoiceRevenueGrowthByProduct):
+   * unlike getProductRevenueGrowth's live per-product QuickBooks Profit &
+   * Loss report (one request per product), this never calls QuickBooks and
+   * covers every product at once.
+   */
+  async getRevenueByItemAndMonth(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    from: Date,
+    to: Date
+  ): Promise<{ itemId: string; month: string; revenue: number }[]> {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const results = await Model.aggregate<{ _id: { itemId: string; month: string }; revenue: number }>([
+      { $match: { orgId: orgObjectId, provider, txnDate: { $gte: from, $lte: to }, 'lines.0': { $exists: true } } },
+      { $unwind: '$lines' },
+      {
+        $group: {
+          _id: { itemId: '$lines.itemId', month: { $dateToString: { format: '%Y-%m', date: '$txnDate' } } },
+          revenue: { $sum: '$lines.amount' }
+        }
+      }
+    ])
+    return results.map((r) => ({ itemId: r._id.itemId, month: r._id.month, revenue: r.revenue }))
+  },
+
+  /**
    * How many customers' very first invoice ever (across the customer's
    * entire history, not just `[from, to]`) falls within `[from, to]`,
    * bucketed by that first-invoice month — "how many new customers did we
@@ -265,6 +357,38 @@ export const invoiceRepository = {
       }
     ])
     return results.map((r) => ({ month: r._id, count: r.count, amount: r.amount }))
+  },
+
+  /**
+   * Same per-customer "first invoice" computation as getNewCustomerCountsByMonth
+   * above, stopping one stage earlier — one row per new customer instead of
+   * collapsed to a monthly count/amount. The dashboard's "New customers"
+   * card's "export to Excel" verification button: shows exactly which
+   * customer each month's count/amount is made of, not just the total.
+   */
+  async getNewCustomerDetailRows(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    from: Date,
+    to: Date,
+    itemId?: string
+  ): Promise<{ customerRecordId: string; firstInvoiceDate: Date; firstAmount: number }[]> {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const results = await Model.aggregate<{ _id: string; firstInvoiceDate: Date; firstAmount: number }>([
+      { $match: { orgId: orgObjectId, provider, ...(itemId ? { 'lines.itemId': itemId } : {}) } },
+      ...(itemId ? [{ $unwind: '$lines' }, { $match: { 'lines.itemId': itemId } }] : []),
+      {
+        $group: {
+          _id: { customerRecordId: '$customerRecordId', txnDate: '$txnDate' },
+          amount: { $sum: itemId ? '$lines.amount' : '$totalAmount' }
+        }
+      },
+      { $sort: { '_id.customerRecordId': 1, '_id.txnDate': 1 } },
+      { $group: { _id: '$_id.customerRecordId', firstInvoiceDate: { $first: '$_id.txnDate' }, firstAmount: { $first: '$amount' } } },
+      { $match: { firstInvoiceDate: { $gte: from, $lte: to } } }
+    ])
+    return results.map((r) => ({ customerRecordId: r._id, firstInvoiceDate: r.firstInvoiceDate, firstAmount: r.firstAmount }))
   },
 
   /**

@@ -1,8 +1,10 @@
 import React, { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { NewCustomersTrendResult } from '../api/productRevenueGrowthApi'
+import { Download, Loader2 } from 'lucide-react'
+import { NewCustomersTrendResult, getNewCustomersTrendDetailRequest } from '../api/productRevenueGrowthApi'
 import { Product } from '../api/syncApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { exportNewCustomersDetailToExcel } from '../utils/exportNewCustomersDetailToExcel'
 
 interface NewCustomersTrendChartProps {
   data?: NewCustomersTrendResult
@@ -11,6 +13,8 @@ interface NewCustomersTrendChartProps {
   /** '' = new to the business (default); an id narrows to customers new to that specific product. */
   selectedProductId: string
   onProductChange: (productId: string) => void
+  /** Same "From year" filter the aggregate above was fetched with — passed through to the detail export so it reconciles against what's actually on screen. */
+  fromYear?: string
 }
 
 /** 'customers' = headcount of new customers; 'amount' = total revenue from their first invoices. */
@@ -40,8 +44,22 @@ function formatValue(value: number | null | undefined, valueMode: ValueMode): st
  * than new to the business. Not a `MetricCard` — a plain count trend, no
  * single headline value — so this renders its own standalone card.
  */
-export const NewCustomersTrendChart: React.FC<NewCustomersTrendChartProps> = ({ data, isLoading, products, selectedProductId, onProductChange }) => {
+export const NewCustomersTrendChart: React.FC<NewCustomersTrendChartProps> = ({ data, isLoading, products, selectedProductId, onProductChange, fromYear }) => {
   const [valueMode, setValueMode] = useState<ValueMode>('customers')
+  const [isExporting, setIsExporting] = useState(false)
+
+  const handleExport = async () => {
+    if (isExporting) return
+    setIsExporting(true)
+    try {
+      const detail = await getNewCustomersTrendDetailRequest(fromYear, selectedProductId || undefined)
+      await exportNewCustomersDetailToExcel({ fromYear, itemName: selectedProductName, detail })
+    } catch (err) {
+      console.error('Failed to export new customers detail to Excel', err)
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   const points = data?.points ?? []
   const rows = points.map((point) => ({
@@ -92,6 +110,17 @@ export const NewCustomersTrendChart: React.FC<NewCustomersTrendChartProps> = ({ 
               Amount wise
             </label>
           </div>
+
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={isExporting}
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-line-strong px-2.5 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:bg-surface-3 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
+            title="Export every month's underlying customers to Excel, to verify the calculation"
+          >
+            {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            Excel
+          </button>
         </div>
       </div>
 

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import { ProductRevenueGrowthResult } from '../api/productRevenueGrowthApi'
+import { Download, Loader2 } from 'lucide-react'
+import { ProductRevenueGrowthOptions, ProductRevenueGrowthResult, getProductRevenueGrowthDetailRequest } from '../api/productRevenueGrowthApi'
 import { ProductRevenueGrowthChart } from './ProductRevenueGrowthChart'
+import { exportProductRevenueGrowthDetailToExcel } from '../utils/exportProductRevenueGrowthDetailToExcel'
 
 interface ProductRevenueGrowthCardProps {
   data?: ProductRevenueGrowthResult
@@ -8,6 +10,8 @@ interface ProductRevenueGrowthCardProps {
   error?: string | null
   viewMode: 'percentage' | 'absolute'
   onViewModeChange: (mode: 'percentage' | 'absolute') => void
+  /** Same fromYear/department/state filters the aggregate above was fetched with — passed through to the detail export so it reconciles against what's actually on screen. */
+  options: ProductRevenueGrowthOptions
 }
 
 // Preferred default selection — falls back to the first product in the list if this one isn't present.
@@ -25,9 +29,25 @@ const DEFAULT_PRODUCT_NAME = 'Inventory Management Add-on - Annual'
  * `DEFAULT_PRODUCT_NAME` once loaded (or the first product if that one
  * isn't in this org's catalog).
  */
-export const ProductRevenueGrowthCard: React.FC<ProductRevenueGrowthCardProps> = ({ data, isLoading, error, viewMode, onViewModeChange }) => {
+export const ProductRevenueGrowthCard: React.FC<ProductRevenueGrowthCardProps> = ({ data, isLoading, error, viewMode, onViewModeChange, options }) => {
   const products = data?.products ?? []
   const [selectedProductId, setSelectedProductId] = useState('')
+  const [isExporting, setIsExporting] = useState(false)
+
+  const selectedProduct = products.find((p) => p.id === selectedProductId)
+
+  const handleExport = async () => {
+    if (!selectedProduct || isExporting) return
+    setIsExporting(true)
+    try {
+      const detail = await getProductRevenueGrowthDetailRequest(selectedProduct.id, selectedProduct.name, options)
+      await exportProductRevenueGrowthDetailToExcel({ options, detail })
+    } catch (err) {
+      console.error('Failed to export product revenue growth detail to Excel', err)
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   // Default to DEFAULT_PRODUCT_NAME (or the first product, if that one isn't in this org's
   // catalog) whenever a fresh load replaces the product list — never land on "nothing
@@ -76,6 +96,19 @@ export const ProductRevenueGrowthCard: React.FC<ProductRevenueGrowthCardProps> =
                 Growth %
               </label>
             </div>
+          )}
+
+          {selectedProduct && (
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={isExporting}
+              className="flex shrink-0 items-center gap-1.5 rounded-md border border-line-strong px-2.5 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:bg-surface-3 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
+              title="Export this product's month-by-month calculation, invoice by invoice, to Excel — to verify it"
+            >
+              {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              Excel
+            </button>
           )}
         </div>
       </div>

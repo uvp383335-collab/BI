@@ -18,6 +18,14 @@ export function useUpdateProductCategories(provider: IntegrationProvider) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (updates: ProductCategoryUpdate[]) => productCategoriesApi.updateProductCategoriesRequest(provider, updates),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sync', provider, 'products'] })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sync', provider, 'products'] })
+      // Every dashboard chart keyed on product recurring/billing-frequency category (customer
+      // upgrades/downgrades/churn/retention, recurring-revenue-trend, product-revenue-growth, ...)
+      // lives under this shared ['metrics', ...] prefix — without this, a chart fetched before a
+      // category was saved here keeps showing its old "not eligible"/"not computable" result until
+      // a hard page reload, since those queries have no other reason to know this changed.
+      queryClient.invalidateQueries({ queryKey: ['metrics'] })
+    }
   })
 }

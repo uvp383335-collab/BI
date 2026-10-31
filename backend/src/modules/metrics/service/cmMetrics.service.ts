@@ -363,42 +363,64 @@ const CM06_TRANSITIONS = [
   { key: 'opportunityToWon', label: 'Opportunity -> Won', from: OPPORTUNITY_STAGE, to: WON_STAGE, maturationMonths: 6 }
 ] as const
 
+interface QuarterCohortEntry {
+  providerRecordId: string
+  fromEnteredAt: Date
+  toEnteredAt: Date | null
+  daysToAdvance: number | null
+}
+
 interface QuarterCohort {
   quarterStart: string
   entered: number
   advanced: number
   ratePct: number | null
   medianDaysToAdvance: number | null
+  /** The individual records behind `entered`/`advanced` — kept so an export can show its work, not just the aggregate. */
+  entries: QuarterCohortEntry[]
 }
 
-/** Records that first entered `from` during the quarter, and how many of them went on to enter `to`. */
+/**
+ * Records that first entered `from` during the period starting `periodStart`
+ * and spanning `periodMonths` calendar months (3 = quarter, CM-06/CM-08's
+ * only caller never passes this and gets that default), and how many of
+ * them went on to enter `to`. Generalized so the same cohort math backs the
+ * monthly/quarterly/yearly granularities of the Lead -> MQL / MQL -> SQL
+ * trend charts below, without CM-06/CM-08 having to know this is shared.
+ */
 function quarterCohort(
-  records: { firstEntered: Record<string, Date> }[],
+  records: { providerRecordId: string; firstEntered: Record<string, Date> }[],
   from: string,
   to: string,
-  quarterStart: string
+  periodStart: string,
+  periodMonths = 3
 ): QuarterCohort {
-  const start = new Date(monthToDateRange(quarterStart).startDate).getTime()
-  const end = new Date(`${monthToDateRange(shiftMonth(quarterStart, 2)).endDate}T23:59:59.999Z`).getTime()
+  const start = new Date(monthToDateRange(periodStart).startDate).getTime()
+  const end = new Date(`${monthToDateRange(shiftMonth(periodStart, periodMonths - 1)).endDate}T23:59:59.999Z`).getTime()
   let entered = 0
   const daysToAdvance: number[] = []
-  for (const { firstEntered } of records) {
+  const entries: QuarterCohortEntry[] = []
+  for (const { providerRecordId, firstEntered } of records) {
     const enteredAt = firstEntered[from]?.getTime()
     if (enteredAt === undefined || enteredAt < start || enteredAt > end) continue
     entered += 1
     const advancedAt = firstEntered[to]?.getTime()
-    if (advancedAt !== undefined && advancedAt >= enteredAt) daysToAdvance.push((advancedAt - enteredAt) / 86_400_000)
+    const advanced = advancedAt !== undefined && advancedAt >= enteredAt
+    const days = advanced ? (advancedAt - enteredAt) / 86_400_000 : null
+    if (days !== null) daysToAdvance.push(days)
+    entries.push({ providerRecordId, fromEnteredAt: firstEntered[from], toEnteredAt: firstEntered[to] ?? null, daysToAdvance: days !== null ? round1(days) : null })
   }
   daysToAdvance.sort((a, b) => a - b)
   const mid = Math.floor(daysToAdvance.length / 2)
   const median =
     daysToAdvance.length === 0 ? null : daysToAdvance.length % 2 ? daysToAdvance[mid] : (daysToAdvance[mid - 1] + daysToAdvance[mid]) / 2
   return {
-    quarterStart,
+    quarterStart: periodStart,
     entered,
     advanced: daysToAdvance.length,
     ratePct: entered > 0 ? (daysToAdvance.length / entered) * 100 : null,
-    medianDaysToAdvance: median !== null ? round1(median) : null
+    medianDaysToAdvance: median !== null ? round1(median) : null,
+    entries
   }
 }
 
@@ -497,6 +519,210 @@ export async function computeCM06(orgId: string, provider = 'hubspot', period?: 
     flag: cohortSizeSufficient ? flag : null,
     asOf: new Date().toISOString()
   }
+}
+
+// ---------------------------------------------------------------------------
+// Lead -> MQL / MQL -> SQL Conversion Trend — Sales & Pipeline dashboard
+// charts, at monthly/quarterly/yearly granularity.
+// ---------------------------------------------------------------------------
+
+export type StageConversionGranularity = 'monthly' | 'quarterly' | 'yearly'
+
+export interface LeadToMqlTrendPoint {
+  periodStart: string
+  leadCount: number
+  mqlCount: number
+  conversionRatePct: number | null
+}
+
+export interface LeadToMqlTrendResult {
+  granularity: StageConversionGranularity
+  points: LeadToMqlTrendPoint[]
+}
+
+export interface MqlToSqlTrendPoint {
+  periodStart: string
+  mqlCount: number
+  sqlCount: number
+  conversionRatePct: number | null
+}
+
+export interface MqlToSqlTrendResult {
+  granularity: StageConversionGranularity
+  points: MqlToSqlTrendPoint[]
+}
+
+interface StageConversionPeriodPoint {
+  periodStart: string
+  fromCount: number
+  toCount: number
+  conversionRatePct: number | null
+}
+
+export interface StageConversionDetailEntry {
+  providerRecordId: string
+  /** ISO timestamp the record first entered the "from" stage. */
+  fromEnteredAt: string
+  /** ISO timestamp the record first entered the "to" stage, or null if it never has (yet). */
+  toEnteredAt: string | null
+  converted: boolean
+  daysToAdvance: number | null
+}
+
+export interface StageConversionPeriodDetail extends StageConversionPeriodPoint {
+  /** Every record behind this period's `fromCount`/`toCount` — the raw material to audit the aggregate against. */
+  entries: StageConversionDetailEntry[]
+}
+
+export interface StageConversionTrendDetailResult {
+  fromStage: string
+  toStage: string
+  granularity: StageConversionGranularity
+  periods: StageConversionPeriodDetail[]
+}
+
+// How many calendar months one period spans, per granularity — the one
+// number that drives both period-boundary math (quarterCohort's periodMonths)
+// and period-to-period stepping below.
+const GRANULARITY_MONTHS: Record<StageConversionGranularity, number> = { monthly: 1, quarterly: 3, yearly: 12 }
+// Trailing window shown by default (no explicit from/to): a year of months,
+// two years of quarters, five years of years — each a sensible "recent trend" span for its grain.
+const GRANULARITY_DEFAULT_PERIODS: Record<StageConversionGranularity, number> = { monthly: 12, quarterly: 8, yearly: 5 }
+
+/**
+ * First month ("YYYY-MM") of the period containing `month`, for a period
+ * `periodMonths` calendar months long, periods aligned to start of year —
+ * generalizes quarterStartOf's own Math.floor/3 formula (quarterStartOf is
+ * left as-is since CM-02/CM-04/CM-06 already depend on it specifically).
+ */
+function periodStartOf(month: string, periodMonths: number): string {
+  if (periodMonths === 1) return month
+  const [year, mo] = month.split('-').map(Number)
+  const periodFirstMonth = Math.floor((mo - 1) / periodMonths) * periodMonths + 1
+  return `${year}-${String(periodFirstMonth).padStart(2, '0')}`
+}
+
+/** The last full period of `periodMonths` length ending on or before `month` — generalizes lastFullQuarterStart (which CM-06/CM-08 keep using directly for their fixed quarterly grain). */
+function lastFullPeriodStart(month: string, periodMonths: number): string {
+  const start = periodStartOf(month, periodMonths)
+  return shiftMonth(start, periodMonths - 1) <= month ? start : shiftMonth(start, -periodMonths)
+}
+
+/**
+ * Period-by-period version of one of CM-06's stage-to-stage cohorts: for
+ * each period, how many records first entered `fromStage` that period, and
+ * how many of those went on to enter `toStage` (at any point since) — the
+ * same cohort semantics as computeCM06's per-transition rate, reused via the
+ * same `quarterCohort` helper (parameterized by `periodMonths` here instead
+ * of its CM-06 default of a quarter), just reported period by period instead
+ * of collapsed to one latest-mature-period figure. Unlike CM-06 this doesn't
+ * hold back immature periods for an alert — it's a trend line, so the most
+ * recent period is included and will simply trend toward its final rate as
+ * more of its cohort converts over time, same as HubSpot's own reports would
+ * show. Returns each period's underlying records too (not just the
+ * aggregate) so an "export detail" action can show its work without a
+ * second, differently-shaped query — getLeadToMqlTrend/getMqlToSqlTrend
+ * below strip `entries` back off for the lightweight chart endpoints.
+ */
+async function computeStageConversionTrendDetail(
+  orgId: string,
+  provider: string,
+  fromStage: string,
+  toStage: string,
+  granularity: StageConversionGranularity,
+  from?: string,
+  to?: string
+): Promise<StageConversionPeriodDetail[]> {
+  const periodMonths = GRANULARITY_MONTHS[granularity]
+  const end = to ? periodStartOf(to, periodMonths) : lastFullPeriodStart(latestClosedMonth(), periodMonths)
+  const start = from ? periodStartOf(from, periodMonths) : shiftMonth(end, -periodMonths * (GRANULARITY_DEFAULT_PERIODS[granularity] - 1))
+
+  const periods: string[] = []
+  for (let p = start; p <= end; p = shiftMonth(p, periodMonths)) periods.push(p)
+
+  const records = await funnelStageEventRepository.getFirstStageEntries(orgId, provider, 'lead', [fromStage, toStage])
+
+  return periods.map((periodStart) => {
+    const cohort = quarterCohort(records, fromStage, toStage, periodStart, periodMonths)
+    return {
+      periodStart,
+      fromCount: cohort.entered,
+      toCount: cohort.advanced,
+      conversionRatePct: cohort.ratePct !== null ? round1(cohort.ratePct) : null,
+      entries: cohort.entries.map((e) => ({
+        providerRecordId: e.providerRecordId,
+        fromEnteredAt: e.fromEnteredAt.toISOString(),
+        toEnteredAt: e.toEnteredAt ? e.toEnteredAt.toISOString() : null,
+        converted: e.daysToAdvance !== null,
+        daysToAdvance: e.daysToAdvance
+      }))
+    }
+  })
+}
+
+async function computeStageConversionTrend(
+  orgId: string,
+  provider: string,
+  fromStage: string,
+  toStage: string,
+  granularity: StageConversionGranularity,
+  from?: string,
+  to?: string
+): Promise<StageConversionPeriodPoint[]> {
+  const periods = await computeStageConversionTrendDetail(orgId, provider, fromStage, toStage, granularity, from, to)
+  return periods.map(({ entries, ...point }) => point)
+}
+
+export async function getLeadToMqlTrend(
+  orgId: string,
+  provider = 'hubspot',
+  granularity: StageConversionGranularity = 'quarterly',
+  from?: string,
+  to?: string
+): Promise<LeadToMqlTrendResult> {
+  const points = await computeStageConversionTrend(orgId, provider, LEAD_STAGE, MQL_STAGE, granularity, from, to)
+  return {
+    granularity,
+    points: points.map((p) => ({ periodStart: p.periodStart, leadCount: p.fromCount, mqlCount: p.toCount, conversionRatePct: p.conversionRatePct }))
+  }
+}
+
+export async function getMqlToSqlTrend(
+  orgId: string,
+  provider = 'hubspot',
+  granularity: StageConversionGranularity = 'quarterly',
+  from?: string,
+  to?: string
+): Promise<MqlToSqlTrendResult> {
+  const points = await computeStageConversionTrend(orgId, provider, MQL_STAGE, SQL_STAGE, granularity, from, to)
+  return {
+    granularity,
+    points: points.map((p) => ({ periodStart: p.periodStart, mqlCount: p.fromCount, sqlCount: p.toCount, conversionRatePct: p.conversionRatePct }))
+  }
+}
+
+/** Record-level backing data for getLeadToMqlTrend, for the dashboard's "export detail to Excel" action. */
+export async function getLeadToMqlTrendDetail(
+  orgId: string,
+  provider = 'hubspot',
+  granularity: StageConversionGranularity = 'quarterly',
+  from?: string,
+  to?: string
+): Promise<StageConversionTrendDetailResult> {
+  const periods = await computeStageConversionTrendDetail(orgId, provider, LEAD_STAGE, MQL_STAGE, granularity, from, to)
+  return { fromStage: LEAD_STAGE, toStage: MQL_STAGE, granularity, periods }
+}
+
+/** Record-level backing data for getMqlToSqlTrend, for the dashboard's "export detail to Excel" action. */
+export async function getMqlToSqlTrendDetail(
+  orgId: string,
+  provider = 'hubspot',
+  granularity: StageConversionGranularity = 'quarterly',
+  from?: string,
+  to?: string
+): Promise<StageConversionTrendDetailResult> {
+  const periods = await computeStageConversionTrendDetail(orgId, provider, MQL_STAGE, SQL_STAGE, granularity, from, to)
+  return { fromStage: MQL_STAGE, toStage: SQL_STAGE, granularity, periods }
 }
 
 // ---------------------------------------------------------------------------

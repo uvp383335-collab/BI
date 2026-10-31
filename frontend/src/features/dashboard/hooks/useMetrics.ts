@@ -24,3 +24,19 @@ export function useQualifiedPipelineTrend(enabled: boolean, provider: 'hubspot' 
     enabled
   })
 }
+
+export function useLeadToMqlTrend(enabled: boolean, provider: 'hubspot' | 'salesforce', granularity: metricsApi.StageConversionGranularity, from?: string, to?: string) {
+  return useQuery({
+    queryKey: ['metrics', 'lead-to-mql-trend', provider, granularity, from, to],
+    queryFn: () => metricsApi.getLeadToMqlTrendRequest(provider, granularity, from, to),
+    enabled
+  })
+}
+
+export function useMqlToSqlTrend(enabled: boolean, provider: 'hubspot' | 'salesforce', granularity: metricsApi.StageConversionGranularity, from?: string, to?: string) {
+  return useQuery({
+    queryKey: ['metrics', 'mql-to-sql-trend', provider, granularity, from, to],
+    queryFn: () => metricsApi.getMqlToSqlTrendRequest(provider, granularity, from, to),
+    enabled
+  })
+}

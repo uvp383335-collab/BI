@@ -91,3 +91,96 @@ export async function getQualifiedPipelineTrendRequest(provider: 'hubspot' | 'sa
   const res = await httpClient.get<ApiEnvelope<QualifiedPipelineTrendResult>>('/metrics/qualified-pipeline-trend', { params: { provider, fromMonth, toMonth } })
   return res.data.data
 }
+
+export type StageConversionGranularity = 'monthly' | 'quarterly' | 'yearly'
+
+export interface LeadToMqlTrendPoint {
+  periodStart: string
+  leadCount: number
+  mqlCount: number
+  conversionRatePct: number | null
+}
+
+export interface LeadToMqlTrendResult {
+  granularity: StageConversionGranularity
+  points: LeadToMqlTrendPoint[]
+}
+
+/** Lead -> MQL cohort conversion rate (CM-06's underlying cohort), reported at the given granularity. Defaults to quarterly, trailing window sized to the granularity. */
+export async function getLeadToMqlTrendRequest(
+  provider: 'hubspot' | 'salesforce',
+  granularity: StageConversionGranularity = 'quarterly',
+  from?: string,
+  to?: string
+): Promise<LeadToMqlTrendResult> {
+  const res = await httpClient.get<ApiEnvelope<LeadToMqlTrendResult>>('/metrics/lead-to-mql-trend', { params: { provider, granularity, from, to } })
+  return res.data.data
+}
+
+export interface MqlToSqlTrendPoint {
+  periodStart: string
+  mqlCount: number
+  sqlCount: number
+  conversionRatePct: number | null
+}
+
+export interface MqlToSqlTrendResult {
+  granularity: StageConversionGranularity
+  points: MqlToSqlTrendPoint[]
+}
+
+/** MQL -> SQL cohort conversion rate (CM-06's underlying cohort), reported at the given granularity. Defaults to quarterly, trailing window sized to the granularity. */
+export async function getMqlToSqlTrendRequest(
+  provider: 'hubspot' | 'salesforce',
+  granularity: StageConversionGranularity = 'quarterly',
+  from?: string,
+  to?: string
+): Promise<MqlToSqlTrendResult> {
+  const res = await httpClient.get<ApiEnvelope<MqlToSqlTrendResult>>('/metrics/mql-to-sql-trend', { params: { provider, granularity, from, to } })
+  return res.data.data
+}
+
+export interface StageConversionDetailEntry {
+  providerRecordId: string
+  fromEnteredAt: string
+  toEnteredAt: string | null
+  converted: boolean
+  daysToAdvance: number | null
+}
+
+export interface StageConversionPeriodDetail {
+  periodStart: string
+  fromCount: number
+  toCount: number
+  conversionRatePct: number | null
+  entries: StageConversionDetailEntry[]
+}
+
+export interface StageConversionTrendDetailResult {
+  fromStage: string
+  toStage: string
+  granularity: StageConversionGranularity
+  periods: StageConversionPeriodDetail[]
+}
+
+/** Record-level detail behind the Lead -> MQL trend chart — every record counted in each period's cohort, for the "export to Excel" verification button. Same params as the chart request. */
+export async function getLeadToMqlTrendDetailRequest(
+  provider: 'hubspot' | 'salesforce',
+  granularity: StageConversionGranularity = 'quarterly',
+  from?: string,
+  to?: string
+): Promise<StageConversionTrendDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<StageConversionTrendDetailResult>>('/metrics/lead-to-mql-trend/detail', { params: { provider, granularity, from, to } })
+  return res.data.data
+}
+
+/** Record-level detail behind the MQL -> SQL trend chart — same shape as the Lead -> MQL detail request above, one transition over. */
+export async function getMqlToSqlTrendDetailRequest(
+  provider: 'hubspot' | 'salesforce',
+  granularity: StageConversionGranularity = 'quarterly',
+  from?: string,
+  to?: string
+): Promise<StageConversionTrendDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<StageConversionTrendDetailResult>>('/metrics/mql-to-sql-trend/detail', { params: { provider, granularity, from, to } })
+  return res.data.data
+}

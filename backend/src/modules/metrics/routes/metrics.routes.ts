@@ -5,35 +5,58 @@ import { validateQuery } from '../../../middleware/validate'
 import {
   getMetricQuerySchema,
   getProductRevenueGrowthQuerySchema,
+  getProductRevenueGrowthDetailQuerySchema,
+  getInvoiceRevenueGrowthByProductQuerySchema,
+  getInvoiceRevenueGrowthByProductDetailQuerySchema,
   getRecurringRevenueTrendQuerySchema,
   getGAndAExpenseTrendQuerySchema,
   getNewCustomersTrendQuerySchema,
   getCustomerUpgradesTrendQuerySchema,
-  getQualifiedPipelineTrendQuerySchema
+  getQualifiedPipelineTrendQuerySchema,
+  getLeadToMqlTrendQuerySchema,
+  getMqlToSqlTrendQuerySchema
 } from '../validator/metrics.validator'
 
 export const metricsRouter = Router()
 
 const guards = [requireAuth, requireOrgContext, validateQuery(getMetricQuerySchema)] as const
 const productRevenueGrowthGuards = [requireAuth, requireOrgContext, validateQuery(getProductRevenueGrowthQuerySchema)] as const
+const productRevenueGrowthDetailGuards = [requireAuth, requireOrgContext, validateQuery(getProductRevenueGrowthDetailQuerySchema)] as const
+const invoiceRevenueGrowthByProductGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByProductQuerySchema)] as const
+const invoiceRevenueGrowthByProductDetailGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByProductDetailQuerySchema)] as const
 const recurringRevenueTrendGuards = [requireAuth, requireOrgContext, validateQuery(getRecurringRevenueTrendQuerySchema)] as const
 const gaExpenseTrendGuards = [requireAuth, requireOrgContext, validateQuery(getGAndAExpenseTrendQuerySchema)] as const
 const newCustomersTrendGuards = [requireAuth, requireOrgContext, validateQuery(getNewCustomersTrendQuerySchema)] as const
 const customerUpgradesTrendGuards = [requireAuth, requireOrgContext, validateQuery(getCustomerUpgradesTrendQuerySchema)] as const
 const qualifiedPipelineTrendGuards = [requireAuth, requireOrgContext, validateQuery(getQualifiedPipelineTrendQuerySchema)] as const
+const leadToMqlTrendGuards = [requireAuth, requireOrgContext, validateQuery(getLeadToMqlTrendQuerySchema)] as const
+const mqlToSqlTrendGuards = [requireAuth, requireOrgContext, validateQuery(getMqlToSqlTrendQuerySchema)] as const
 
 metricsRouter.get('/trend/:id', ...guards, metricsController.getMetricTrend)
 metricsRouter.get('/qualified-pipeline-trend', ...qualifiedPipelineTrendGuards, metricsController.getQualifiedPipelineTrendHandler)
+metricsRouter.get('/lead-to-mql-trend', ...leadToMqlTrendGuards, metricsController.getLeadToMqlTrendHandler)
+metricsRouter.get('/lead-to-mql-trend/detail', ...leadToMqlTrendGuards, metricsController.getLeadToMqlTrendDetailHandler)
+metricsRouter.get('/mql-to-sql-trend', ...mqlToSqlTrendGuards, metricsController.getMqlToSqlTrendHandler)
+metricsRouter.get('/mql-to-sql-trend/detail', ...mqlToSqlTrendGuards, metricsController.getMqlToSqlTrendDetailHandler)
 
 // Live "Revenue growth by product" section (docs/server.js §5) — not pre-synced, see productRevenueGrowth.service.ts.
 metricsRouter.get('/quickbooks/departments', requireAuth, requireOrgContext, metricsController.getQuickBooksDepartmentsHandler)
 metricsRouter.get('/quickbooks/customer-states', requireAuth, requireOrgContext, metricsController.getQuickBooksCustomerStatesHandler)
 metricsRouter.get('/quickbooks/product-revenue-growth', ...productRevenueGrowthGuards, metricsController.getProductRevenueGrowthHandler)
+metricsRouter.get('/quickbooks/product-revenue-growth/detail', ...productRevenueGrowthDetailGuards, metricsController.getProductRevenueGrowthDetailHandler)
+metricsRouter.get('/quickbooks/invoice-revenue-growth-by-product', ...invoiceRevenueGrowthByProductGuards, metricsController.getInvoiceRevenueGrowthByProductHandler)
+metricsRouter.get(
+  '/quickbooks/invoice-revenue-growth-by-product/detail',
+  ...invoiceRevenueGrowthByProductDetailGuards,
+  metricsController.getInvoiceRevenueGrowthByProductDetailHandler
+)
 metricsRouter.get('/quickbooks/recurring-revenue-trend', ...recurringRevenueTrendGuards, metricsController.getRecurringRevenueTrendHandler)
 metricsRouter.get('/quickbooks/ga-expense-trend', ...gaExpenseTrendGuards, metricsController.getGAndAExpenseTrendHandler)
 metricsRouter.get('/quickbooks/cac-trend', requireAuth, requireOrgContext, metricsController.getCACTrendHandler)
 metricsRouter.get('/quickbooks/new-customers-trend', ...newCustomersTrendGuards, metricsController.getNewCustomersTrendHandler)
+metricsRouter.get('/quickbooks/new-customers-trend/detail', ...newCustomersTrendGuards, metricsController.getNewCustomersTrendDetailHandler)
 metricsRouter.get('/quickbooks/customer-upgrades-trend', ...customerUpgradesTrendGuards, metricsController.getCustomerUpgradesTrendHandler)
+metricsRouter.get('/quickbooks/customer-upgrades-trend/detail', ...customerUpgradesTrendGuards, metricsController.getCustomerUpgradesTrendDetailHandler)
 
 metricsRouter.get('/vc-01', ...guards, metricsController.getVC01)
 metricsRouter.get('/vc-02', ...guards, metricsController.getVC02)

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { CustomerUpgradesTrendGranularity, CustomerUpgradesTrendResult } from '../api/productRevenueGrowthApi'
+import { Download, Loader2 } from 'lucide-react'
+import { CustomerUpgradesTrendGranularity, CustomerUpgradesTrendResult, getCustomerUpgradesTrendDetailRequest } from '../api/productRevenueGrowthApi'
 import { CategorizedProduct } from '../../integrations/api/productCategoriesApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { exportCustomerUpgradesDetailToExcel } from '../utils/exportCustomerUpgradesDetailToExcel'
 
 interface CustomerChurnTrendChartProps {
   data?: CustomerUpgradesTrendResult
@@ -51,9 +53,23 @@ export const CustomerChurnTrendChart: React.FC<CustomerChurnTrendChartProps> = (
   onProductChange
 }) => {
   const [valueMode, setValueMode] = useState<ValueMode>('customers')
+  const [isExporting, setIsExporting] = useState(false)
 
   const requiredFrequency = granularity === 'monthly' ? 'monthly' : 'yearly'
   const eligibleProducts = products.filter((p) => p.category === 'recurring' && p.billingFrequency === requiredFrequency)
+
+  const handleExport = async () => {
+    if (isExporting) return
+    setIsExporting(true)
+    try {
+      const detail = await getCustomerUpgradesTrendDetailRequest(selectedProductId || undefined, granularity)
+      await exportCustomerUpgradesDetailToExcel({ bucket: 'churn', itemName: selectedProductName, granularity, detail })
+    } catch (err) {
+      console.error('Failed to export customer churn detail to Excel', err)
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   // Whenever the granularity changes (or the eligible list itself changes), make sure the
   // current selection is still valid — default to the first eligible product otherwise.
@@ -127,6 +143,17 @@ export const CustomerChurnTrendChart: React.FC<CustomerChurnTrendChartProps> = (
               Amount wise
             </label>
           </div>
+
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={isExporting}
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-line-strong px-2.5 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:bg-surface-3 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
+            title="Export every period's underlying customers to Excel, to verify the calculation"
+          >
+            {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            Excel
+          </button>
         </div>
       </div>
 

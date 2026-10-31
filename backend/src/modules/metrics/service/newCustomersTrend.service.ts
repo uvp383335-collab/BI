@@ -1,4 +1,5 @@
 import { invoiceRepository } from '../../sync/repository/invoice.repository'
+import { quickBooksCustomerRepository } from '../../sync/repository/quickBooksCustomer.repository'
 import { latestClosedMonth, shiftMonth, monthRangeUtc } from './revenueRollForward.service'
 
 const QUICKBOOKS = 'quickbooks'
@@ -64,6 +65,83 @@ export async function getNewCustomersTrend(orgId: string, fromYear?: string, ite
     points: months.map((month) => {
       const { count, amount } = statsByMonth.get(month)!
       return { month, newCustomerCount: count, newCustomerAmount: amount }
+    })
+  }
+}
+
+export interface NewCustomersDetailEntry {
+  customerRecordId: string
+  customerName: string | null
+  /** "YYYY-MM-DD" */
+  firstInvoiceDate: string
+  firstAmount: number
+}
+
+export interface NewCustomersMonthDetail {
+  /** "YYYY-MM" */
+  month: string
+  newCustomerCount: number
+  newCustomerAmount: number
+  /** Every customer counted in this month's count/amount, for line-by-line verification. */
+  entries: NewCustomersDetailEntry[]
+}
+
+export interface NewCustomersTrendDetailResult {
+  hasInvoices: boolean
+  months: NewCustomersMonthDetail[]
+}
+
+/**
+ * Record-level backing data for getNewCustomersTrend above — the exact
+ * customer (and their first-invoice date/amount) behind each month's
+ * count/amount, for the dashboard's "export to Excel" verification button.
+ * Shares getNewCustomersTrend's own month-range and "first invoice per
+ * customer" logic (invoiceRepository.getNewCustomerDetailRows mirrors
+ * getNewCustomerCountsByMonth one stage earlier) so the totals here always
+ * match what the chart shows.
+ */
+export async function getNewCustomersTrendDetail(orgId: string, fromYear?: string, itemId?: string): Promise<NewCustomersTrendDetailResult> {
+  const hasInvoices = (await invoiceRepository.count(orgId, QUICKBOOKS)) > 0
+  if (!hasInvoices) {
+    return { hasInvoices: false, months: [] }
+  }
+
+  const endMonth = latestClosedMonth()
+  const year = fromYear ?? endMonth.slice(0, 4)
+  const months: string[] = []
+  for (let month = `${year}-01`; month <= endMonth; month = shiftMonth(month, 1)) {
+    months.push(month)
+  }
+
+  const { start } = monthRangeUtc(months[0])
+  const { end } = monthRangeUtc(months[months.length - 1])
+  const [rows, customers] = await Promise.all([
+    invoiceRepository.getNewCustomerDetailRows(orgId, QUICKBOOKS, start, end, itemId),
+    quickBooksCustomerRepository.findAll(orgId, QUICKBOOKS)
+  ])
+  const nameById = new Map(customers.map((c) => [c.providerRecordId, c.displayName ?? null]))
+
+  const entriesByMonth = new Map<string, NewCustomersDetailEntry[]>(months.map((month) => [month, []]))
+  for (const row of rows) {
+    const month = row.firstInvoiceDate.toISOString().slice(0, 7)
+    entriesByMonth.get(month)?.push({
+      customerRecordId: row.customerRecordId,
+      customerName: nameById.get(row.customerRecordId) ?? null,
+      firstInvoiceDate: row.firstInvoiceDate.toISOString().slice(0, 10),
+      firstAmount: row.firstAmount
+    })
+  }
+
+  return {
+    hasInvoices: true,
+    months: months.map((month) => {
+      const entries = entriesByMonth.get(month) ?? []
+      return {
+        month,
+        newCustomerCount: entries.length,
+        newCustomerAmount: entries.reduce((sum, e) => sum + e.firstAmount, 0),
+        entries
+      }
     })
   }
 }

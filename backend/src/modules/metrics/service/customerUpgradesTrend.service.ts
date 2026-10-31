@@ -1,5 +1,6 @@
 import { invoiceRepository } from '../../sync/repository/invoice.repository'
 import { productRepository } from '../../sync/repository/product.repository'
+import { quickBooksCustomerRepository } from '../../sync/repository/quickBooksCustomer.repository'
 import { ProductBillingFrequency } from '../../sync/model/Product.model'
 import { latestClosedMonth, shiftMonth, monthRangeUtc } from './revenueRollForward.service'
 
@@ -56,6 +57,72 @@ export interface CustomerUpgradesTrendResult {
  * per-customer revenue map, since it all reads the exact same
  * prior-vs-current comparison.
  */
+export interface CustomerUpgradesDetailEntry {
+  customerRecordId: string
+  priorRevenue: number
+  currentRevenue: number
+  /** currentRevenue - priorRevenue — negative for downgrade/churn. */
+  delta: number
+  bucket: 'upgrade' | 'downgrade' | 'churn'
+}
+
+/**
+ * Same classification `summarizePeriodChange` below exposes as counts/amounts,
+ * but keeping the per-customer rows behind them (`entries`) instead of only
+ * the aggregate — the raw material for the dashboard's "export to Excel"
+ * verification buttons on the upgrades/downgrades/churn cards.
+ * `summarizePeriodChange` is a thin wrapper around this that strips
+ * `entries` back off, so the aggregate cards and the detail export always
+ * agree on the exact same classification.
+ */
+function summarizePeriodChangeWithEntries(
+  revenueByCustomer: Map<string, Map<string, number>>,
+  period: string,
+  priorPeriod: string
+): {
+  upgradeCount: number
+  upgradeAmount: number
+  downgradeCount: number
+  downgradeAmount: number
+  churnCount: number
+  churnAmount: number
+  startingRevenue: number
+  grrPct: number | null
+  nrrPct: number | null
+  entries: CustomerUpgradesDetailEntry[]
+} {
+  let upgradeCount = 0
+  let upgradeAmount = 0
+  let downgradeCount = 0
+  let downgradeAmount = 0
+  let churnCount = 0
+  let churnAmount = 0
+  let startingRevenue = 0
+  const entries: CustomerUpgradesDetailEntry[] = []
+  for (const [customerRecordId, periods] of revenueByCustomer) {
+    const prev = periods.get(priorPeriod) ?? 0
+    const curr = periods.get(period) ?? 0
+    if (prev <= 0) continue // only existing customers (revenue last period) count toward starting revenue or any of the three buckets
+    startingRevenue += prev
+    if (curr > prev) {
+      upgradeCount++
+      upgradeAmount += curr - prev
+      entries.push({ customerRecordId, priorRevenue: prev, currentRevenue: curr, delta: curr - prev, bucket: 'upgrade' })
+    } else if (curr === 0) {
+      churnCount++
+      churnAmount += prev
+      entries.push({ customerRecordId, priorRevenue: prev, currentRevenue: curr, delta: -prev, bucket: 'churn' })
+    } else if (curr < prev) {
+      downgradeCount++
+      downgradeAmount += prev - curr
+      entries.push({ customerRecordId, priorRevenue: prev, currentRevenue: curr, delta: curr - prev, bucket: 'downgrade' })
+    }
+  }
+  const grrPct = startingRevenue > 0 ? ((startingRevenue - downgradeAmount - churnAmount) / startingRevenue) * 100 : null
+  const nrrPct = startingRevenue > 0 ? ((startingRevenue - downgradeAmount - churnAmount + upgradeAmount) / startingRevenue) * 100 : null
+  return { upgradeCount, upgradeAmount, downgradeCount, downgradeAmount, churnCount, churnAmount, startingRevenue, grrPct, nrrPct, entries }
+}
+
 function summarizePeriodChange(
   revenueByCustomer: Map<string, Map<string, number>>,
   period: string,
@@ -71,32 +138,8 @@ function summarizePeriodChange(
   grrPct: number | null
   nrrPct: number | null
 } {
-  let upgradeCount = 0
-  let upgradeAmount = 0
-  let downgradeCount = 0
-  let downgradeAmount = 0
-  let churnCount = 0
-  let churnAmount = 0
-  let startingRevenue = 0
-  for (const periods of revenueByCustomer.values()) {
-    const prev = periods.get(priorPeriod) ?? 0
-    const curr = periods.get(period) ?? 0
-    if (prev <= 0) continue // only existing customers (revenue last period) count toward starting revenue or any of the three buckets
-    startingRevenue += prev
-    if (curr > prev) {
-      upgradeCount++
-      upgradeAmount += curr - prev
-    } else if (curr === 0) {
-      churnCount++
-      churnAmount += prev
-    } else if (curr < prev) {
-      downgradeCount++
-      downgradeAmount += prev - curr
-    }
-  }
-  const grrPct = startingRevenue > 0 ? ((startingRevenue - downgradeAmount - churnAmount) / startingRevenue) * 100 : null
-  const nrrPct = startingRevenue > 0 ? ((startingRevenue - downgradeAmount - churnAmount + upgradeAmount) / startingRevenue) * 100 : null
-  return { upgradeCount, upgradeAmount, downgradeCount, downgradeAmount, churnCount, churnAmount, startingRevenue, grrPct, nrrPct }
+  const { entries, ...rest } = summarizePeriodChangeWithEntries(revenueByCustomer, period, priorPeriod)
+  return rest
 }
 
 function groupByCustomerAndMonth(rows: { customerRecordId: string; month: string; revenue: number }[]): Map<string, Map<string, number>> {
@@ -187,4 +230,93 @@ export async function getCustomerUpgradesTrend(orgId: string, itemId: string | u
 
   const points = granularity === 'monthly' ? await getMonthlyTrend(orgId, itemId, requiredFrequency) : await getAnnualTrend(orgId, itemId, requiredFrequency)
   return { hasData: true, points }
+}
+
+interface PeriodWithEntries extends CustomerUpgradesTrendPoint {
+  entries: CustomerUpgradesDetailEntry[]
+}
+
+/** Detail counterpart to getMonthlyTrend — same months/comparison, via summarizePeriodChangeWithEntries instead of the aggregate-only wrapper. */
+async function getMonthlyTrendDetail(orgId: string, itemId: string | undefined, requiredFrequency: ProductBillingFrequency): Promise<PeriodWithEntries[]> {
+  const latestMonth = latestClosedMonth()
+  const months = Array.from({ length: TRAILING_MONTHS }, (_, i) => shiftMonth(latestMonth, -(TRAILING_MONTHS - 1 - i)))
+  const { start } = monthRangeUtc(shiftMonth(months[0], -1))
+  const { end } = monthRangeUtc(months[months.length - 1])
+
+  const rows = await getRevenueRows(orgId, start, end, itemId, requiredFrequency)
+  const revenueByCustomer = groupByCustomerAndMonth(rows)
+
+  return months.map((month) => ({ period: month, ...summarizePeriodChangeWithEntries(revenueByCustomer, month, shiftMonth(month, -1)) }))
+}
+
+/** Detail counterpart to getAnnualTrend — same years/comparison, via summarizePeriodChangeWithEntries instead of the aggregate-only wrapper. */
+async function getAnnualTrendDetail(orgId: string, itemId: string | undefined, requiredFrequency: ProductBillingFrequency): Promise<PeriodWithEntries[]> {
+  const latestYear = Number(latestClosedMonth().slice(0, 4))
+  const years = Array.from({ length: TRAILING_YEARS }, (_, i) => String(latestYear - (TRAILING_YEARS - 1 - i)))
+  const from = new Date(Date.UTC(Number(years[0]) - 1, 0, 1))
+  const to = new Date(Date.UTC(latestYear, 11, 31, 23, 59, 59, 999))
+
+  const rows = await getRevenueRows(orgId, from, to, itemId, requiredFrequency)
+  const revenueByCustomerYear = new Map<string, Map<string, number>>()
+  for (const row of rows) {
+    const year = row.month.slice(0, 4)
+    if (!revenueByCustomerYear.has(row.customerRecordId)) revenueByCustomerYear.set(row.customerRecordId, new Map())
+    const yearTotals = revenueByCustomerYear.get(row.customerRecordId)!
+    yearTotals.set(year, (yearTotals.get(year) ?? 0) + row.revenue)
+  }
+
+  return years.map((year) => ({ period: year, ...summarizePeriodChangeWithEntries(revenueByCustomerYear, year, String(Number(year) - 1)) }))
+}
+
+export interface CustomerUpgradesDetailEntryWithName extends CustomerUpgradesDetailEntry {
+  customerName: string | null
+}
+
+export interface CustomerUpgradesPeriodDetail extends CustomerUpgradesTrendPoint {
+  /** Every existing customer behind this period's upgrade/downgrade/churn counts — classified the same way, just kept instead of collapsed. "Flat" customers (current === prior, in none of the three buckets) are omitted, same as the aggregate. */
+  entries: CustomerUpgradesDetailEntryWithName[]
+}
+
+export interface CustomerUpgradesTrendDetailResult {
+  hasData: boolean
+  periods: CustomerUpgradesPeriodDetail[]
+}
+
+/**
+ * Record-level backing data for getCustomerUpgradesTrend above — every
+ * existing customer's prior/current revenue and which bucket (upgrade,
+ * downgrade, or churn) they fell into each period, for the "export to
+ * Excel" verification button shared by the Upgrades/Downgrades/Churn cards.
+ * Each card calls this with its own product/granularity selection (same as
+ * the aggregate) and the shared export util picks which bucket to show.
+ */
+export async function getCustomerUpgradesTrendDetail(
+  orgId: string,
+  itemId: string | undefined,
+  granularity: CustomerUpgradesTrendGranularity
+): Promise<CustomerUpgradesTrendDetailResult> {
+  const requiredFrequency = granularity === 'monthly' ? 'monthly' : 'yearly'
+  const categorized = await productRepository.findCategorizedForOrg(orgId, QUICKBOOKS)
+
+  if (itemId) {
+    const product = categorized.find((p) => p.providerRecordId === itemId)
+    if (!product || product.category !== 'recurring' || product.billingFrequency !== requiredFrequency) {
+      return { hasData: false, periods: [] }
+    }
+  } else if (!categorized.some((p) => p.category === 'recurring' && p.billingFrequency === requiredFrequency)) {
+    return { hasData: false, periods: [] }
+  }
+
+  const [periodsRaw, customers] = await Promise.all([
+    granularity === 'monthly' ? getMonthlyTrendDetail(orgId, itemId, requiredFrequency) : getAnnualTrendDetail(orgId, itemId, requiredFrequency),
+    quickBooksCustomerRepository.findAll(orgId, QUICKBOOKS)
+  ])
+  const nameById = new Map(customers.map((c) => [c.providerRecordId, c.displayName ?? null]))
+
+  const periods: CustomerUpgradesPeriodDetail[] = periodsRaw.map(({ entries, ...point }) => ({
+    ...point,
+    entries: entries.map((entry) => ({ ...entry, customerName: nameById.get(entry.customerRecordId) ?? null }))
+  }))
+
+  return { hasData: true, periods }
 }

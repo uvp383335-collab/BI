@@ -85,3 +85,16 @@ export function useProductRevenueGrowth(enabled: boolean, options: productRevenu
     enabled
   })
 }
+
+/**
+ * "Revenue growth by product," computed entirely from synced Invoice line
+ * items — cheap and storage-backed (unlike useProductRevenueGrowth above,
+ * which calls QuickBooks live), so this auto-loads like the dropdowns above.
+ */
+export function useInvoiceRevenueGrowthByProduct(enabled: boolean, fromYear?: string) {
+  return useQuery({
+    queryKey: ['metrics', 'quickbooks', 'invoice-revenue-growth-by-product', fromYear],
+    queryFn: () => productRevenueGrowthApi.getInvoiceRevenueGrowthByProductRequest({ fromYear }),
+    enabled
+  })
+}

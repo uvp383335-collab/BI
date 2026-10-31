@@ -50,6 +50,96 @@ export async function getProductRevenueGrowthRequest(options: ProductRevenueGrow
   return res.data.data
 }
 
+export interface ProductRevenueGrowthDetailLine {
+  providerRecordId: string
+  customerRecordId: string
+  customerName: string | null
+  /** "YYYY-MM-DD" */
+  txnDate: string
+  lineAmount: number
+  invoiceTotalAmount: number
+}
+
+export interface ProductRevenueGrowthDetailMonth {
+  /** "YYYY-MM" */
+  month: string
+  /** QuickBooks' own report column title for this month, e.g. "Jan 2024". */
+  quickbooksColumnLabel: string
+  quickbooksRevenue: number
+  quickbooksRevenueGrowthPct: number | null
+  /** Sum of locally-synced invoice lines for this product this month — compare against quickbooksRevenue. */
+  syncedInvoiceTotal: number
+}
+
+export interface ProductRevenueGrowthDetailResult {
+  productId: string
+  productName: string
+  months: ProductRevenueGrowthDetailMonth[]
+  lines: ProductRevenueGrowthDetailLine[]
+  /** Non-null when a requested filter (e.g. department) couldn't be honored by the local invoice data. */
+  caveat: string | null
+}
+
+/**
+ * Record-level backing data for one product's series above — re-fetches that
+ * product's QuickBooks P&L revenue live (fresh, not reused from the already
+ * loaded chart data) plus every locally-synced invoice line that fed it, for
+ * the "export to Excel" verification button.
+ */
+export async function getProductRevenueGrowthDetailRequest(productId: string, productName: string, options: ProductRevenueGrowthOptions): Promise<ProductRevenueGrowthDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<ProductRevenueGrowthDetailResult>>('/metrics/quickbooks/product-revenue-growth/detail', {
+    params: { productId, productName, ...options }
+  })
+  return res.data.data
+}
+
+export interface InvoiceRevenueGrowthByProductOptions {
+  fromYear?: string
+}
+
+export interface InvoiceRevenueGrowthByProductResult {
+  products: ProductRevenueGrowthProduct[]
+}
+
+/**
+ * "Revenue growth by product," computed entirely from this org's own synced
+ * QuickBooks invoice line items — never calls QuickBooks live, unlike
+ * getProductRevenueGrowthRequest above (one live P&L report per product).
+ * Cross-check against the live card rather than a replacement for it: no
+ * department/state filters, since neither is captured on locally-synced
+ * invoice/customer records.
+ */
+export async function getInvoiceRevenueGrowthByProductRequest(options: InvoiceRevenueGrowthByProductOptions): Promise<InvoiceRevenueGrowthByProductResult> {
+  const res = await httpClient.get<ApiEnvelope<InvoiceRevenueGrowthByProductResult>>('/metrics/quickbooks/invoice-revenue-growth-by-product', { params: options })
+  return res.data.data
+}
+
+export interface InvoiceRevenueGrowthByProductDetailLine {
+  providerRecordId: string
+  customerRecordId: string
+  customerName: string | null
+  /** "YYYY-MM-DD" */
+  txnDate: string
+  lineAmount: number
+  invoiceTotalAmount: number
+}
+
+export interface InvoiceRevenueGrowthByProductDetailResult {
+  productId: string
+  productName: string
+  months: MonthlyRevenueGrowthPoint[]
+  /** Every synced invoice line behind the months above — sums to months[].revenue exactly, since both come from the same synced-invoice source. */
+  lines: InvoiceRevenueGrowthByProductDetailLine[]
+}
+
+/** Record-level detail behind one product's series above — every synced invoice line that fed it, for the "export to Excel" verification button. */
+export async function getInvoiceRevenueGrowthByProductDetailRequest(productId: string, productName: string, options: InvoiceRevenueGrowthByProductOptions): Promise<InvoiceRevenueGrowthByProductDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<InvoiceRevenueGrowthByProductDetailResult>>('/metrics/quickbooks/invoice-revenue-growth-by-product/detail', {
+    params: { productId, productName, ...options }
+  })
+  return res.data.data
+}
+
 export async function getQuickBooksDepartmentsRequest(): Promise<QuickBooksDepartmentOption[]> {
   const res = await httpClient.get<ApiEnvelope<QuickBooksDepartmentOption[]>>('/metrics/quickbooks/departments')
   return res.data.data
@@ -158,6 +248,33 @@ export async function getNewCustomersTrendRequest(fromYear?: string, item?: stri
   return res.data.data
 }
 
+export interface NewCustomersDetailEntry {
+  customerRecordId: string
+  customerName: string | null
+  /** "YYYY-MM-DD" */
+  firstInvoiceDate: string
+  firstAmount: number
+}
+
+export interface NewCustomersMonthDetail {
+  /** "YYYY-MM" */
+  month: string
+  newCustomerCount: number
+  newCustomerAmount: number
+  entries: NewCustomersDetailEntry[]
+}
+
+export interface NewCustomersTrendDetailResult {
+  hasInvoices: boolean
+  months: NewCustomersMonthDetail[]
+}
+
+/** Record-level detail behind the "new customers" chart — every customer counted in each month, for the "export to Excel" verification button. */
+export async function getNewCustomersTrendDetailRequest(fromYear?: string, item?: string): Promise<NewCustomersTrendDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<NewCustomersTrendDetailResult>>('/metrics/quickbooks/new-customers-trend/detail', { params: { fromYear, item } })
+  return res.data.data
+}
+
 export type CustomerUpgradesTrendGranularity = 'monthly' | 'annually'
 
 export interface CustomerUpgradesTrendPoint {
@@ -202,5 +319,37 @@ export interface CustomerUpgradesTrendResult {
  */
 export async function getCustomerUpgradesTrendRequest(item?: string, granularity: CustomerUpgradesTrendGranularity = 'monthly'): Promise<CustomerUpgradesTrendResult> {
   const res = await httpClient.get<ApiEnvelope<CustomerUpgradesTrendResult>>('/metrics/quickbooks/customer-upgrades-trend', { params: { item, granularity } })
+  return res.data.data
+}
+
+export interface CustomerUpgradesDetailEntry {
+  customerRecordId: string
+  customerName: string | null
+  priorRevenue: number
+  currentRevenue: number
+  /** currentRevenue - priorRevenue — negative for downgrade/churn. */
+  delta: number
+  bucket: 'upgrade' | 'downgrade' | 'churn'
+}
+
+export interface CustomerUpgradesPeriodDetail extends CustomerUpgradesTrendPoint {
+  /** Every existing customer behind this period's upgrade/downgrade/churn counts — "flat" customers (current === prior) are omitted, same as the aggregate. */
+  entries: CustomerUpgradesDetailEntry[]
+}
+
+export interface CustomerUpgradesTrendDetailResult {
+  hasData: boolean
+  periods: CustomerUpgradesPeriodDetail[]
+}
+
+/**
+ * Record-level detail behind the Upgrades/Downgrades/Churn charts — every
+ * existing customer's prior/current revenue and which bucket they fell
+ * into each period, for the "export to Excel" verification button shared
+ * by all three cards (each calls this with its own product/granularity
+ * selection, same as the aggregate).
+ */
+export async function getCustomerUpgradesTrendDetailRequest(item?: string, granularity: CustomerUpgradesTrendGranularity = 'monthly'): Promise<CustomerUpgradesTrendDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<CustomerUpgradesTrendDetailResult>>('/metrics/quickbooks/customer-upgrades-trend/detail', { params: { item, granularity } })
   return res.data.data
 }
