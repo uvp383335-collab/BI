@@ -232,6 +232,322 @@ export async function getCustomerUpgradesTrend(orgId: string, itemId: string | u
   return { hasData: true, points }
 }
 
+export interface CustomerRetentionAdjustedPoint {
+  /** "YYYY-MM" for 'monthly', "YYYY" for 'annually'. */
+  period: string
+  upgradeAmount: number
+  downgradeAmount: number
+  churnAmount: number
+  /** Sum of every existing (not-yet-written-off) customer's prior-period revenue — the GRR/NRR denominator. */
+  startingRevenue: number
+  grrPct: number | null
+  nrrPct: number | null
+  /** How many customers would have counted as churned again this period, but were excluded because they'd already churned once earlier in this trend's window — see summarizePeriodChangeAdjusted. */
+  suppressedChurnCount: number
+  /** The $ this adjustment held back from churnAmount above — the gap between this card's churnAmount and the unadjusted "Customer retention" card's churnAmount for the same period. */
+  suppressedChurnAmount: number
+}
+
+export interface CustomerRetentionAdjustedTrendResult {
+  hasData: boolean
+  points: CustomerRetentionAdjustedPoint[]
+}
+
+/**
+ * Same classification as summarizePeriodChange, but once a customer has
+ * registered one churn anywhere within this trend's window, they're
+ * permanently excluded from every later period's startingRevenue/upgrade/
+ * downgrade/churn accounting — not re-counted as a loss again just because
+ * their billing is irregular (invoiced some months, skipped others) and
+ * they happen to go quiet again, and not given retroactive "retained"
+ * credit for the gap either (they're simply dropped from the comparison
+ * going forward, the same as if they'd never had revenue at all). Addresses
+ * a real distortion found in production data: several customers invoice on
+ * a non-monthly cadence (e.g. every ~5 months) despite the product being
+ * categorized monthly-recurring here — under a strict month-over-month
+ * comparison every month they're not invoiced reads as a full churn, and
+ * because a customer can only ever be "new" once (a reactivation can never
+ * register as an upgrade — see invoiceRepository.getNewCustomerCountsByMonth),
+ * their comebacks never credit anything back, so the same still-active
+ * relationship can drag GRR/NRR down repeatedly with no offsetting signal.
+ * `churnedOnce` is shared and mutated across the whole chronological period
+ * loop (see getMonthlyTrendAdjusted/getAnnualTrendAdjusted), so a churn
+ * recorded in an earlier period suppresses every later one for that same
+ * customer.
+ */
+function summarizePeriodChangeAdjusted(
+  revenueByCustomer: Map<string, Map<string, number>>,
+  period: string,
+  priorPeriod: string,
+  churnedOnce: Set<string>
+): {
+  upgradeAmount: number
+  downgradeAmount: number
+  churnAmount: number
+  startingRevenue: number
+  grrPct: number | null
+  nrrPct: number | null
+  suppressedChurnCount: number
+  suppressedChurnAmount: number
+} {
+  let upgradeAmount = 0
+  let downgradeAmount = 0
+  let churnAmount = 0
+  let startingRevenue = 0
+  let suppressedChurnCount = 0
+  let suppressedChurnAmount = 0
+
+  for (const [customerRecordId, periods] of revenueByCustomer) {
+    const prev = periods.get(priorPeriod) ?? 0
+    const curr = periods.get(period) ?? 0
+    if (churnedOnce.has(customerRecordId)) {
+      if (prev > 0 && curr === 0) {
+        suppressedChurnCount++
+        suppressedChurnAmount += prev
+      }
+      continue
+    }
+    if (prev <= 0) continue // only existing customers (revenue last period) count toward starting revenue or any of the three buckets
+    startingRevenue += prev
+    if (curr > prev) {
+      upgradeAmount += curr - prev
+    } else if (curr === 0) {
+      churnAmount += prev
+      churnedOnce.add(customerRecordId)
+    } else if (curr < prev) {
+      downgradeAmount += prev - curr
+    }
+  }
+
+  const grrPct = startingRevenue > 0 ? ((startingRevenue - downgradeAmount - churnAmount) / startingRevenue) * 100 : null
+  const nrrPct = startingRevenue > 0 ? ((startingRevenue - downgradeAmount - churnAmount + upgradeAmount) / startingRevenue) * 100 : null
+  return { upgradeAmount, downgradeAmount, churnAmount, startingRevenue, grrPct, nrrPct, suppressedChurnCount, suppressedChurnAmount }
+}
+
+/** Adjusted counterpart to getMonthlyTrend — same months/comparison, but a customer's churn only ever counts once across the whole trailing window (see summarizePeriodChangeAdjusted). `churnedOnce` is created fresh per call and threaded through every month in chronological order. */
+async function getMonthlyTrendAdjusted(orgId: string, itemId: string | undefined, requiredFrequency: ProductBillingFrequency): Promise<CustomerRetentionAdjustedPoint[]> {
+  const latestMonth = latestClosedMonth()
+  const months = Array.from({ length: TRAILING_MONTHS }, (_, i) => shiftMonth(latestMonth, -(TRAILING_MONTHS - 1 - i)))
+  const { start } = monthRangeUtc(shiftMonth(months[0], -1))
+  const { end } = monthRangeUtc(months[months.length - 1])
+
+  const rows = await getRevenueRows(orgId, start, end, itemId, requiredFrequency)
+  const revenueByCustomer = groupByCustomerAndMonth(rows)
+  const churnedOnce = new Set<string>()
+
+  return months.map((month) => ({ period: month, ...summarizePeriodChangeAdjusted(revenueByCustomer, month, shiftMonth(month, -1), churnedOnce) }))
+}
+
+/** Adjusted counterpart to getAnnualTrend — same years/comparison, same once-only churn rule as getMonthlyTrendAdjusted. */
+async function getAnnualTrendAdjusted(orgId: string, itemId: string | undefined, requiredFrequency: ProductBillingFrequency): Promise<CustomerRetentionAdjustedPoint[]> {
+  const latestYear = Number(latestClosedMonth().slice(0, 4))
+  const years = Array.from({ length: TRAILING_YEARS }, (_, i) => String(latestYear - (TRAILING_YEARS - 1 - i)))
+  const from = new Date(Date.UTC(Number(years[0]) - 1, 0, 1))
+  const to = new Date(Date.UTC(latestYear, 11, 31, 23, 59, 59, 999))
+
+  const rows = await getRevenueRows(orgId, from, to, itemId, requiredFrequency)
+  const revenueByCustomerYear = new Map<string, Map<string, number>>()
+  for (const row of rows) {
+    const year = row.month.slice(0, 4)
+    if (!revenueByCustomerYear.has(row.customerRecordId)) revenueByCustomerYear.set(row.customerRecordId, new Map())
+    const yearTotals = revenueByCustomerYear.get(row.customerRecordId)!
+    yearTotals.set(year, (yearTotals.get(year) ?? 0) + row.revenue)
+  }
+  const churnedOnce = new Set<string>()
+
+  return years.map((year) => ({ period: year, ...summarizePeriodChangeAdjusted(revenueByCustomerYear, year, String(Number(year) - 1), churnedOnce) }))
+}
+
+/**
+ * "Customer retention (GRR/NRR) — Adjusted," rendered directly below the
+ * unadjusted "Customer retention" card for side-by-side comparison. Same
+ * GRR/NRR math and eligibility rules as getCustomerUpgradesTrend above, but
+ * a customer's revenue dropping to $0 only ever counts as a churn once
+ * across this trend's trailing window instead of every time it happens —
+ * see summarizePeriodChangeAdjusted for why that distinction matters.
+ * Deliberately a separate card, not a replacement: whether a repeat churn
+ * from an irregularly-billed customer should count again is a judgment
+ * call, not a strictly more "correct" number, so both views stay available.
+ */
+export async function getCustomerRetentionTrendAdjusted(
+  orgId: string,
+  itemId: string | undefined,
+  granularity: CustomerUpgradesTrendGranularity
+): Promise<CustomerRetentionAdjustedTrendResult> {
+  const requiredFrequency = granularity === 'monthly' ? 'monthly' : 'yearly'
+  const categorized = await productRepository.findCategorizedForOrg(orgId, QUICKBOOKS)
+
+  if (itemId) {
+    const product = categorized.find((p) => p.providerRecordId === itemId)
+    if (!product || product.category !== 'recurring' || product.billingFrequency !== requiredFrequency) {
+      return { hasData: false, points: [] }
+    }
+  } else if (!categorized.some((p) => p.category === 'recurring' && p.billingFrequency === requiredFrequency)) {
+    return { hasData: false, points: [] }
+  }
+
+  const points = granularity === 'monthly' ? await getMonthlyTrendAdjusted(orgId, itemId, requiredFrequency) : await getAnnualTrendAdjusted(orgId, itemId, requiredFrequency)
+  return { hasData: true, points }
+}
+
+export interface CustomerRetentionAdjustedDetailEntry {
+  customerRecordId: string
+  priorRevenue: number
+  currentRevenue: number
+  /** currentRevenue - priorRevenue — negative for downgrade/churn/suppressed-churn. */
+  delta: number
+  /** 'suppressed-churn' is a customer who dropped to $0 again but was excluded from churnAmount because they'd already churned once earlier in this window — see summarizePeriodChangeAdjusted. */
+  bucket: 'upgrade' | 'downgrade' | 'churn' | 'suppressed-churn'
+}
+
+/** summarizePeriodChangeAdjusted, plus the per-customer rows behind it (`entries`) — the raw material for the Adjusted retention card's "export to Excel" verification button. Mirrors summarizePeriodChangeWithEntries' relationship to summarizePeriodChange. */
+function summarizePeriodChangeAdjustedWithEntries(
+  revenueByCustomer: Map<string, Map<string, number>>,
+  period: string,
+  priorPeriod: string,
+  churnedOnce: Set<string>
+): {
+  upgradeAmount: number
+  downgradeAmount: number
+  churnAmount: number
+  startingRevenue: number
+  grrPct: number | null
+  nrrPct: number | null
+  suppressedChurnCount: number
+  suppressedChurnAmount: number
+  entries: CustomerRetentionAdjustedDetailEntry[]
+} {
+  let upgradeAmount = 0
+  let downgradeAmount = 0
+  let churnAmount = 0
+  let startingRevenue = 0
+  let suppressedChurnCount = 0
+  let suppressedChurnAmount = 0
+  const entries: CustomerRetentionAdjustedDetailEntry[] = []
+
+  for (const [customerRecordId, periods] of revenueByCustomer) {
+    const prev = periods.get(priorPeriod) ?? 0
+    const curr = periods.get(period) ?? 0
+    if (churnedOnce.has(customerRecordId)) {
+      if (prev > 0 && curr === 0) {
+        suppressedChurnCount++
+        suppressedChurnAmount += prev
+        entries.push({ customerRecordId, priorRevenue: prev, currentRevenue: curr, delta: -prev, bucket: 'suppressed-churn' })
+      }
+      continue
+    }
+    if (prev <= 0) continue
+    startingRevenue += prev
+    if (curr > prev) {
+      upgradeAmount += curr - prev
+      entries.push({ customerRecordId, priorRevenue: prev, currentRevenue: curr, delta: curr - prev, bucket: 'upgrade' })
+    } else if (curr === 0) {
+      churnAmount += prev
+      churnedOnce.add(customerRecordId)
+      entries.push({ customerRecordId, priorRevenue: prev, currentRevenue: curr, delta: -prev, bucket: 'churn' })
+    } else if (curr < prev) {
+      downgradeAmount += prev - curr
+      entries.push({ customerRecordId, priorRevenue: prev, currentRevenue: curr, delta: curr - prev, bucket: 'downgrade' })
+    }
+  }
+
+  const grrPct = startingRevenue > 0 ? ((startingRevenue - downgradeAmount - churnAmount) / startingRevenue) * 100 : null
+  const nrrPct = startingRevenue > 0 ? ((startingRevenue - downgradeAmount - churnAmount + upgradeAmount) / startingRevenue) * 100 : null
+  return { upgradeAmount, downgradeAmount, churnAmount, startingRevenue, grrPct, nrrPct, suppressedChurnCount, suppressedChurnAmount, entries }
+}
+
+interface AdjustedPeriodWithEntries extends CustomerRetentionAdjustedPoint {
+  entries: CustomerRetentionAdjustedDetailEntry[]
+}
+
+/** Detail counterpart to getMonthlyTrendAdjusted — same months/comparison/once-only churn rule, via summarizePeriodChangeAdjustedWithEntries instead of the aggregate-only wrapper. */
+async function getMonthlyTrendAdjustedDetail(orgId: string, itemId: string | undefined, requiredFrequency: ProductBillingFrequency): Promise<AdjustedPeriodWithEntries[]> {
+  const latestMonth = latestClosedMonth()
+  const months = Array.from({ length: TRAILING_MONTHS }, (_, i) => shiftMonth(latestMonth, -(TRAILING_MONTHS - 1 - i)))
+  const { start } = monthRangeUtc(shiftMonth(months[0], -1))
+  const { end } = monthRangeUtc(months[months.length - 1])
+
+  const rows = await getRevenueRows(orgId, start, end, itemId, requiredFrequency)
+  const revenueByCustomer = groupByCustomerAndMonth(rows)
+  const churnedOnce = new Set<string>()
+
+  return months.map((month) => ({ period: month, ...summarizePeriodChangeAdjustedWithEntries(revenueByCustomer, month, shiftMonth(month, -1), churnedOnce) }))
+}
+
+/** Detail counterpart to getAnnualTrendAdjusted — same years/comparison/once-only churn rule as getMonthlyTrendAdjustedDetail. */
+async function getAnnualTrendAdjustedDetail(orgId: string, itemId: string | undefined, requiredFrequency: ProductBillingFrequency): Promise<AdjustedPeriodWithEntries[]> {
+  const latestYear = Number(latestClosedMonth().slice(0, 4))
+  const years = Array.from({ length: TRAILING_YEARS }, (_, i) => String(latestYear - (TRAILING_YEARS - 1 - i)))
+  const from = new Date(Date.UTC(Number(years[0]) - 1, 0, 1))
+  const to = new Date(Date.UTC(latestYear, 11, 31, 23, 59, 59, 999))
+
+  const rows = await getRevenueRows(orgId, from, to, itemId, requiredFrequency)
+  const revenueByCustomerYear = new Map<string, Map<string, number>>()
+  for (const row of rows) {
+    const year = row.month.slice(0, 4)
+    if (!revenueByCustomerYear.has(row.customerRecordId)) revenueByCustomerYear.set(row.customerRecordId, new Map())
+    const yearTotals = revenueByCustomerYear.get(row.customerRecordId)!
+    yearTotals.set(year, (yearTotals.get(year) ?? 0) + row.revenue)
+  }
+  const churnedOnce = new Set<string>()
+
+  return years.map((year) => ({ period: year, ...summarizePeriodChangeAdjustedWithEntries(revenueByCustomerYear, year, String(Number(year) - 1), churnedOnce) }))
+}
+
+export interface CustomerRetentionAdjustedDetailEntryWithName extends CustomerRetentionAdjustedDetailEntry {
+  customerName: string | null
+}
+
+export interface CustomerRetentionAdjustedPeriodDetail extends CustomerRetentionAdjustedPoint {
+  /** Every existing customer behind this period's upgrade/downgrade/churn/suppressed-churn counts — classified the same way, just kept instead of collapsed. "Flat" customers and already-written-off ones with no $0 drop this period are omitted. */
+  entries: CustomerRetentionAdjustedDetailEntryWithName[]
+}
+
+export interface CustomerRetentionAdjustedTrendDetailResult {
+  hasData: boolean
+  periods: CustomerRetentionAdjustedPeriodDetail[]
+}
+
+/**
+ * Record-level backing data for getCustomerRetentionTrendAdjusted above —
+ * every existing customer's prior/current revenue and which bucket they
+ * fell into each period, including `suppressed-churn` for customers whose
+ * repeat drop-to-zero was excluded from that period's churnAmount, for the
+ * Adjusted retention card's "export to Excel" verification button. Lets
+ * someone see exactly which customers' churns the adjustment held back,
+ * not just the aggregate suppressedChurnCount/suppressedChurnAmount.
+ */
+export async function getCustomerRetentionTrendAdjustedDetail(
+  orgId: string,
+  itemId: string | undefined,
+  granularity: CustomerUpgradesTrendGranularity
+): Promise<CustomerRetentionAdjustedTrendDetailResult> {
+  const requiredFrequency = granularity === 'monthly' ? 'monthly' : 'yearly'
+  const categorized = await productRepository.findCategorizedForOrg(orgId, QUICKBOOKS)
+
+  if (itemId) {
+    const product = categorized.find((p) => p.providerRecordId === itemId)
+    if (!product || product.category !== 'recurring' || product.billingFrequency !== requiredFrequency) {
+      return { hasData: false, periods: [] }
+    }
+  } else if (!categorized.some((p) => p.category === 'recurring' && p.billingFrequency === requiredFrequency)) {
+    return { hasData: false, periods: [] }
+  }
+
+  const [periodsRaw, customers] = await Promise.all([
+    granularity === 'monthly' ? getMonthlyTrendAdjustedDetail(orgId, itemId, requiredFrequency) : getAnnualTrendAdjustedDetail(orgId, itemId, requiredFrequency),
+    quickBooksCustomerRepository.findAll(orgId, QUICKBOOKS)
+  ])
+  const nameById = new Map(customers.map((c) => [c.providerRecordId, c.displayName ?? null]))
+
+  const periods: CustomerRetentionAdjustedPeriodDetail[] = periodsRaw.map(({ entries, ...point }) => ({
+    ...point,
+    entries: entries.map((entry) => ({ ...entry, customerName: nameById.get(entry.customerRecordId) ?? null }))
+  }))
+
+  return { hasData: true, periods }
+}
+
 interface PeriodWithEntries extends CustomerUpgradesTrendPoint {
   entries: CustomerUpgradesDetailEntry[]
 }

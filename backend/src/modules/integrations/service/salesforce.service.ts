@@ -41,6 +41,8 @@ export interface SalesforceLead {
   FirstName: string | null;
   LastName: string | null;
   Status: string | null;
+  /** The Lead's own creation date — synced onto Contact.leadCreatedAt, same "CRM's own timestamp, not this app's sync timestamp" rationale as Opportunity.CreatedDate / Deal.dealCreatedAt. Powers the "Leads by Month" per-campaign chart. */
+  CreatedDate: string | null;
 }
 
 export interface SalesforceOpportunity {
@@ -281,7 +283,7 @@ export class SalesforceService {
       if (nextRecordsUrl) return await this.runQueryPage<SalesforceLead>(accessToken, instanceUrl, nextRecordsUrl);
 
       const whereClause = since ? ` WHERE LastModifiedDate >= ${since.toISOString()}` : "";
-      const soql = `SELECT Id, Email, FirstName, LastName, Status FROM Lead${whereClause} ORDER BY LastModifiedDate ASC`;
+      const soql = `SELECT Id, Email, FirstName, LastName, Status, CreatedDate FROM Lead${whereClause} ORDER BY LastModifiedDate ASC`;
       return await this.runQuery<SalesforceLead>(accessToken, instanceUrl, soql, limit);
     } catch {
       throw AppError.badRequest("Failed to fetch leads from Salesforce", "SALESFORCE_LEADS_FETCH_FAILED");
@@ -315,6 +317,41 @@ export class SalesforceService {
         .map((r) => ({ recordId: r.LeadId, value: r.NewValue, timestamp: r.CreatedDate }));
     } catch {
       return [];
+    }
+  }
+
+  /**
+   * Batch-resolves lead -> campaign id(s) for a whole page of leads via the
+   * CampaignMember junction object — unlike Opportunity, Lead has no direct
+   * CampaignId lookup field, so membership only exists as this many-to-many
+   * join (a lead can belong to more than one campaign). Powers the "Leads by
+   * Month" per-campaign chart. Degrades to an empty map rather than failing
+   * the sync, same as getLeadStatusHistory, since CampaignMember access can
+   * be restricted by org permissions independent of Lead/Campaign access.
+   */
+  static async getCampaignMembersByLead(
+    accessToken: string,
+    instanceUrl: string,
+    leadIds: string[],
+  ): Promise<Record<string, string[]>> {
+    if (leadIds.length === 0) return {};
+    try {
+      const responses = await Promise.all(
+        this.chunkIds(leadIds).map((chunk) => {
+          const ids = chunk.map((id) => `'${id}'`).join(",");
+          const soql = `SELECT LeadId, CampaignId FROM CampaignMember WHERE LeadId IN (${ids})`;
+          return this.runQuery<{ LeadId: string; CampaignId: string }>(accessToken, instanceUrl, soql);
+        }),
+      );
+      const map: Record<string, string[]> = {};
+      for (const record of responses.flatMap((response) => response.records)) {
+        const list = map[record.LeadId] ?? [];
+        list.push(record.CampaignId);
+        map[record.LeadId] = list;
+      }
+      return map;
+    } catch {
+      return {};
     }
   }
 
@@ -441,14 +478,22 @@ export class SalesforceService {
 
       const availableFields = await this.getAvailableOpportunityFields(accessToken, instanceUrl);
       const optionalSelect = this.OPTIONAL_STANDARD_FIELDS.filter((f) => availableFields.has(f));
+      // competitorField/extraFields are per-org config with no fixed API name (unlike
+      // OPTIONAL_STANDARD_FIELDS) — a typo or a field renamed/deleted in Salesforce since
+      // it was configured would otherwise make the whole SOQL query invalid and break
+      // Opportunity sync entirely. Re-checked against the live describe() result here,
+      // same availability guard as the standard fields above, so a bad config value is
+      // just dropped (no competitor/extra data for it) rather than failing the sync.
+      const availableCompetitorField = safeCompetitorField && availableFields.has(safeCompetitorField) ? safeCompetitorField : undefined;
+      const availableExtraFields = safeExtraFields.filter((f) => availableFields.has(f.apiName));
 
       const whereClause = since ? ` WHERE LastModifiedDate >= ${since.toISOString()}` : "";
       const optionalFieldsSelect = optionalSelect.length > 0 ? `, ${optionalSelect.join(", ")}` : "";
-      const competitorSelect = safeCompetitorField ? `, ${safeCompetitorField}` : "";
-      const extraSelect = safeExtraFields.length > 0 ? `, ${safeExtraFields.map((f) => f.apiName).join(", ")}` : "";
+      const competitorSelect = availableCompetitorField ? `, ${availableCompetitorField}` : "";
+      const extraSelect = availableExtraFields.length > 0 ? `, ${availableExtraFields.map((f) => f.apiName).join(", ")}` : "";
       const soql = `SELECT Id, Name, Amount, CloseDate, StageName, OwnerId, Owner.Name, Type, LeadSource, CampaignId, Campaign.Name, AccountId, Account.Name, CreatedDate, CreatedBy.Name, LastModifiedDate, LastModifiedBy.Name${optionalFieldsSelect}${competitorSelect}${extraSelect} FROM Opportunity${whereClause} ORDER BY LastModifiedDate ASC`;
       const response = await this.runQuery<Record<string, unknown>>(accessToken, instanceUrl, soql, limit);
-      return this.mapOpportunityResponse(response, safeCompetitorField, safeExtraFields);
+      return this.mapOpportunityResponse(response, availableCompetitorField, availableExtraFields);
     } catch {
       throw AppError.badRequest(
         "Failed to fetch opportunities from Salesforce",

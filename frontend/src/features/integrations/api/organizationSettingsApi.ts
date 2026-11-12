@@ -37,6 +37,8 @@ export interface OrganizationSettings {
   cm04Targets?: Cm04Target[]
   /** CM-08's MQL plan — each a total MQL count for an inclusive month range, spread evenly across its months. */
   cm08MqlTargets?: Cm08MqlTarget[]
+  /** "Lead Volume vs. Target MQL" chart's monthly target — independent from cm08MqlTargets above, same shape otherwise. */
+  leadVolumeTargets?: LeadVolumeTarget[]
 }
 
 export interface Cm04Target {
@@ -55,8 +57,21 @@ export interface Cm08MqlTarget {
   targetCount: number
 }
 
+export interface LeadVolumeTarget {
+  /** `YYYY-MM` */
+  fromMonth: string
+  /** `YYYY-MM`, inclusive */
+  toMonth: string
+  targetMql: number
+}
+
 export async function updateCm08MqlTargetsRequest(targets: Cm08MqlTarget[]): Promise<OrganizationSettings> {
   const res = await httpClient.patch<ApiEnvelope<OrganizationSettings>>('/organizations/settings/cm08-mql-targets', { targets })
+  return res.data.data
+}
+
+export async function updateLeadVolumeTargetsRequest(targets: LeadVolumeTarget[]): Promise<OrganizationSettings> {
+  const res = await httpClient.patch<ApiEnvelope<OrganizationSettings>>('/organizations/settings/lead-volume-targets', { targets })
   return res.data.data
 }
 

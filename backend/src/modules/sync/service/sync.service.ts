@@ -27,7 +27,7 @@ import {
   IMPORTED_ORIGINAL_SOURCE_PROPERTY
 } from '../../integrations/service/hubspot.service'
 import { SalesforceService } from '../../integrations/service/salesforce.service'
-import { QuickBooksService, mapWithConcurrency } from '../../integrations/service/quickbooks.service'
+import { QuickBooksService, mapWithConcurrency, QuickBooksAddress } from '../../integrations/service/quickbooks.service'
 import * as integrationsService from '../../integrations/service/integrations.service'
 import { integrationsRepository } from '../../integrations/repository/integrations.repository'
 import { organizationsRepository } from '../../organizations/repository/organizations.repository'
@@ -658,7 +658,10 @@ async function syncSalesforceLeadsAsContacts(
     const leadIds = response.records.map((lead) => lead.Id)
     // Batched once per page, mirroring the anti-N+1 shape used throughout the
     // HubSpot sync above.
-    const statusHistories = await SalesforceService.getLeadStatusHistory(accessToken, instanceUrl, leadIds)
+    const [statusHistories, campaignIdsByLead] = await Promise.all([
+      SalesforceService.getLeadStatusHistory(accessToken, instanceUrl, leadIds),
+      SalesforceService.getCampaignMembersByLead(accessToken, instanceUrl, leadIds)
+    ])
     const historyByLead = new Map<string, { value: string; timestamp: Date }[]>()
     for (const entry of statusHistories) {
       const list = historyByLead.get(entry.recordId) ?? []
@@ -672,7 +675,9 @@ async function syncSalesforceLeadsAsContacts(
       firstname: lead.FirstName ?? undefined,
       lastname: lead.LastName ?? undefined,
       lifecycleStage: lead.Status ?? undefined,
-      lifecycleStageHistory: historyByLead.get(lead.Id) ?? []
+      lifecycleStageHistory: historyByLead.get(lead.Id) ?? [],
+      leadCreatedAt: lead.CreatedDate ? new Date(lead.CreatedDate) : undefined,
+      campaignIds: campaignIdsByLead[lead.Id] ?? []
     }))
 
     await contactRepository.bulkUpsert(orgId, provider, contacts)
@@ -859,11 +864,19 @@ async function syncQuickBooksCustomers(
   await syncJobRepository.updateEntityProgress(jobId, 'customers', { total: totalSynced, status: 'completed' })
 }
 
+/** Invoice.BillAddr (QuickBooks' own field names) -> this app's InvoiceBillingAddressDocument shape — undefined when QuickBooks sent no address at all, rather than storing an all-empty object. */
+function toInvoiceBillingAddress(addr?: QuickBooksAddress) {
+  if (!addr) return undefined
+  const { Line1, Line2, City, CountrySubDivisionCode, PostalCode, Country } = addr
+  if (!Line1 && !Line2 && !City && !CountrySubDivisionCode && !PostalCode && !Country) return undefined
+  return { line1: Line1, line2: Line2, city: City, state: CountrySubDivisionCode, postalCode: PostalCode, country: Country }
+}
+
 /**
  * Syncs QuickBooks Invoices — the raw material for the customer revenue
  * roll-forward that VC-01/VC-02 (and every other QuickBooks-revenue metric)
- * read from. Only the per-invoice total and date are kept; see Invoice.model.ts
- * for why line-item detail isn't pulled yet.
+ * read from, plus each line's Item reference/amount and the invoice's own
+ * "Bill to" address (see Invoice.model.ts for why those are each kept).
  */
 async function syncQuickBooksInvoices(
   orgId: string,
@@ -891,7 +904,8 @@ async function syncQuickBooksInvoices(
       // Only sales-item lines carry a resolvable Item ref — discount/subtotal/description lines don't and are dropped.
       lines: (invoice.Line ?? [])
         .filter((line) => line.SalesItemLineDetail?.ItemRef?.value)
-        .map((line) => ({ itemId: line.SalesItemLineDetail!.ItemRef!.value, amount: line.Amount ?? 0 }))
+        .map((line) => ({ itemId: line.SalesItemLineDetail!.ItemRef!.value, amount: line.Amount ?? 0 })),
+      billingAddress: toInvoiceBillingAddress(invoice.BillAddr)
     }))
 
     await invoiceRepository.bulkUpsert(orgId, provider, invoices)

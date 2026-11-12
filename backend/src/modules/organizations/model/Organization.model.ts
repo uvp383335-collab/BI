@@ -113,12 +113,30 @@ export interface OrganizationSettings {
    * comparison and plan-based flags stay off for it.
    */
   cm08MqlTargets?: Cm08MqlTarget[]
+  /**
+   * "Lead Volume vs. Target MQL" dashboard chart's target — a separate,
+   * independently-tuned target from `cm08MqlTargets` above (the user
+   * explicitly wants these kept distinct even though both are phrased as
+   * "target MQL"): this one is compared against a *snapshot* count of
+   * contacts sitting at the Lead stage as of each month's start, not
+   * CM-08's "new MQL entries this month" count. Entered like CM-04's
+   * targets, not CM-08's: `targetMql` is a per-month figure (every month in
+   * the row's range gets exactly that number), not a total divided across
+   * the range — see leadVolumeVsTarget.service.ts's leadVolumeTargetRows.
+   */
+  leadVolumeTargets?: LeadVolumeTarget[]
 }
 
 export interface Cm08MqlTarget {
   fromMonth: string
   toMonth: string
   targetCount: number
+}
+
+export interface LeadVolumeTarget {
+  fromMonth: string
+  toMonth: string
+  targetMql: number
 }
 
 export interface Cm04Target {
@@ -183,6 +201,19 @@ const organizationSchema = new Schema<OrganizationDocument>(
               fromMonth: { type: String, required: true },
               toMonth: { type: String, required: true },
               targetCount: { type: Number, required: true, min: 0 }
+            },
+            { _id: false }
+          )
+        ],
+        default: undefined
+      },
+      leadVolumeTargets: {
+        type: [
+          new Schema(
+            {
+              fromMonth: { type: String, required: true },
+              toMonth: { type: String, required: true },
+              targetMql: { type: Number, required: true, min: 0 }
             },
             { _id: false }
           )

@@ -40,6 +40,16 @@ export interface QuickBooksInvoiceLine {
   SalesItemLineDetail?: { ItemRef?: { value: string } };
 }
 
+/** QuickBooks' shared postal-address shape — appears as `BillAddr`/`ShipAddr` on both Invoice and Customer. */
+export interface QuickBooksAddress {
+  Line1?: string;
+  Line2?: string;
+  City?: string;
+  CountrySubDivisionCode?: string;
+  PostalCode?: string;
+  Country?: string;
+}
+
 export interface QuickBooksInvoice {
   Id: string;
   CustomerRef: { value: string };
@@ -47,6 +57,8 @@ export interface QuickBooksInvoice {
   TotalAmt: number;
   /** Product-category/billing-frequency-aware GRR/NRR (metrics.service.ts's recurring roll-forward) reads which Item each line billed and for how much — QuickBooks always returns this, it just wasn't typed/persisted before that feature existed. */
   Line?: QuickBooksInvoiceLine[];
+  /** The "Bill to" address shown on the invoice itself — QuickBooks always returns this, just wasn't typed/persisted before the Invoice sync needed it. */
+  BillAddr?: QuickBooksAddress;
 }
 
 export interface QuickBooksItem {
@@ -61,7 +73,7 @@ export interface QuickBooksDepartment {
 }
 
 export interface QuickBooksCustomerWithBillingAddress extends QuickBooksCustomer {
-  BillAddr?: { CountrySubDivisionCode?: string };
+  BillAddr?: QuickBooksAddress;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

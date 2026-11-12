@@ -23,7 +23,22 @@ import { useIntegrationsStatus } from '../../integrations/hooks/useIntegrations'
 import { IntegrationProvider } from '../../integrations/api/integrationsApi'
 import { useCampaigns, useEntityCounts, useFunnels, useOpportunities, usePipelines, useProducts, useStartSync, useSyncStatus } from '../hooks/useSync'
 import { Campaign, FunnelsResponse, Opportunity, Product } from '../api/syncApi'
-import { useMetric, useMetricTrend, useQualifiedPipelineTrend, useLeadToMqlTrend, useMqlToSqlTrend } from '../hooks/useMetrics'
+import {
+  useMetric,
+  useMetricTrend,
+  useQualifiedPipelineTrend,
+  useLeadToMqlTrend,
+  useMqlToSqlTrend,
+  useCampaignWonOpportunities,
+  useCampaignRoi,
+  useCompetitorWinRate,
+  useLeadVolumeVsTarget,
+  useLeadsByMonthByCampaign,
+  useOpportunitiesByLeadSource,
+  useOpportunitiesByLeadSourceByMonth,
+  useCustomerRevenueConcentration,
+  useCustomerRevenueConcentrationByMonth
+} from '../hooks/useMetrics'
 import { useAuthContext } from '../../../shared/context/AuthContext'
 import { StatsCard } from '../components/StatsCard'
 import { MetricCard } from '../components/MetricCard'
@@ -36,15 +51,26 @@ import { RecurringRevenueTrendChart } from '../components/RecurringRevenueTrendC
 import { RecurringRevenueShareChart } from '../components/RecurringRevenueShareChart'
 import { GAndAExpenseTrendChart } from '../components/GAndAExpenseTrendChart'
 import { QualifiedPipelineTrendChart } from '../components/QualifiedPipelineTrendChart'
+import { CampaignWonOpportunitiesChart, CampaignWonOpportunitiesTopN } from '../components/CampaignWonOpportunitiesChart'
+import { CampaignRoiChart, CampaignRoiTopN } from '../components/CampaignRoiChart'
+import { CompetitorWinRateChart } from '../components/CompetitorWinRateChart'
+import { LeadVolumeVsTargetMqlChart } from '../components/LeadVolumeVsTargetMqlChart'
+import { LeadsByMonthByCampaignChart } from '../components/LeadsByMonthByCampaignChart'
+import { OpportunitiesByLeadSourceChart } from '../components/OpportunitiesByLeadSourceChart'
+import { OpportunitiesByLeadSourceByMonthChart } from '../components/OpportunitiesByLeadSourceByMonthChart'
+import { CustomerRevenueConcentrationChart } from '../components/CustomerRevenueConcentrationChart'
+import { CustomerRevenueConcentrationByMonthChart } from '../components/CustomerRevenueConcentrationByMonthChart'
 import { StageConversionTrendChart } from '../components/StageConversionTrendChart'
 import { ProductRevenueGrowthCard } from '../components/ProductRevenueGrowthCard'
 import { InvoiceRevenueGrowthByProductCard } from '../components/InvoiceRevenueGrowthByProductCard'
+import { InvoiceRevenueGrowthByStateCard } from '../components/InvoiceRevenueGrowthByStateCard'
 import { NewCustomersTrendChart } from '../components/NewCustomersTrendChart'
 import { CACTrendChart } from '../components/CACTrendChart'
 import { CustomerUpgradesTrendChart } from '../components/CustomerUpgradesTrendChart'
 import { CustomerDowngradesTrendChart } from '../components/CustomerDowngradesTrendChart'
 import { CustomerChurnTrendChart } from '../components/CustomerChurnTrendChart'
 import { CustomerRetentionTrendChart } from '../components/CustomerRetentionTrendChart'
+import { CustomerRetentionAdjustedTrendChart } from '../components/CustomerRetentionAdjustedTrendChart'
 import { OpportunitiesTable } from '../components/OpportunitiesTable'
 import { CampaignsTable } from '../components/CampaignsTable'
 import { OpportunityDetailPanel } from '../components/OpportunityDetailPanel'
@@ -58,9 +84,11 @@ import {
   useGAndAExpenseTrend,
   useProductRevenueGrowth,
   useInvoiceRevenueGrowthByProduct,
+  useInvoiceRevenueGrowthByState,
   useNewCustomersTrend,
   useCACTrend,
-  useCustomerUpgradesTrend
+  useCustomerUpgradesTrend,
+  useCustomerRetentionTrendAdjusted
 } from '../hooks/useProductRevenueGrowth'
 import { useProductCategories } from '../../integrations/hooks/useProductCategories'
 import { CustomerUpgradesTrendGranularity } from '../api/productRevenueGrowthApi'
@@ -86,6 +114,19 @@ const GRANULARITY_LABEL: Record<StageConversionGranularity, string> = {
 // it, which shows the same thing without the live per-product QuickBooks report calls (currently also
 // failing when the org's QuickBooks token needs a refresh) — flip back to true to bring it back.
 const SHOW_LIVE_PRODUCT_REVENUE_GROWTH = false
+
+// Hidden per request — flip back to true to bring "Customer retention (GRR/NRR) — Adjusted" back.
+const SHOW_CUSTOMER_RETENTION_ADJUSTED = false
+
+// Hidden per request — flip back to true to bring the detailed "Revenue Growth (YoY)" (VC-13) card back.
+// The Executive summary's compact KpiTile for the same metric is unaffected.
+const SHOW_VC13_REVENUE_GROWTH_CARD = false
+
+// Hidden per request — flip back to true to bring the "COGS %" (VC-04) card back.
+const SHOW_VC04_COGS_CARD = false
+
+// Hidden per request — flip back to true to bring the "EBITDA Margin" (VC-10) card back.
+const SHOW_VC10_EBITDA_MARGIN_CARD = false
 
 const formatMonth = (month: string) => {
   const [year, mo] = month.split('-').map(Number)
@@ -236,6 +277,7 @@ export const CrmDashboardPage: React.FC = () => {
   const [syncError, setSyncError] = useState<string | null>(null)
   const [activeFunnelsProvider, setActiveFunnelsProvider] = useState<'hubspot' | 'salesforce'>('hubspot')
   const [conversionTrendGranularity, setConversionTrendGranularity] = useState<StageConversionGranularity>('quarterly')
+  const [opportunitiesByLeadSourceByMonthGranularity, setOpportunitiesByLeadSourceByMonthGranularity] = useState<StageConversionGranularity>('monthly')
   const [hubspotPipelineFilter, setHubspotPipelineFilter] = useState('')
   const [salesforcePipelineFilter, setSalesforcePipelineFilter] = useState('')
   const [hubspotProductFilter, setHubspotProductFilter] = useState('')
@@ -261,8 +303,17 @@ export const CrmDashboardPage: React.FC = () => {
   const [customerChurnProductFilter, setCustomerChurnProductFilter] = useState('')
   const [customerRetentionGranularity, setCustomerRetentionGranularity] = useState<CustomerUpgradesTrendGranularity>('monthly')
   const [customerRetentionProductFilter, setCustomerRetentionProductFilter] = useState('')
+  const [customerRetentionAdjustedGranularity, setCustomerRetentionAdjustedGranularity] = useState<CustomerUpgradesTrendGranularity>('monthly')
+  const [customerRetentionAdjustedProductFilter, setCustomerRetentionAdjustedProductFilter] = useState('')
   const [productRevenueGrowthViewMode, setProductRevenueGrowthViewMode] = useState<'percentage' | 'absolute'>('absolute')
   const [invoiceRevenueGrowthViewMode, setInvoiceRevenueGrowthViewMode] = useState<'percentage' | 'absolute'>('absolute')
+  const [invoiceRevenueGrowthByStateViewMode, setInvoiceRevenueGrowthByStateViewMode] = useState<'percentage' | 'absolute'>('absolute')
+  const [campaignWonOpportunitiesViewMode, setCampaignWonOpportunitiesViewMode] = useState<'count' | 'amount'>('count')
+  const [campaignWonOpportunitiesTopN, setCampaignWonOpportunitiesTopN] = useState<CampaignWonOpportunitiesTopN>(10)
+  const [campaignRoiTopN, setCampaignRoiTopN] = useState<CampaignRoiTopN>(10)
+  const [invoiceRevenueGrowthByStateProductFilter, setInvoiceRevenueGrowthByStateProductFilter] = useState('')
+  const [customerRevenueConcentrationProductFilter, setCustomerRevenueConcentrationProductFilter] = useState('')
+  const [customerRevenueConcentrationByMonthGranularity, setCustomerRevenueConcentrationByMonthGranularity] = useState<StageConversionGranularity>('monthly')
   const [hubspotFromDate, setHubspotFromDate] = useState('')
   const [hubspotToDate, setHubspotToDate] = useState('')
   const [salesforceFromDate, setSalesforceFromDate] = useState('')
@@ -382,6 +433,11 @@ export const CrmDashboardPage: React.FC = () => {
     customerRetentionProductFilter || undefined,
     customerRetentionGranularity
   )
+  const { data: customerRetentionTrendAdjusted, isLoading: isCustomerRetentionTrendAdjustedLoading } = useCustomerRetentionTrendAdjusted(
+    quickbooksMetricsEnabled && SHOW_CUSTOMER_RETENTION_ADJUSTED,
+    customerRetentionAdjustedProductFilter || undefined,
+    customerRetentionAdjustedGranularity
+  )
   const productRevenueGrowthOptions = {
     fromYear: quickbooksFromYearParam,
     department: quickbooksLocationFilter || undefined,
@@ -392,18 +448,30 @@ export const CrmDashboardPage: React.FC = () => {
     quickbooksMetricsEnabled,
     quickbooksFromYearParam
   )
+  const { data: invoiceRevenueGrowthByState, isLoading: isInvoiceRevenueGrowthByStateLoading } = useInvoiceRevenueGrowthByState(
+    quickbooksMetricsEnabled,
+    quickbooksFromYearParam,
+    invoiceRevenueGrowthByStateProductFilter || undefined
+  )
 
   const { data: vc01, isLoading: isVc01Loading } = useMetric('vc-01', quickbooksMetricsEnabled)
   const { data: vc02, isLoading: isVc02Loading } = useMetric('vc-02', quickbooksMetricsEnabled)
   const { data: vc03, isLoading: isVc03Loading } = useMetric('vc-03', quickbooksMetricsEnabled)
-  const { data: vc04, isLoading: isVc04Loading } = useMetric('vc-04', quickbooksMetricsEnabled, undefined, quickbooksItemFilter)
+  const { data: vc04, isLoading: isVc04Loading } = useMetric('vc-04', quickbooksMetricsEnabled && SHOW_VC04_COGS_CARD, undefined, quickbooksItemFilter)
   const { data: vc06, isLoading: isVc06Loading } = useMetric('vc-06', quickbooksMetricsEnabled)
   const { data: vc07, isLoading: isVc07Loading } = useMetric('vc-07', quickbooksMetricsEnabled)
-  const { data: vc10, isLoading: isVc10Loading } = useMetric('vc-10', quickbooksMetricsEnabled, undefined, quickbooksItemFilter)
-  const { data: vc04Trend, isLoading: isVc04TrendLoading } = useMetricTrend('vc-04', quickbooksMetricsEnabled, quickbooksItemFilter, quickbooksFromYearParam)
-  const { data: vc10Trend, isLoading: isVc10TrendLoading } = useMetricTrend('vc-10', quickbooksMetricsEnabled, quickbooksItemFilter, quickbooksFromYearParam)
+  const { data: vc10, isLoading: isVc10Loading } = useMetric('vc-10', quickbooksMetricsEnabled && SHOW_VC10_EBITDA_MARGIN_CARD, undefined, quickbooksItemFilter)
+  const { data: vc04Trend, isLoading: isVc04TrendLoading } = useMetricTrend('vc-04', quickbooksMetricsEnabled && SHOW_VC04_COGS_CARD, quickbooksItemFilter, quickbooksFromYearParam)
+  const { data: vc10Trend, isLoading: isVc10TrendLoading } = useMetricTrend('vc-10', quickbooksMetricsEnabled && SHOW_VC10_EBITDA_MARGIN_CARD, quickbooksItemFilter, quickbooksFromYearParam)
   const { data: vc13, isLoading: isVc13Loading } = useMetric('vc-13', quickbooksMetricsEnabled, undefined, quickbooksItemFilter, quickbooksStateFilter || undefined, quickbooksRevenueViewMode)
-  const { data: vc13Trend, isLoading: isVc13TrendLoading } = useMetricTrend('vc-13', quickbooksMetricsEnabled, quickbooksItemFilter, quickbooksFromYearParam, quickbooksStateFilter || undefined, quickbooksRevenueViewMode)
+  const { data: vc13Trend, isLoading: isVc13TrendLoading } = useMetricTrend(
+    'vc-13',
+    quickbooksMetricsEnabled && SHOW_VC13_REVENUE_GROWTH_CARD,
+    quickbooksItemFilter,
+    quickbooksFromYearParam,
+    quickbooksStateFilter || undefined,
+    quickbooksRevenueViewMode
+  )
   const { data: vc14, isLoading: isVc14Loading } = useMetric('vc-14', quickbooksMetricsEnabled)
   const { data: cb05, isLoading: isCb05Loading } = useMetric('cb-05', quickbooksMetricsEnabled)
   const { data: cb07, isLoading: isCb07Loading } = useMetric('cb-07', quickbooksMetricsEnabled)
@@ -423,9 +491,25 @@ export const CrmDashboardPage: React.FC = () => {
   const { data: mqlToSqlTrendHubspot, isLoading: isMqlToSqlTrendHubspotLoading } = useMqlToSqlTrend(hubspotMetricsEnabled, 'hubspot', conversionTrendGranularity)
 
   const { data: cm04Salesforce, isLoading: isCm04SalesforceLoading } = useMetric('cm-04', salesforceMetricsEnabled, 'salesforce')
-  const { data: qualifiedPipelineTrendSalesforce, isLoading: isQualifiedPipelineTrendSalesforceLoading } = useQualifiedPipelineTrend(salesforceMetricsEnabled, 'salesforce')
-  const { data: leadToMqlTrendSalesforce, isLoading: isLeadToMqlTrendSalesforceLoading } = useLeadToMqlTrend(salesforceMetricsEnabled, 'salesforce', conversionTrendGranularity)
-  const { data: mqlToSqlTrendSalesforce, isLoading: isMqlToSqlTrendSalesforceLoading } = useMqlToSqlTrend(salesforceMetricsEnabled, 'salesforce', conversionTrendGranularity)
+  const { data: campaignWonOpportunities, isLoading: isCampaignWonOpportunitiesLoading } = useCampaignWonOpportunities(salesforceMetricsEnabled)
+  const { data: campaignRoi, isLoading: isCampaignRoiLoading } = useCampaignRoi(salesforceMetricsEnabled)
+  const { data: competitorWinRate, isLoading: isCompetitorWinRateLoading } = useCompetitorWinRate(salesforceMetricsEnabled)
+  const { data: leadVolumeVsTarget, isLoading: isLeadVolumeVsTargetLoading } = useLeadVolumeVsTarget(hubspotMetricsEnabled)
+  const { data: leadsByMonthByCampaign, isLoading: isLeadsByMonthByCampaignLoading } = useLeadsByMonthByCampaign(salesforceMetricsEnabled)
+  const { data: opportunitiesByLeadSource, isLoading: isOpportunitiesByLeadSourceLoading } = useOpportunitiesByLeadSource(salesforceMetricsEnabled)
+  const { data: opportunitiesByLeadSourceByMonth, isLoading: isOpportunitiesByLeadSourceByMonthLoading } = useOpportunitiesByLeadSourceByMonth(
+    salesforceMetricsEnabled,
+    opportunitiesByLeadSourceByMonthGranularity
+  )
+  const { data: customerRevenueConcentration, isLoading: isCustomerRevenueConcentrationLoading } = useCustomerRevenueConcentration(
+    quickbooksMetricsEnabled,
+    customerRevenueConcentrationProductFilter || undefined
+  )
+  const { data: customerRevenueConcentrationByMonth, isLoading: isCustomerRevenueConcentrationByMonthLoading } = useCustomerRevenueConcentrationByMonth(
+    quickbooksMetricsEnabled,
+    customerRevenueConcentrationProductFilter || undefined,
+    customerRevenueConcentrationByMonthGranularity
+  )
   const { data: cm06Salesforce, isLoading: isCm06SalesforceLoading } = useMetric('cm-06', salesforceMetricsEnabled, 'salesforce')
   const { data: cm08Salesforce, isLoading: isCm08SalesforceLoading } = useMetric('cm-08', salesforceMetricsEnabled, 'salesforce')
   const { data: cm05Salesforce, isLoading: isCm05SalesforceLoading } = useMetric('cm-05', salesforceMetricsEnabled, 'salesforce')
@@ -664,7 +748,7 @@ export const CrmDashboardPage: React.FC = () => {
             )}
 
             {/* Funnel Conversion Trends — per connected CRM, same cohort math as CM-06, traced monthly/quarterly/yearly. */}
-            {(isHubspotVisible || isSalesforceVisible) && (
+            {isHubspotVisible && (
               <CollapsibleSection
                 title="Funnel Conversion Trends"
                 description="Of each period's cohort entering a stage, the share that went on to reach the next one."
@@ -688,92 +772,48 @@ export const CrmDashboardPage: React.FC = () => {
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-sm font-semibold text-ink-2">Lead → MQL</h4>
-                    <div className={`mt-3 grid grid-cols-1 gap-6 ${bothCrmsVisible ? 'sm:grid-cols-2' : ''}`}>
-                      {isHubspotVisible && (
-                        <StageConversionTrendChart
-                          title={`Lead → MQL Conversion Rate (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('HubSpot')}`}
-                          fromLabel="lead"
-                          granularity={conversionTrendGranularity}
-                          points={(leadToMqlTrendHubspot?.points ?? []).map((p) => ({ periodStart: p.periodStart, fromCount: p.leadCount, toCount: p.mqlCount, conversionRatePct: p.conversionRatePct }))}
-                          isLoading={isLeadToMqlTrendHubspotLoading}
-                          onExport={async () => {
-                            const detail = await getLeadToMqlTrendDetailRequest('hubspot', conversionTrendGranularity)
-                            await exportStageConversionDetailToExcel({
-                              title: `Lead → MQL Conversion Rate (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('HubSpot')}`,
-                              description: "Share of each period's new leads that went on to become a Marketing Qualified Lead.",
-                              provider: 'hubspot',
-                              fromLabel: 'Lead',
-                              toLabel: 'MQL',
-                              detail
-                            })
-                          }}
-                        />
-                      )}
-                      {isSalesforceVisible && (
-                        <StageConversionTrendChart
-                          title={`Lead → MQL Conversion Rate (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('Salesforce')}`}
-                          fromLabel="lead"
-                          granularity={conversionTrendGranularity}
-                          points={(leadToMqlTrendSalesforce?.points ?? []).map((p) => ({ periodStart: p.periodStart, fromCount: p.leadCount, toCount: p.mqlCount, conversionRatePct: p.conversionRatePct }))}
-                          isLoading={isLeadToMqlTrendSalesforceLoading}
-                          onExport={async () => {
-                            const detail = await getLeadToMqlTrendDetailRequest('salesforce', conversionTrendGranularity)
-                            await exportStageConversionDetailToExcel({
-                              title: `Lead → MQL Conversion Rate (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('Salesforce')}`,
-                              description: "Share of each period's new leads that went on to become a Marketing Qualified Lead.",
-                              provider: 'salesforce',
-                              fromLabel: 'Lead',
-                              toLabel: 'MQL',
-                              detail
-                            })
-                          }}
-                        />
-                      )}
+                    <div className="mt-3 grid grid-cols-1 gap-6">
+                      <StageConversionTrendChart
+                        title={`Lead → MQL Conversion Rate CM-06 (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('HubSpot')}`}
+                        fromLabel="lead"
+                        granularity={conversionTrendGranularity}
+                        points={(leadToMqlTrendHubspot?.points ?? []).map((p) => ({ periodStart: p.periodStart, fromCount: p.leadCount, toCount: p.mqlCount, conversionRatePct: p.conversionRatePct }))}
+                        isLoading={isLeadToMqlTrendHubspotLoading}
+                        onExport={async () => {
+                          const detail = await getLeadToMqlTrendDetailRequest('hubspot', conversionTrendGranularity)
+                          await exportStageConversionDetailToExcel({
+                            title: `Lead → MQL Conversion Rate CM-06 (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('HubSpot')}`,
+                            description: "Share of each period's new leads that went on to become a Marketing Qualified Lead.",
+                            provider: 'hubspot',
+                            fromLabel: 'Lead',
+                            toLabel: 'MQL',
+                            detail
+                          })
+                        }}
+                      />
                     </div>
                   </div>
                   <div>
                     <h4 className="text-sm font-semibold text-ink-2">MQL → SQL</h4>
-                    <div className={`mt-3 grid grid-cols-1 gap-6 ${bothCrmsVisible ? 'sm:grid-cols-2' : ''}`}>
-                      {isHubspotVisible && (
-                        <StageConversionTrendChart
-                          title={`MQL → SQL Conversion Rate (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('HubSpot')}`}
-                          fromLabel="MQL"
-                          granularity={conversionTrendGranularity}
-                          points={(mqlToSqlTrendHubspot?.points ?? []).map((p) => ({ periodStart: p.periodStart, fromCount: p.mqlCount, toCount: p.sqlCount, conversionRatePct: p.conversionRatePct }))}
-                          isLoading={isMqlToSqlTrendHubspotLoading}
-                          onExport={async () => {
-                            const detail = await getMqlToSqlTrendDetailRequest('hubspot', conversionTrendGranularity)
-                            await exportStageConversionDetailToExcel({
-                              title: `MQL → SQL Conversion Rate (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('HubSpot')}`,
-                              description: "Share of each period's new MQLs that went on to become a Sales Qualified Lead.",
-                              provider: 'hubspot',
-                              fromLabel: 'MQL',
-                              toLabel: 'SQL',
-                              detail
-                            })
-                          }}
-                        />
-                      )}
-                      {isSalesforceVisible && (
-                        <StageConversionTrendChart
-                          title={`MQL → SQL Conversion Rate (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('Salesforce')}`}
-                          fromLabel="MQL"
-                          granularity={conversionTrendGranularity}
-                          points={(mqlToSqlTrendSalesforce?.points ?? []).map((p) => ({ periodStart: p.periodStart, fromCount: p.mqlCount, toCount: p.sqlCount, conversionRatePct: p.conversionRatePct }))}
-                          isLoading={isMqlToSqlTrendSalesforceLoading}
-                          onExport={async () => {
-                            const detail = await getMqlToSqlTrendDetailRequest('salesforce', conversionTrendGranularity)
-                            await exportStageConversionDetailToExcel({
-                              title: `MQL → SQL Conversion Rate (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('Salesforce')}`,
-                              description: "Share of each period's new MQLs that went on to become a Sales Qualified Lead.",
-                              provider: 'salesforce',
-                              fromLabel: 'MQL',
-                              toLabel: 'SQL',
-                              detail
-                            })
-                          }}
-                        />
-                      )}
+                    <div className="mt-3 grid grid-cols-1 gap-6">
+                      <StageConversionTrendChart
+                        title={`MQL → SQL Conversion Rate CM-06 (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('HubSpot')}`}
+                        fromLabel="MQL"
+                        granularity={conversionTrendGranularity}
+                        points={(mqlToSqlTrendHubspot?.points ?? []).map((p) => ({ periodStart: p.periodStart, fromCount: p.mqlCount, toCount: p.sqlCount, conversionRatePct: p.conversionRatePct }))}
+                        isLoading={isMqlToSqlTrendHubspotLoading}
+                        onExport={async () => {
+                          const detail = await getMqlToSqlTrendDetailRequest('hubspot', conversionTrendGranularity)
+                          await exportStageConversionDetailToExcel({
+                            title: `MQL → SQL Conversion Rate cm-06 (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('HubSpot')}`,
+                            description: "Share of each period's new MQLs that went on to become a Sales Qualified Lead.",
+                            provider: 'hubspot',
+                            fromLabel: 'MQL',
+                            toLabel: 'SQL',
+                            detail
+                          })
+                        }}
+                      />
                     </div>
                   </div>
                 </div>
@@ -833,64 +873,70 @@ export const CrmDashboardPage: React.FC = () => {
                   <MetricCard id="VC-01" title="Gross Revenue Retention" description="Of the recurring revenue you started the period with, how much you kept" icon={<RefreshCcw className="h-5 w-5" />} metric={vc01} isLoading={isVc01Loading} />
                   <MetricCard id="VC-02" title="Net Revenue Retention" description="Same as GRR, but upsells count — can exceed 100%" icon={<TrendingDown className="h-5 w-5" />} metric={vc02} isLoading={isVc02Loading} />
                   <MetricCard id="VC-03" title="New-Logo Revenue Growth" description="Growth of revenue from brand-new customers" icon={<Rocket className="h-5 w-5" />} metric={vc03} isLoading={isVc03Loading} />
-                  <MetricCard
-                    id="VC-04"
-                    title={`COGS %${quickbooksTitleSuffix}`}
-                    description="Direct delivery cost as a share of revenue"
-                    icon={<PieChart className="h-5 w-5" />}
-                    metric={vc04}
-                    isLoading={isVc04Loading}
-                    wrapperClassName="lg:col-span-3"
-                    trend={<MetricTrendChart embedded title="COGS %" description="" color="var(--color-brand)" points={vc04Trend?.points ?? []} isLoading={isVc04TrendLoading} />}
-                    trendPoints={vc04Trend?.points}
-                  />
-                  <MetricCard
-                    id="VC-10"
-                    title={`EBITDA Margin${quickbooksTitleSuffix}`}
-                    description="EBITDA as a share of revenue"
-                    icon={<BarChart3 className="h-5 w-5" />}
-                    metric={vc10}
-                    isLoading={isVc10Loading}
-                    wrapperClassName="lg:col-span-3"
-                    trend={<MetricTrendChart embedded title="EBITDA Margin %" description="" color="var(--color-teal)" points={vc10Trend?.points ?? []} isLoading={isVc10TrendLoading} />}
-                    trendPoints={vc10Trend?.points}
-                  />
-                  <MetricCard
-                    id="VC-13"
-                    title={`Revenue Growth (YoY)${quickbooksTitleSuffix}`}
-                    description="Total revenue growth, recurring vs. non-recurring"
-                    icon={<LineChart className="h-5 w-5" />}
-                    metric={vc13}
-                    isLoading={isVc13Loading}
-                    wrapperClassName="lg:col-span-3"
-                    controls={
-                      <>
-                        {quickbooksCustomerStates && quickbooksCustomerStates.length > 0 && (
-                          <select className="form-input-dark w-auto" value={quickbooksStateFilter} onChange={(e) => setQuickbooksStateFilter(e.target.value)} aria-label="Billing state">
-                            <option value="">All states</option>
-                            {quickbooksCustomerStates.map((state) => (
-                              <option key={state} value={state}>
-                                {state}
-                              </option>
-                            ))}
-                          </select>
-                        )}
+                  {SHOW_VC04_COGS_CARD && (
+                    <MetricCard
+                      id="VC-04"
+                      title={`COGS %${quickbooksTitleSuffix}`}
+                      description="Direct delivery cost as a share of revenue"
+                      icon={<PieChart className="h-5 w-5" />}
+                      metric={vc04}
+                      isLoading={isVc04Loading}
+                      wrapperClassName="lg:col-span-3"
+                      trend={<MetricTrendChart embedded title="COGS %" description="" color="var(--color-brand)" points={vc04Trend?.points ?? []} isLoading={isVc04TrendLoading} />}
+                      trendPoints={vc04Trend?.points}
+                    />
+                  )}
+                  {SHOW_VC10_EBITDA_MARGIN_CARD && (
+                    <MetricCard
+                      id="VC-10"
+                      title={`EBITDA Margin${quickbooksTitleSuffix}`}
+                      description="EBITDA as a share of revenue"
+                      icon={<BarChart3 className="h-5 w-5" />}
+                      metric={vc10}
+                      isLoading={isVc10Loading}
+                      wrapperClassName="lg:col-span-3"
+                      trend={<MetricTrendChart embedded title="EBITDA Margin %" description="" color="var(--color-teal)" points={vc10Trend?.points ?? []} isLoading={isVc10TrendLoading} />}
+                      trendPoints={vc10Trend?.points}
+                    />
+                  )}
+                  {SHOW_VC13_REVENUE_GROWTH_CARD && (
+                    <MetricCard
+                      id="VC-13"
+                      title={`Revenue Growth (YoY)${quickbooksTitleSuffix}`}
+                      description="Total revenue growth, recurring vs. non-recurring"
+                      icon={<LineChart className="h-5 w-5" />}
+                      metric={vc13}
+                      isLoading={isVc13Loading}
+                      wrapperClassName="lg:col-span-3"
+                      controls={
+                        <>
+                          {quickbooksCustomerStates && quickbooksCustomerStates.length > 0 && (
+                            <select className="form-input-dark w-auto" value={quickbooksStateFilter} onChange={(e) => setQuickbooksStateFilter(e.target.value)} aria-label="Billing state">
+                              <option value="">All states</option>
+                              {quickbooksCustomerStates.map((state) => (
+                                <option key={state} value={state}>
+                                  {state}
+                                </option>
+                              ))}
+                            </select>
+                          )}
 
-                        <div className="flex items-center gap-4 text-sm text-ink-2">
-                          <label className="flex items-center gap-1.5">
-                            <input type="radio" name="quickbooksRevenueViewMode" checked={quickbooksRevenueViewMode === 'percentage'} onChange={() => setQuickbooksRevenueViewMode('percentage')} />
-                            Percentage
-                          </label>
-                          <label className="flex items-center gap-1.5">
-                            <input type="radio" name="quickbooksRevenueViewMode" checked={quickbooksRevenueViewMode === 'absolute'} onChange={() => setQuickbooksRevenueViewMode('absolute')} />
-                            Absolute revenue
-                          </label>
-                        </div>
-                      </>
-                    }
-                    trend={<MetricTrendChart embedded title="Revenue Growth %" description="" color="var(--color-success)" points={vc13Trend?.points ?? []} isLoading={isVc13TrendLoading} viewMode={quickbooksRevenueViewMode} metricId="vc-13" />}
-                    trendPoints={vc13Trend?.points}
-                  />
+                          <div className="flex items-center gap-4 text-sm text-ink-2">
+                            <label className="flex items-center gap-1.5">
+                              <input type="radio" name="quickbooksRevenueViewMode" checked={quickbooksRevenueViewMode === 'percentage'} onChange={() => setQuickbooksRevenueViewMode('percentage')} />
+                              Percentage
+                            </label>
+                            <label className="flex items-center gap-1.5">
+                              <input type="radio" name="quickbooksRevenueViewMode" checked={quickbooksRevenueViewMode === 'absolute'} onChange={() => setQuickbooksRevenueViewMode('absolute')} />
+                              Absolute revenue
+                            </label>
+                          </div>
+                        </>
+                      }
+                      trend={<MetricTrendChart embedded title="Revenue Growth %" description="" color="var(--color-success)" points={vc13Trend?.points ?? []} isLoading={isVc13TrendLoading} viewMode={quickbooksRevenueViewMode} metricId="vc-13" />}
+                      trendPoints={vc13Trend?.points}
+                    />
+                  )}
                   <GAndAExpenseTrendChart
                     data={gaExpenseTrend}
                     isLoading={isGaExpenseTrendLoading}
@@ -919,6 +965,16 @@ export const CrmDashboardPage: React.FC = () => {
                     isLoading={isInvoiceRevenueGrowthByProductLoading}
                     viewMode={invoiceRevenueGrowthViewMode}
                     onViewModeChange={setInvoiceRevenueGrowthViewMode}
+                    fromYear={quickbooksFromYearParam}
+                  />
+                  <InvoiceRevenueGrowthByStateCard
+                    data={invoiceRevenueGrowthByState}
+                    isLoading={isInvoiceRevenueGrowthByStateLoading}
+                    viewMode={invoiceRevenueGrowthByStateViewMode}
+                    onViewModeChange={setInvoiceRevenueGrowthByStateViewMode}
+                    products={quickbooksProducts ?? []}
+                    selectedProductId={invoiceRevenueGrowthByStateProductFilter}
+                    onProductChange={setInvoiceRevenueGrowthByStateProductFilter}
                     fromYear={quickbooksFromYearParam}
                   />
                   <NewCustomersTrendChart
@@ -966,28 +1022,91 @@ export const CrmDashboardPage: React.FC = () => {
                     selectedProductId={customerRetentionProductFilter}
                     onProductChange={setCustomerRetentionProductFilter}
                   />
+                  {SHOW_CUSTOMER_RETENTION_ADJUSTED && (
+                    <CustomerRetentionAdjustedTrendChart
+                      data={customerRetentionTrendAdjusted}
+                      isLoading={isCustomerRetentionTrendAdjustedLoading}
+                      products={categorizedQuickbooksProducts ?? []}
+                      granularity={customerRetentionAdjustedGranularity}
+                      onGranularityChange={setCustomerRetentionAdjustedGranularity}
+                      selectedProductId={customerRetentionAdjustedProductFilter}
+                      onProductChange={setCustomerRetentionAdjustedProductFilter}
+                    />
+                  )}
                 </div>
               </CollapsibleSection>
             )}
 
             {/* Pipeline Coverage Trend — per connected CRM, same as Marketing & Pipeline below (stage data can't be blended across CRMs). */}
-            {(isHubspotVisible || isSalesforceVisible) && (
-              <CollapsibleSection title="Pipeline Coverage Trend" description="CM-04's qualified-pipeline-vs-target formula, applied month by month.">
+            {isHubspotVisible && (
+              <CollapsibleSection title="Pipeline Coverage Trend CM-04" description="CM-04's qualified-pipeline-vs-target formula, applied month by month.">
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-                  {isHubspotVisible && (
-                    <QualifiedPipelineTrendChart
-                      title={`Pipeline Coverage Ratio (Monthly)${suffix('HubSpot')}`}
-                      data={qualifiedPipelineTrendHubspot}
-                      isLoading={isQualifiedPipelineTrendHubspotLoading}
+                  <QualifiedPipelineTrendChart
+                    title={`Pipeline Coverage Ratio (Monthly)${suffix('HubSpot')}`}
+                    data={qualifiedPipelineTrendHubspot}
+                    isLoading={isQualifiedPipelineTrendHubspotLoading}
+                  />
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Opportunities Won by Campaign — Salesforce-only, Campaign is a Salesforce-only object. */}
+            {isSalesforceVisible && (
+              <CollapsibleSection title="Opportunities Won by Campaign" description="Closed-won Salesforce Opportunities, grouped by the Campaign they're attributed to.">
+                <div className="grid grid-cols-1 gap-6">
+                  <CampaignWonOpportunitiesChart
+                    data={campaignWonOpportunities}
+                    isLoading={isCampaignWonOpportunitiesLoading}
+                    viewMode={campaignWonOpportunitiesViewMode}
+                    onViewModeChange={setCampaignWonOpportunitiesViewMode}
+                    topN={campaignWonOpportunitiesTopN}
+                    onTopNChange={setCampaignWonOpportunitiesTopN}
+                  />
+                  <CampaignRoiChart data={campaignRoi} isLoading={isCampaignRoiLoading} topN={campaignRoiTopN} onTopNChange={setCampaignRoiTopN} />
+                  <LeadsByMonthByCampaignChart data={leadsByMonthByCampaign} isLoading={isLeadsByMonthByCampaignLoading} />
+                  <OpportunitiesByLeadSourceChart data={opportunitiesByLeadSource} isLoading={isOpportunitiesByLeadSourceLoading} />
+                  <OpportunitiesByLeadSourceByMonthChart
+                    data={opportunitiesByLeadSourceByMonth}
+                    isLoading={isOpportunitiesByLeadSourceByMonthLoading}
+                    granularity={opportunitiesByLeadSourceByMonthGranularity}
+                    onGranularityChange={setOpportunitiesByLeadSourceByMonthGranularity}
+                  />
+                  {isQuickbooksVisible && (
+                    <CustomerRevenueConcentrationChart
+                      data={customerRevenueConcentration}
+                      isLoading={isCustomerRevenueConcentrationLoading}
+                      products={quickbooksProducts ?? []}
+                      selectedProductId={customerRevenueConcentrationProductFilter}
+                      onProductChange={setCustomerRevenueConcentrationProductFilter}
                     />
                   )}
-                  {isSalesforceVisible && (
-                    <QualifiedPipelineTrendChart
-                      title={`Pipeline Coverage Ratio (Monthly)${suffix('Salesforce')}`}
-                      data={qualifiedPipelineTrendSalesforce}
-                      isLoading={isQualifiedPipelineTrendSalesforceLoading}
+                  {isQuickbooksVisible && (
+                    <CustomerRevenueConcentrationByMonthChart
+                      data={customerRevenueConcentrationByMonth}
+                      isLoading={isCustomerRevenueConcentrationByMonthLoading}
+                      granularity={customerRevenueConcentrationByMonthGranularity}
+                      onGranularityChange={setCustomerRevenueConcentrationByMonthGranularity}
+                      products={quickbooksProducts ?? []}
+                      selectedProductId={customerRevenueConcentrationProductFilter}
+                      onProductChange={setCustomerRevenueConcentrationProductFilter}
                     />
                   )}
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {isSalesforceVisible && (
+              <CollapsibleSection title="Competitor Analysis" description="Won vs. lost Salesforce Opportunities, grouped by the competitor named on each deal.">
+                <div className="grid grid-cols-1 gap-6">
+                  <CompetitorWinRateChart data={competitorWinRate} isLoading={isCompetitorWinRateLoading} />
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {isHubspotVisible && (
+              <CollapsibleSection title="Lead Volume vs. Target MQL" description="Contacts sitting at the Lead stage each month, against the target set in Settings.">
+                <div className="grid grid-cols-1 gap-6">
+                  <LeadVolumeVsTargetMqlChart data={leadVolumeVsTarget} isLoading={isLeadVolumeVsTargetLoading} />
                 </div>
               </CollapsibleSection>
             )}
@@ -1025,7 +1144,25 @@ export const CrmDashboardPage: React.FC = () => {
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
                   <MetricCard id="CB-05" title="Cash & Runway" description="Unrestricted cash on hand and months of runway" icon={<Banknote className="h-5 w-5" />} metric={cb05} isLoading={isCb05Loading} />
                   <MetricCard id="CB-07" title="FCF Conversion" description="Share of EBITDA that converts to free cash flow" icon={<Droplets className="h-5 w-5" />} metric={cb07} isLoading={isCb07Loading} />
-                  <MetricCard id="CB-10" title="Cash Conversion Cycle" description="Days cash is tied up in the operating cycle" icon={<RefreshCw className="h-5 w-5" />} metric={cb10} isLoading={isCb10Loading} />
+                  <MetricCard
+                    id="CB-10"
+                    title="Cash Conversion Cycle"
+                    description="Days cash is tied up in the operating cycle"
+                    icon={<RefreshCw className="h-5 w-5" />}
+                    metric={cb10}
+                    isLoading={isCb10Loading}
+                    extras={
+                      cb10
+                        ? [
+                            ...(cb10.data.daysToCollect != null ? [{ label: 'Days to Collect', value: `${Number(cb10.data.daysToCollect).toFixed(1)} days` }] : []),
+                            ...(cb10.data.hasInventory && cb10.data.daysInInventory != null
+                              ? [{ label: 'Days in Inventory', value: `${Number(cb10.data.daysInInventory).toFixed(1)} days` }]
+                              : []),
+                            ...(cb10.data.daysToPay != null ? [{ label: 'Days to Pay', value: `${Number(cb10.data.daysToPay).toFixed(1)} days` }] : [])
+                          ]
+                        : undefined
+                    }
+                  />
                 </div>
               </CollapsibleSection>
             )}

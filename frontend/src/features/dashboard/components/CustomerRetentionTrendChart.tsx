@@ -1,8 +1,10 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { CustomerUpgradesTrendGranularity, CustomerUpgradesTrendResult } from '../api/productRevenueGrowthApi'
+import { Download, Loader2 } from 'lucide-react'
+import { CustomerUpgradesTrendGranularity, CustomerUpgradesTrendResult, getCustomerUpgradesTrendDetailRequest } from '../api/productRevenueGrowthApi'
 import { CategorizedProduct } from '../../integrations/api/productCategoriesApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { exportCustomerUpgradesDetailToExcel } from '../utils/exportCustomerUpgradesDetailToExcel'
 
 interface CustomerRetentionTrendChartProps {
   data?: CustomerUpgradesTrendResult
@@ -52,6 +54,20 @@ export const CustomerRetentionTrendChart: React.FC<CustomerRetentionTrendChartPr
 }) => {
   const requiredFrequency = granularity === 'monthly' ? 'monthly' : 'yearly'
   const eligibleProducts = products.filter((p) => p.category === 'recurring' && p.billingFrequency === requiredFrequency)
+  const [isExporting, setIsExporting] = useState(false)
+
+  const handleExport = async () => {
+    if (isExporting) return
+    setIsExporting(true)
+    try {
+      const detail = await getCustomerUpgradesTrendDetailRequest(selectedProductId || undefined, granularity)
+      await exportCustomerUpgradesDetailToExcel({ bucket: 'retention', itemName: selectedProductId ? selectedProductName : undefined, granularity, detail })
+    } catch (err) {
+      console.error('Failed to export customer retention detail to Excel', err)
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   // Whenever the granularity changes (or the eligible list itself changes), make sure the
   // current selection is still valid. An empty selection means "All products" — a valid
@@ -78,7 +94,7 @@ export const CustomerRetentionTrendChart: React.FC<CustomerRetentionTrendChartPr
     <div className="card p-6 lg:col-span-3">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Customer retention (GRR/NRR) — {selectedProductName}</h2>
+          <h2 className="text-lg font-semibold text-ink">Customer retention (GRR/NRR) VC-01 VC-02 — {selectedProductName}</h2>
           <p className="mt-1 text-sm text-ink-2">
             Gross and net revenue retention {selectedProductId ? 'for this product' : 'blended across every eligible product'},{' '}
             {granularity === 'monthly' ? 'month over month' : 'year over year'}. GRR never gives credit for upgrades; NRR does, and can exceed 100%. Only
@@ -114,6 +130,17 @@ export const CustomerRetentionTrendChart: React.FC<CustomerRetentionTrendChartPr
               Annually
             </label>
           </div>
+
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={isExporting}
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-line-strong px-2.5 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:bg-surface-3 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
+            title="Export every period's underlying customers to Excel, to verify the GRR/NRR calculation"
+          >
+            {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            Excel
+          </button>
         </div>
       </div>
 

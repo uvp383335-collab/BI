@@ -26,6 +26,10 @@ export interface ContactDocument extends Document {
   /** HubSpot-only (`hs_analytics_source`) — original-source channel attribution. Undefined for Salesforce leads. Used by CM-05/CM-07 (metrics guide). */
   analyticsSource?: string
   lifecycleStageHistory: LifecycleStageHistoryEntry[]
+  /** The CRM's own lead-creation date (Salesforce `Lead.CreatedDate`) — distinct from `createdAt` below, which is when *this app* first synced the row. Powers the "Leads by Month" per-campaign chart. Salesforce-only; HubSpot contacts leave this undefined. */
+  leadCreatedAt?: Date
+  /** Salesforce-only: Campaign ids this lead is a member of, via the CampaignMember junction object (`SalesforceService.getCampaignMembersByLead`) — a lead can belong to more than one campaign, unlike Deal's single `campaignId`. */
+  campaignIds?: string[]
   createdAt: Date
   updatedAt: Date
 }
@@ -49,7 +53,9 @@ const contactSchema = new Schema<ContactDocument>(
     lifecycleStage: { type: String },
     leadStatus: { type: String },
     analyticsSource: { type: String },
-    lifecycleStageHistory: { type: [stageHistorySchema], default: [] }
+    lifecycleStageHistory: { type: [stageHistorySchema], default: [] },
+    leadCreatedAt: { type: Date, index: true },
+    campaignIds: { type: [String], default: [], index: true }
   },
   { timestamps: true }
 )

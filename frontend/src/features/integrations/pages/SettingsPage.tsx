@@ -17,6 +17,7 @@ import {
   useUpdateHubSpotHistorySource,
   useUpdateCm04Targets,
   useUpdateCm08MqlTargets,
+  useUpdateLeadVolumeTargets,
   useUpdateMarketingSpendAccounts
 } from '../hooks/useOrganizationSettings'
 import { SalesforceOpportunityExtraField } from '../api/organizationSettingsApi'
@@ -1219,6 +1220,34 @@ const Cm08MqlTargetSettings: React.FC<{ canManage: boolean; onError: (message: s
   )
 }
 
+/** "Lead Volume vs. Target MQL" chart's target. Shown once HubSpot is connected — Lead-stage volume comes from HubSpot lifecycle stages. Independent setting from CM-08's MQL plan above, even though both are phrased "target MQL" — see Organization.model.ts's leadVolumeTargets doc comment. */
+const LeadVolumeTargetSettings: React.FC<{ canManage: boolean; onError: (message: string) => void }> = ({ canManage, onError }) => {
+  const { data: settings, isLoading } = useOrganizationSettings()
+  const updateTargets = useUpdateLeadVolumeTargets()
+  const targets = useMemo(
+    () => settings?.leadVolumeTargets?.map((t) => ({ fromMonth: t.fromMonth, toMonth: t.toMonth, value: t.targetMql })),
+    [settings?.leadVolumeTargets]
+  )
+
+  return (
+    <MonthRangeTargetSettings
+      canManage={canManage}
+      onError={onError}
+      title="Lead Volume target (Target MQL)"
+      description="The Lead Volume vs. Target MQL chart compares how many contacts are sitting at the Lead stage at the start of each month with this target. Enter the target per month — the same number applies to every month in the row's range, so one row per quarter, per half or per year all work. Months with no target still show the lead count; only the ratio is skipped."
+      valueLabel="Target MQL"
+      placeholder="450"
+      formatValue={(value) => `${value.toLocaleString()} MQL`}
+      targets={targets}
+      isLoading={isLoading}
+      isSaving={updateTargets.isPending}
+      save={(rows) => updateTargets.mutateAsync(rows.map((r) => ({ fromMonth: r.fromMonth, toMonth: r.toMonth, targetMql: r.value })))}
+      saveErrorMessage="Could not save the Lead Volume target"
+      savedMessage="Saved — the Lead Volume chart uses the new target right away."
+    />
+  )
+}
+
 /**
  * Where HubSpot stage history comes from. Off (default) uses HubSpot's own
  * native history; on uses the `rl_*` custom objects/properties, for portals
@@ -1320,6 +1349,7 @@ export const SettingsPage: React.FC = () => {
       {status?.hubspot?.connected && <HubSpotHistorySourceSettings canManage={canManage} onError={setError} />}
       {(status?.hubspot?.connected || status?.salesforce?.connected) && <Cm04TargetSettings canManage={canManage} onError={setError} />}
       {status?.hubspot?.connected && <Cm08MqlTargetSettings canManage={canManage} onError={setError} />}
+      {status?.hubspot?.connected && <LeadVolumeTargetSettings canManage={canManage} onError={setError} />}
       {status?.salesforce?.connected && <CompetitorFieldSettings canManage={canManage} onError={setError} />}
       {status?.salesforce?.connected && <OpportunityExtraFieldsSettings canManage={canManage} onError={setError} />}
       {status?.quickbooks?.connected && <CashMetricsAccountSettings canManage={canManage} onError={setError} />}

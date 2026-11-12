@@ -6,7 +6,8 @@ import {
   CashMetricsAccountSettings,
   CACSettingsInput,
   Cm04Target,
-  Cm08MqlTarget
+  Cm08MqlTarget,
+  LeadVolumeTarget
 } from '../api/organizationSettingsApi'
 import { useAuthContext } from '../../../shared/context/AuthContext'
 
@@ -121,6 +122,18 @@ export function useUpdateCm08MqlTargets() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organizations', 'settings'] })
       // CM-08 reads the plan at compute time — refresh the dashboard card too.
+      queryClient.invalidateQueries({ queryKey: ['metrics'] })
+    }
+  })
+}
+
+export function useUpdateLeadVolumeTargets() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (targets: LeadVolumeTarget[]) => organizationSettingsApi.updateLeadVolumeTargetsRequest(targets),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organizations', 'settings'] })
+      // The chart reads the target at compute time — refresh the dashboard too.
       queryClient.invalidateQueries({ queryKey: ['metrics'] })
     }
   })

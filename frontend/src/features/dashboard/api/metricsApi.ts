@@ -92,7 +92,161 @@ export async function getQualifiedPipelineTrendRequest(provider: 'hubspot' | 'sa
   return res.data.data
 }
 
+export interface CampaignWonOpportunitiesRow {
+  campaignId: string
+  campaignName: string
+  wonCount: number
+  wonAmount: number
+}
+
+export interface CampaignWonOpportunitiesResult {
+  rows: CampaignWonOpportunitiesRow[]
+}
+
+/** Closed-won Salesforce Opportunities grouped by Campaign — the "Opportunities Won by Campaign" chart below Pipeline Coverage Trend. Salesforce-only, no query params. */
+export async function getCampaignWonOpportunitiesRequest(): Promise<CampaignWonOpportunitiesResult> {
+  const res = await httpClient.get<ApiEnvelope<CampaignWonOpportunitiesResult>>('/metrics/salesforce/campaign-won-opportunities')
+  return res.data.data
+}
+
+export interface CampaignWonOpportunitiesDetailDeal {
+  dealId: string
+  dealName: string | null
+  campaignId: string
+  campaignName: string
+  pipeline: string
+  dealstage: string
+  amount: number
+  /** "YYYY-MM-DD" */
+  closeDate: string | null
+}
+
+export interface CampaignWonOpportunitiesDetailResult {
+  rows: CampaignWonOpportunitiesRow[]
+  /** Every closed-won Opportunity behind the rows above — sums to rows[].wonCount/wonAmount per campaign exactly. */
+  deals: CampaignWonOpportunitiesDetailDeal[]
+}
+
+/** Record-level detail behind the chart above — every closed-won Opportunity attributed to a campaign, for the "export to Excel" verification button. */
+export async function getCampaignWonOpportunitiesDetailRequest(): Promise<CampaignWonOpportunitiesDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<CampaignWonOpportunitiesDetailResult>>('/metrics/salesforce/campaign-won-opportunities/detail')
+  return res.data.data
+}
+
+export interface CampaignRoiRow {
+  campaignId: string
+  campaignName: string
+  wonAmount: number
+  actualCost: number
+  roi: number
+}
+
+export interface CampaignRoiResult {
+  rows: CampaignRoiRow[]
+}
+
+/** ROI (won $ / actual cost) per Salesforce Campaign — the "Campaign ROI" chart below Opportunities Won by Campaign. Salesforce-only, no query params. */
+export async function getCampaignRoiRequest(): Promise<CampaignRoiResult> {
+  const res = await httpClient.get<ApiEnvelope<CampaignRoiResult>>('/metrics/salesforce/campaign-roi')
+  return res.data.data
+}
+
+export interface CompetitorWinRateRow {
+  competitor: string
+  wins: number
+  losses: number
+  decided: number
+  winRatePct: number
+}
+
+export interface CompetitorWinRateResult {
+  rows: CompetitorWinRateRow[]
+}
+
+/** Won vs. lost Salesforce Opportunity counts per named competitor, read from each deal's "Primary Competitor" custom field (not the dedicated competitor/competitors fields CM-03 reads) — the "Competitor Win Rate" chart. Salesforce-only, no query params, all-time. */
+export async function getCompetitorWinRateRequest(): Promise<CompetitorWinRateResult> {
+  const res = await httpClient.get<ApiEnvelope<CompetitorWinRateResult>>('/metrics/salesforce/competitor-win-rate')
+  return res.data.data
+}
+
+export interface LeadVolumeVsTargetPoint {
+  /** "YYYY-MM" */
+  month: string
+  /** Contacts sitting at the Lead stage (reached it, not yet advanced past it) as of this month's first day — a snapshot, not an entry count. */
+  leadVolume: number
+  target: number | null
+  /** leadVolume / target * 100 — null when no target is configured for this month. */
+  ratioPct: number | null
+}
+
+export interface LeadVolumeVsTargetResult {
+  points: LeadVolumeVsTargetPoint[]
+  missingTargetMonths: string[]
+}
+
+/** How many HubSpot contacts were sitting at the Lead stage as of each month's start, vs. the "Lead Volume target (Target MQL)" set in Settings — the "Lead Volume vs. Target MQL" chart. HubSpot-only, no query params, trailing 12 months. */
+export async function getLeadVolumeVsTargetRequest(): Promise<LeadVolumeVsTargetResult> {
+  const res = await httpClient.get<ApiEnvelope<LeadVolumeVsTargetResult>>('/metrics/hubspot/lead-volume-vs-target-mql')
+  return res.data.data
+}
+
+export interface LeadsByMonthPoint {
+  month: string
+  count: number
+}
+
+export interface LeadsByMonthCampaignRow {
+  campaignId: string
+  campaignName: string
+  series: LeadsByMonthPoint[]
+}
+
+export interface LeadsByMonthByCampaignResult {
+  campaigns: LeadsByMonthCampaignRow[]
+}
+
+/** Salesforce Lead-creation-date histogram per Campaign — the "Leads by Month" chart's campaign-picker dropdown and series data. Salesforce-only, no query params. */
+export async function getLeadsByMonthByCampaignRequest(): Promise<LeadsByMonthByCampaignResult> {
+  const res = await httpClient.get<ApiEnvelope<LeadsByMonthByCampaignResult>>('/metrics/salesforce/leads-by-month-by-campaign')
+  return res.data.data
+}
+
+export interface OpportunitiesByLeadSourceRow {
+  leadSource: string
+  count: number
+}
+
+export interface OpportunitiesByLeadSourceResult {
+  rows: OpportunitiesByLeadSourceRow[]
+}
+
+/** Every Salesforce Opportunity grouped by `LeadSource` — the "Opportunities by Lead Source" chart below Leads by Month. Salesforce-only, no query params. */
+export async function getOpportunitiesByLeadSourceRequest(): Promise<OpportunitiesByLeadSourceResult> {
+  const res = await httpClient.get<ApiEnvelope<OpportunitiesByLeadSourceResult>>('/metrics/salesforce/opportunities-by-lead-source')
+  return res.data.data
+}
+
+export interface OpportunitiesByLeadSourceMonthPoint {
+  periodStart: string
+  count: number
+}
+
+export interface OpportunitiesByLeadSourceMonthRow {
+  leadSource: string
+  series: OpportunitiesByLeadSourceMonthPoint[]
+}
+
+export interface OpportunitiesByLeadSourceByMonthResult {
+  leadSources: OpportunitiesByLeadSourceMonthRow[]
+}
+
 export type StageConversionGranularity = 'monthly' | 'quarterly' | 'yearly'
+
+/** Salesforce Opportunity-creation-date histogram per LeadSource, at the given granularity (defaults to monthly) — the "Opportunities by Lead Source by Month" chart's lead-source-picker dropdown and series data. Salesforce-only. */
+export async function getOpportunitiesByLeadSourceByMonthRequest(granularity: StageConversionGranularity = 'monthly'): Promise<OpportunitiesByLeadSourceByMonthResult> {
+  const res = await httpClient.get<ApiEnvelope<OpportunitiesByLeadSourceByMonthResult>>('/metrics/salesforce/opportunities-by-lead-source-by-month', { params: { granularity } })
+  return res.data.data
+}
 
 export interface LeadToMqlTrendPoint {
   periodStart: string
@@ -182,5 +336,114 @@ export async function getMqlToSqlTrendDetailRequest(
   to?: string
 ): Promise<StageConversionTrendDetailResult> {
   const res = await httpClient.get<ApiEnvelope<StageConversionTrendDetailResult>>('/metrics/mql-to-sql-trend/detail', { params: { provider, granularity, from, to } })
+  return res.data.data
+}
+
+export interface CustomerRevenueConcentrationRow {
+  customerId: string
+  customerName: string
+  revenue: number
+  pctOfTotal: number
+}
+
+export interface CustomerRevenueConcentrationResult {
+  rows: CustomerRevenueConcentrationRow[]
+  top10Pct: number
+  totalRevenue: number
+}
+
+/** All-time invoiced revenue concentration among the top 10 QuickBooks customers — the "Customer Concentration" chart below Opportunities by Lead Source by Month. `itemId` narrows to one product's revenue instead of every product blended. QuickBooks-only. */
+export async function getCustomerRevenueConcentrationRequest(itemId?: string): Promise<CustomerRevenueConcentrationResult> {
+  const res = await httpClient.get<ApiEnvelope<CustomerRevenueConcentrationResult>>('/metrics/quickbooks/customer-revenue-concentration', { params: { item: itemId || undefined } })
+  return res.data.data
+}
+
+export interface CustomerRevenueConcentrationDetailLine {
+  providerRecordId: string
+  customerRecordId: string
+  customerName: string
+  rootCustomerId: string
+  rootCustomerName: string
+  /** "YYYY-MM-DD" */
+  txnDate: string
+  amount: number
+}
+
+export interface CustomerRevenueConcentrationDetailResult {
+  rows: CustomerRevenueConcentrationRow[]
+  top10Pct: number
+  totalRevenue: number
+  /** Every synced invoice (or invoice line, when filtered by product) billed to the top 10 customers above or any of their subsidiaries — sums to rows[].revenue exactly per root customer. */
+  lines: CustomerRevenueConcentrationDetailLine[]
+}
+
+/** Record-level detail behind the chart above — every synced invoice (or invoice line, when filtered by product) billed to the top 10 customers or their subsidiaries, for the "export to Excel" verification button. */
+export async function getCustomerRevenueConcentrationDetailRequest(itemId?: string): Promise<CustomerRevenueConcentrationDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<CustomerRevenueConcentrationDetailResult>>('/metrics/quickbooks/customer-revenue-concentration/detail', {
+    params: { item: itemId || undefined }
+  })
+  return res.data.data
+}
+
+export interface CustomerRevenueConcentrationMonthPoint {
+  periodStart: string
+  top10Pct: number
+  top10Revenue: number
+  totalRevenue: number
+}
+
+export interface CustomerRevenueConcentrationByMonthResult {
+  points: CustomerRevenueConcentrationMonthPoint[]
+}
+
+/** The same top-10-of-total revenue ratio as above, traced over time at the given granularity (defaults to monthly) — the "Customer Concentration" trend chart below the all-time one. Same optional `itemId` product narrowing. QuickBooks-only. */
+export async function getCustomerRevenueConcentrationByMonthRequest(
+  itemId?: string,
+  granularity: StageConversionGranularity = 'monthly'
+): Promise<CustomerRevenueConcentrationByMonthResult> {
+  const res = await httpClient.get<ApiEnvelope<CustomerRevenueConcentrationByMonthResult>>('/metrics/quickbooks/customer-revenue-concentration-by-month', {
+    params: { item: itemId || undefined, granularity }
+  })
+  return res.data.data
+}
+
+export interface CustomerRevenueConcentrationByMonthTopCustomer {
+  customerId: string
+  customerName: string
+  revenue: number
+  pctOfTotal: number
+}
+
+export interface CustomerRevenueConcentrationByMonthDetailPeriod extends CustomerRevenueConcentrationMonthPoint {
+  /** Which customers made up this period's top 10 and how much each contributed — the chart itself only plots the blended top10Revenue/top10Pct. */
+  topCustomers: CustomerRevenueConcentrationByMonthTopCustomer[]
+}
+
+export interface CustomerRevenueConcentrationByMonthDetailLine {
+  providerRecordId: string
+  customerRecordId: string
+  customerName: string
+  rootCustomerId: string
+  rootCustomerName: string
+  periodStart: string
+  /** "YYYY-MM-DD" */
+  txnDate: string
+  amount: number
+}
+
+export interface CustomerRevenueConcentrationByMonthDetailResult {
+  periods: CustomerRevenueConcentrationByMonthDetailPeriod[]
+  /** Every synced invoice (or invoice line, when filtered by product) billed to a period's top 10 customers (or their subsidiaries) — sums to that period's topCustomers[].revenue exactly. */
+  lines: CustomerRevenueConcentrationByMonthDetailLine[]
+}
+
+/** Record-level detail behind the chart above — which customers made up each displayed period's top 10, plus every synced invoice (or invoice line, when filtered by product) behind them, for the "export to Excel" verification button. */
+export async function getCustomerRevenueConcentrationByMonthDetailRequest(
+  itemId?: string,
+  granularity: StageConversionGranularity = 'monthly'
+): Promise<CustomerRevenueConcentrationByMonthDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<CustomerRevenueConcentrationByMonthDetailResult>>('/metrics/quickbooks/customer-revenue-concentration-by-month/detail', {
+    params: { item: itemId || undefined, granularity }
+  })
   return res.data.data
 }

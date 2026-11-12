@@ -119,6 +119,13 @@ export const updateCm08MqlTargets = asyncHandler(async (req: Request, res: Respo
   return sendSuccess(res, settings)
 })
 
+export const updateLeadVolumeTargets = asyncHandler(async (req: Request, res: Response) => {
+  const orgId = req.auth!.orgId!
+  const { targets } = req.body as { targets: { fromMonth: string; toMonth: string; targetMql: number }[] }
+  const settings = await organizationsService.updateLeadVolumeTargets(orgId, targets)
+  return sendSuccess(res, settings)
+})
+
 export const updateHubSpotHistorySource = asyncHandler(async (req: Request, res: Response) => {
   const orgId = req.auth!.orgId!
   const { hubspotUseImportedHistory } = req.body as { hubspotUseImportedHistory: boolean }

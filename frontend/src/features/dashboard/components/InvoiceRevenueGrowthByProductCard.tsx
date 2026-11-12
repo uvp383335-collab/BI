@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
 import { InvoiceRevenueGrowthByProductResult, getInvoiceRevenueGrowthByProductDetailRequest } from '../api/productRevenueGrowthApi'
 import { ProductRevenueGrowthChart } from './ProductRevenueGrowthChart'
+import { MultiSelectDropdown } from './MultiSelectDropdown'
 import { exportInvoiceRevenueGrowthDetailToExcel } from '../utils/exportInvoiceRevenueGrowthDetailToExcel'
 
 interface InvoiceRevenueGrowthByProductCardProps {
@@ -13,6 +14,12 @@ interface InvoiceRevenueGrowthByProductCardProps {
   fromYear?: string
 }
 
+// Same palette/order as ProductRevenueGrowthChart's own SERIES_PALETTE, so the
+// dropdown's color dots always match the bar colors that chart actually renders —
+// duplicated rather than imported since that palette isn't exported, same as the
+// small repeated style constants across the dashboard's export utils.
+const PRODUCT_SERIES_PALETTE = ['var(--color-brand)', 'var(--color-violet)', 'var(--color-teal)', 'var(--color-success)', 'var(--color-warning)', 'var(--color-danger)']
+
 /**
  * "Revenue growth by product," computed entirely from this org's own synced
  * QuickBooks invoice line items rather than the card above's live
@@ -22,23 +29,34 @@ interface InvoiceRevenueGrowthByProductCardProps {
  * differently; see productRevenueGrowth.service.ts's
  * getInvoiceRevenueGrowthByProduct). Auto-loads and is cheap — unlike the
  * live card, this never calls QuickBooks, so every product's trend arrives
- * in one request instead of one report per product. Reuses the same
- * ProductRevenueGrowthChart the live card renders, since the data shape
- * (one series per product, month-over-month revenue + growth %) is
- * identical either way.
+ * in one request instead of one report per product. A multi-select dropdown
+ * (same shared picker as Leads by Month / Opportunities by Lead Source)
+ * lets several products be compared side by side — leaving it empty keeps
+ * the original "every product" default. Reuses the same
+ * ProductRevenueGrowthChart the live card renders (passed the already
+ * filtered-to-selection product list, so that chart's own "one series per
+ * product" rendering needs no changes), since the data shape (one series
+ * per product, month-over-month revenue + growth %) is identical either
+ * way. The "export to Excel" button only appears for exactly one selected
+ * product — the detail endpoint it calls is scoped to a single product id.
  */
 export const InvoiceRevenueGrowthByProductCard: React.FC<InvoiceRevenueGrowthByProductCardProps> = ({ data, isLoading, viewMode, onViewModeChange, fromYear }) => {
   const products = data?.products ?? []
-  const [selectedProductId, setSelectedProductId] = useState('')
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([])
   const [isExporting, setIsExporting] = useState(false)
 
-  const selectedProductName = products.find((p) => p.id === selectedProductId)?.name
+  const toggleProduct = (productId: string) => {
+    setSelectedProductIds((prev) => (prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId]))
+  }
+
+  const filteredProducts = selectedProductIds.length > 0 ? products.filter((p) => selectedProductIds.includes(p.id)) : products
+  const singleSelectedProductName = selectedProductIds.length === 1 ? products.find((p) => p.id === selectedProductIds[0])?.name : undefined
 
   const handleExport = async () => {
-    if (!selectedProductId || !selectedProductName || isExporting) return
+    if (selectedProductIds.length !== 1 || !singleSelectedProductName || isExporting) return
     setIsExporting(true)
     try {
-      const detail = await getInvoiceRevenueGrowthByProductDetailRequest(selectedProductId, selectedProductName, { fromYear })
+      const detail = await getInvoiceRevenueGrowthByProductDetailRequest(selectedProductIds[0], singleSelectedProductName, { fromYear })
       await exportInvoiceRevenueGrowthDetailToExcel({ fromYear, detail })
     } catch (err) {
       console.error('Failed to export invoice revenue growth detail to Excel', err)
@@ -60,20 +78,17 @@ export const InvoiceRevenueGrowthByProductCard: React.FC<InvoiceRevenueGrowthByP
 
         <div className="flex flex-wrap items-center gap-3">
           {products.length > 0 && (
-            <select
-              className="form-input-dark w-56 truncate sm:w-72"
-              value={selectedProductId}
-              onChange={(e) => setSelectedProductId(e.target.value)}
-              aria-label="Product"
-              title={selectedProductName}
-            >
-              <option value="">All products</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>
-                  {product.name}
-                </option>
-              ))}
-            </select>
+            <MultiSelectDropdown
+              options={products.map((product, index) => ({
+                id: product.id,
+                label: product.name,
+                color: PRODUCT_SERIES_PALETTE[filteredProducts.findIndex((p) => p.id === product.id) % PRODUCT_SERIES_PALETTE.length] ?? PRODUCT_SERIES_PALETTE[index % PRODUCT_SERIES_PALETTE.length]
+              }))}
+              selectedIds={selectedProductIds}
+              onToggle={toggleProduct}
+              placeholder="All products"
+              itemNounPlural="products"
+            />
           )}
 
           {products.length > 0 && (
@@ -89,7 +104,7 @@ export const InvoiceRevenueGrowthByProductCard: React.FC<InvoiceRevenueGrowthByP
             </div>
           )}
 
-          {selectedProductId && (
+          {selectedProductIds.length === 1 && (
             <button
               type="button"
               onClick={handleExport}
@@ -110,7 +125,7 @@ export const InvoiceRevenueGrowthByProductCard: React.FC<InvoiceRevenueGrowthByP
         <p className="mt-4 text-sm text-ink-3">No synced invoice line items for any product in this range yet.</p>
       ) : (
         <div className="mt-4">
-          <ProductRevenueGrowthChart products={products} selectedProductId={selectedProductId} viewMode={viewMode} />
+          <ProductRevenueGrowthChart products={filteredProducts} selectedProductId="" viewMode={viewMode} />
         </div>
       )}
     </div>

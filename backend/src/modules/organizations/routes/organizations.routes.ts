@@ -13,6 +13,7 @@ import {
   updateHubSpotHistorySourceSchema,
   updateCm04TargetsSchema,
   updateCm08MqlTargetsSchema,
+  updateLeadVolumeTargetsSchema,
   updateMarketingSpendAccountsSchema
 } from '../validator/organizations.validator'
 import { createOrgRateLimiter } from '../../../middleware/rateLimit'
@@ -120,6 +121,16 @@ organizationsRouter.patch(
   requireRole('owner', 'admin'),
   validateBody(updateCm08MqlTargetsSchema),
   organizationsController.updateCm08MqlTargets
+)
+
+// "Lead Volume vs. Target MQL" chart's monthly target — independent setting from cm08-mql-targets above.
+organizationsRouter.patch(
+  '/settings/lead-volume-targets',
+  requireAuth,
+  requireOrgContext,
+  requireRole('owner', 'admin'),
+  validateBody(updateLeadVolumeTargetsSchema),
+  organizationsController.updateLeadVolumeTargets
 )
 
 // HubSpot history source — whether sync reads native history or the `rl_*` imported

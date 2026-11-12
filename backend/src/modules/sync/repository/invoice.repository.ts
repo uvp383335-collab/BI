@@ -1,5 +1,5 @@
-import { Connection, Types } from 'mongoose'
-import { getInvoiceModel, InvoiceLineDocument } from '../model/Invoice.model'
+import { Connection, Types, PipelineStage } from 'mongoose'
+import { getInvoiceModel, InvoiceLineDocument, InvoiceBillingAddressDocument } from '../model/Invoice.model'
 import { getTenantConnection } from '../../../database/tenantConnection'
 import { ProductBillingFrequency } from '../model/Product.model'
 
@@ -9,6 +9,7 @@ export interface InvoiceUpsertInput {
   txnDate: Date
   totalAmount: number
   lines: InvoiceLineDocument[]
+  billingAddress?: InvoiceBillingAddressDocument
 }
 
 export interface CustomerMonthRevenue {
@@ -307,6 +308,145 @@ export const invoiceRepository = {
   },
 
   /**
+   * Total invoiced revenue per calendar month, over `[from, to]`, grouped by
+   * the invoice's own billing-address state (`billingAddress.state`, synced
+   * from QuickBooks' `Invoice.BillAddr.CountrySubDivisionCode`) — every
+   * state's monthly revenue in one query, read entirely from this org's own
+   * synced `Invoice` documents. Backs "Revenue growth by location"
+   * (productRevenueGrowth.service.ts's getInvoiceRevenueGrowthByState).
+   * Invoices synced before billing addresses were added (or that QuickBooks
+   * never attached a billing address to) have no `billingAddress.state` and
+   * are excluded here rather than bucketed under a fake "Unknown" state —
+   * a forced resync (Settings > QuickBooks > "Force full resync") backfills
+   * them.
+   *
+   * Pass `itemId` to narrow to one product's revenue by state instead of
+   * every product combined — "how is <product> doing in <state>." Mirrors
+   * getRevenueByItemAndMonth's line-level sum when filtering (only that
+   * product's line amount counts per invoice) rather than the whole
+   * invoice total, so a multi-product invoice doesn't over-attribute its
+   * other products' revenue to the filtered one.
+   */
+  async getRevenueByStateAndMonth(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    from: Date,
+    to: Date,
+    itemId?: string
+  ): Promise<{ state: string; month: string; revenue: number }[]> {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const match: Record<string, unknown> = {
+      orgId: orgObjectId,
+      provider,
+      txnDate: { $gte: from, $lte: to },
+      'billingAddress.state': { $exists: true, $ne: null }
+    }
+    const pipeline = itemId
+      ? [
+          { $match: { ...match, 'lines.itemId': itemId } },
+          { $unwind: '$lines' },
+          { $match: { 'lines.itemId': itemId } },
+          {
+            $group: {
+              _id: { state: '$billingAddress.state', month: { $dateToString: { format: '%Y-%m', date: '$txnDate' } } },
+              revenue: { $sum: '$lines.amount' }
+            }
+          }
+        ]
+      : [
+          { $match: match },
+          {
+            $group: {
+              _id: { state: '$billingAddress.state', month: { $dateToString: { format: '%Y-%m', date: '$txnDate' } } },
+              revenue: { $sum: '$totalAmount' }
+            }
+          }
+        ]
+    const results = await Model.aggregate<{ _id: { state: string; month: string }; revenue: number }>(pipeline)
+    return results.map((r) => ({ state: r._id.state, month: r._id.month, revenue: r.revenue }))
+  },
+
+  /**
+   * Every individual invoice (or, when `itemId` is given, every invoice
+   * line for that product) billed to one billing-address state, over
+   * `[from, to]`, with customer display names joined in — the "Revenue
+   * growth by location" card's nearest record-level backing data, for its
+   * "export to Excel" verification button. Same dual-mode split as
+   * getRevenueByStateAndMonth above: whole-invoice `totalAmount` when no
+   * product filter, that product's own `lines.amount` when filtered — so
+   * the totals here always match whichever one that method computed.
+   */
+  async getInvoiceDetailByState(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    from: Date,
+    to: Date,
+    state: string,
+    itemId?: string
+  ): Promise<{ providerRecordId: string; customerRecordId: string; customerName: string | null; txnDate: Date; amount: number; invoiceTotalAmount: number }[]> {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const match: Record<string, unknown> = { orgId: orgObjectId, provider, txnDate: { $gte: from, $lte: to }, 'billingAddress.state': state }
+    const customerLookup: PipelineStage[] = [
+      {
+        $lookup: {
+          from: 'quickbookscustomers',
+          let: { customerId: '$customerRecordId' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$orgId', orgObjectId] }, { $eq: ['$provider', provider] }, { $eq: ['$providerRecordId', '$$customerId'] }] } } }
+          ],
+          as: 'customer'
+        }
+      },
+      { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
+      { $sort: { txnDate: 1 } }
+    ]
+    const pipeline: PipelineStage[] = itemId
+      ? [
+          { $match: { ...match, 'lines.itemId': itemId } },
+          { $unwind: '$lines' },
+          { $match: { 'lines.itemId': itemId } },
+          ...customerLookup,
+          {
+            $project: {
+              _id: 0,
+              providerRecordId: 1,
+              customerRecordId: 1,
+              customerName: { $ifNull: ['$customer.displayName', null] },
+              txnDate: 1,
+              amount: '$lines.amount',
+              invoiceTotalAmount: '$totalAmount'
+            }
+          }
+        ]
+      : [
+          { $match: match },
+          ...customerLookup,
+          {
+            $project: {
+              _id: 0,
+              providerRecordId: 1,
+              customerRecordId: 1,
+              customerName: { $ifNull: ['$customer.displayName', null] },
+              txnDate: 1,
+              amount: '$totalAmount',
+              invoiceTotalAmount: '$totalAmount'
+            }
+          }
+        ]
+    const results = await Model.aggregate<{
+      providerRecordId: string
+      customerRecordId: string
+      customerName: string | null
+      txnDate: Date
+      amount: number
+      invoiceTotalAmount: number
+    }>(pipeline)
+    return results
+  },
+
+  /**
    * How many customers' very first invoice ever (across the customer's
    * entire history, not just `[from, to]`) falls within `[from, to]`,
    * bucketed by that first-invoice month — "how many new customers did we
@@ -389,6 +529,118 @@ export const invoiceRepository = {
       { $match: { firstInvoiceDate: { $gte: from, $lte: to } } }
     ])
     return results.map((r) => ({ customerRecordId: r._id, firstInvoiceDate: r.firstInvoiceDate, firstAmount: r.firstAmount }))
+  },
+
+  /**
+   * Every customer's total invoiced revenue, across every synced invoice —
+   * unlike getMonthlyRevenueByCustomer, this isn't windowed to a date
+   * range, it's a straight all-time sum. The "Customer Concentration"
+   * chart's raw input: how much of all-time revenue the top 10 customers
+   * (after rolling subsidiaries up to their parent, same as CM-02) account
+   * for. Pass `itemId` to narrow to one product's line-item revenue instead
+   * of each invoice's whole `totalAmount` — "which customers make up this
+   * product's revenue," same line-level narrowing as
+   * getCustomerRevenueByMonthForItem.
+   */
+  async getTotalRevenueByCustomer(orgId: string | Types.ObjectId, provider: string, itemId?: string): Promise<{ customerRecordId: string; revenue: number }[]> {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const pipeline: PipelineStage[] = itemId
+      ? [
+          { $match: { orgId: orgObjectId, provider, 'lines.itemId': itemId } },
+          { $unwind: '$lines' },
+          { $match: { 'lines.itemId': itemId } },
+          { $group: { _id: '$customerRecordId', revenue: { $sum: '$lines.amount' } } }
+        ]
+      : [
+          { $match: { orgId: orgObjectId, provider } },
+          { $group: { _id: '$customerRecordId', revenue: { $sum: '$totalAmount' } } }
+        ]
+    const results = await Model.aggregate<{ _id: string; revenue: number }>(pipeline)
+    return results.map((r) => ({ customerRecordId: r._id, revenue: r.revenue }))
+  },
+
+  /**
+   * Every customer's total invoiced revenue per calendar month, across
+   * every synced invoice — unlike getMonthlyRevenueByCustomer, this isn't
+   * windowed to a date range, it covers the org's entire invoice history.
+   * The "Customer Concentration" trend chart's raw input: how top-10
+   * concentration moves from month to month. Pass `itemId` to narrow to one
+   * product's line-item revenue, same convention as getTotalRevenueByCustomer.
+   */
+  async getAllMonthlyRevenueByCustomer(orgId: string | Types.ObjectId, provider: string, itemId?: string): Promise<CustomerMonthRevenue[]> {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const pipeline: PipelineStage[] = itemId
+      ? [
+          { $match: { orgId: orgObjectId, provider, 'lines.itemId': itemId } },
+          { $unwind: '$lines' },
+          { $match: { 'lines.itemId': itemId } },
+          {
+            $group: {
+              _id: { customerRecordId: '$customerRecordId', month: { $dateToString: { format: '%Y-%m', date: '$txnDate' } } },
+              revenue: { $sum: '$lines.amount' }
+            }
+          }
+        ]
+      : [
+          { $match: { orgId: orgObjectId, provider } },
+          {
+            $group: {
+              _id: { customerRecordId: '$customerRecordId', month: { $dateToString: { format: '%Y-%m', date: '$txnDate' } } },
+              revenue: { $sum: '$totalAmount' }
+            }
+          }
+        ]
+    const results = await Model.aggregate<{ _id: { customerRecordId: string; month: string }; revenue: number }>(pipeline)
+    return results.map((r) => ({ customerRecordId: r._id.customerRecordId, month: r._id.month, revenue: r.revenue }))
+  },
+
+  /**
+   * Every individual invoice (or, when `itemId` is given, every invoice line
+   * for that product) billed to any customer in `customerRecordIds`, across
+   * the org's entire invoice history (no date window — mirrors
+   * getTotalRevenueByCustomer's all-time scope) — the "Customer
+   * Concentration" chart's record-level backing data, for its "export to
+   * Excel" verification button. Callers pass every subsidiary id that rolls
+   * up to a top-10 root customer (CM-02's `Customer.ParentRef` roll-up), not
+   * just the root's own id, so a parent's invoices and its subsidiaries'
+   * invoices both show up under that one root. Same dual-mode split as
+   * getInvoiceDetailByState: whole-invoice `totalAmount` when no product
+   * filter, that product's own `lines.amount` when filtered.
+   */
+  async getInvoiceLinesForCustomers(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    customerRecordIds: string[],
+    itemId?: string,
+    /** Narrows to `[from, to]` instead of all-time — the "Customer Concentration by Month" trend's detail export, which only needs lines inside its trailing window, not every invoice ever. Omit both for the all-time chart's export. */
+    from?: Date,
+    to?: Date
+  ): Promise<{ providerRecordId: string; customerRecordId: string; txnDate: Date; amount: number }[]> {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const match: Record<string, unknown> = {
+      orgId: orgObjectId,
+      provider,
+      customerRecordId: { $in: customerRecordIds },
+      ...(from && to ? { txnDate: { $gte: from, $lte: to } } : {})
+    }
+    const pipeline: PipelineStage[] = itemId
+      ? [
+          { $match: { ...match, 'lines.itemId': itemId } },
+          { $unwind: '$lines' },
+          { $match: { 'lines.itemId': itemId } },
+          { $sort: { txnDate: 1 } },
+          { $project: { _id: 0, providerRecordId: 1, customerRecordId: 1, txnDate: 1, amount: '$lines.amount' } }
+        ]
+      : [
+          { $match: match },
+          { $sort: { txnDate: 1 } },
+          { $project: { _id: 0, providerRecordId: 1, customerRecordId: 1, txnDate: 1, amount: '$totalAmount' } }
+        ]
+    const results = await Model.aggregate<{ providerRecordId: string; customerRecordId: string; txnDate: Date; amount: number }>(pipeline)
+    return results
   },
 
   /**

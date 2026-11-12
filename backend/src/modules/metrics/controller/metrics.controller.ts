@@ -25,7 +25,9 @@ import {
   getQuickBooksDepartments,
   getQuickBooksCustomerStates,
   getInvoiceRevenueGrowthByProduct,
-  getInvoiceRevenueGrowthByProductDetail
+  getInvoiceRevenueGrowthByProductDetail,
+  getInvoiceRevenueGrowthByState,
+  getInvoiceRevenueGrowthByStateDetail
 } from '../service/productRevenueGrowth.service'
 import { getRecurringRevenueTrend } from '../service/recurringRevenueTrend.service'
 import { getGAndAExpenseTrend } from '../service/gaExpenseTrend.service'
@@ -36,17 +38,36 @@ import {
   GetProductRevenueGrowthDetailQuery,
   GetInvoiceRevenueGrowthByProductQuery,
   GetInvoiceRevenueGrowthByProductDetailQuery,
+  GetInvoiceRevenueGrowthByStateQuery,
+  GetInvoiceRevenueGrowthByStateDetailQuery,
   GetRecurringRevenueTrendQuery,
   GetGAndAExpenseTrendQuery,
   GetNewCustomersTrendQuery,
   GetCustomerUpgradesTrendQuery,
   GetQualifiedPipelineTrendQuery,
   GetLeadToMqlTrendQuery,
-  GetMqlToSqlTrendQuery
+  GetMqlToSqlTrendQuery,
+  GetOpportunitiesByLeadSourceByMonthQuery,
+  GetCustomerRevenueConcentrationQuery,
+  GetCustomerRevenueConcentrationByMonthQuery
 } from '../validator/metrics.validator'
 import { getNewCustomersTrend, getNewCustomersTrendDetail } from '../service/newCustomersTrend.service'
-import { getCustomerUpgradesTrend, getCustomerUpgradesTrendDetail } from '../service/customerUpgradesTrend.service'
+import {
+  getCustomerUpgradesTrend,
+  getCustomerUpgradesTrendDetail,
+  getCustomerRetentionTrendAdjusted,
+  getCustomerRetentionTrendAdjustedDetail
+} from '../service/customerUpgradesTrend.service'
 import { getQualifiedPipelineTrend } from '../service/qualifiedPipelineTrend.service'
+import { getCampaignWonOpportunities, getCampaignWonOpportunitiesDetail } from '../service/campaignWonOpportunities.service'
+import { getLeadsByMonthByCampaign } from '../service/leadsByMonth.service'
+import { getOpportunitiesByLeadSource } from '../service/opportunitiesByLeadSource.service'
+import { getOpportunitiesByLeadSourceByMonth } from '../service/opportunitiesByLeadSourceByMonth.service'
+import { getCampaignRoi } from '../service/campaignRoi.service'
+import { getCompetitorWinRate } from '../service/competitorWinRate.service'
+import { getLeadVolumeVsTarget } from '../service/leadVolumeVsTarget.service'
+import { getCustomerRevenueConcentration, getCustomerRevenueConcentrationDetail } from '../service/customerRevenueConcentration.service'
+import { getCustomerRevenueConcentrationByMonth, getCustomerRevenueConcentrationByMonthDetail } from '../service/customerRevenueConcentrationByMonth.service'
 
 function metricHandler(compute: (orgId: string, period?: string) => Promise<unknown>) {
   return asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -156,6 +177,22 @@ export const getInvoiceRevenueGrowthByProductDetailHandler = asyncHandler(async 
   sendSuccess(res, result)
 })
 
+/** "Revenue growth by location," computed entirely from synced Invoice billing addresses — `?fromYear=YYYY`, see productRevenueGrowth.service.ts's getInvoiceRevenueGrowthByState. */
+export const getInvoiceRevenueGrowthByStateHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { fromYear, item } = req.query as unknown as GetInvoiceRevenueGrowthByStateQuery
+  const result = await getInvoiceRevenueGrowthByState(orgId, { fromYear, itemId: item })
+  sendSuccess(res, result)
+})
+
+/** Record-level detail behind one state's series in the chart above — every synced invoice (or invoice line, when a product filter is active), for the dashboard's "export to Excel" verification button. See productRevenueGrowth.service.ts's getInvoiceRevenueGrowthByStateDetail. */
+export const getInvoiceRevenueGrowthByStateDetailHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { state, fromYear, item, itemName } = req.query as unknown as GetInvoiceRevenueGrowthByStateDetailQuery
+  const result = await getInvoiceRevenueGrowthByStateDetail(orgId, state, { fromYear, itemId: item, itemName })
+  sendSuccess(res, result)
+})
+
 /** Dashboard's recurring-vs-non-recurring revenue bar chart — `?granularity=monthly|quarterly` (default quarterly), see recurringRevenueTrend.service.ts. */
 export const getRecurringRevenueTrendHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const orgId = req.auth!.orgId!
@@ -203,6 +240,22 @@ export const getCustomerUpgradesTrendHandler = asyncHandler(async (req: Request,
   sendSuccess(res, result)
 })
 
+/** Dashboard's "Customer retention (GRR/NRR) — Adjusted" bar chart, directly below the unadjusted one — same `?item=&granularity=` params, but a customer's churn only counts once across the window, see customerUpgradesTrend.service.ts's getCustomerRetentionTrendAdjusted. */
+export const getCustomerRetentionTrendAdjustedHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { item, granularity } = req.query as unknown as GetCustomerUpgradesTrendQuery
+  const result = await getCustomerRetentionTrendAdjusted(orgId, item, granularity ?? 'monthly')
+  sendSuccess(res, result)
+})
+
+/** Record-level detail behind the Adjusted retention chart above — every existing customer's prior/current revenue and which bucket (including suppressed-churn) they fell into each period, for the "export to Excel" verification button. Same query params as the aggregate endpoint. */
+export const getCustomerRetentionTrendAdjustedDetailHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { item, granularity } = req.query as unknown as GetCustomerUpgradesTrendQuery
+  const result = await getCustomerRetentionTrendAdjustedDetail(orgId, item, granularity ?? 'monthly')
+  sendSuccess(res, result)
+})
+
 /** Record-level detail behind the customer upgrades/downgrades/churn charts — every existing customer's prior/current revenue and which bucket they fell into, for the "export to Excel" verification button shared by all three cards. Same query params as the aggregate endpoint. */
 export const getCustomerUpgradesTrendDetailHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const orgId = req.auth!.orgId!
@@ -216,6 +269,95 @@ export const getQualifiedPipelineTrendHandler = asyncHandler(async (req: Request
   const orgId = req.auth!.orgId!
   const { provider, fromMonth, toMonth } = req.query as unknown as GetQualifiedPipelineTrendQuery
   const result = await getQualifiedPipelineTrend(orgId, provider ?? 'hubspot', fromMonth, toMonth)
+  sendSuccess(res, result)
+})
+
+/** Dashboard's "Opportunities Won by Campaign" chart, below Pipeline Coverage Trend — no query params, Salesforce-only, see campaignWonOpportunities.service.ts. */
+export const getCampaignWonOpportunitiesHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const result = await getCampaignWonOpportunities(orgId)
+  sendSuccess(res, result)
+})
+
+/** Record-level detail behind the chart above — every closed-won Opportunity attributed to a campaign, for the dashboard's "export to Excel" verification button. No query params, see campaignWonOpportunities.service.ts's getCampaignWonOpportunitiesDetail. */
+export const getCampaignWonOpportunitiesDetailHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const result = await getCampaignWonOpportunitiesDetail(orgId)
+  sendSuccess(res, result)
+})
+
+/** Dashboard's "Campaign ROI" chart, below Opportunities Won by Campaign — no query params, Salesforce-only, see campaignRoi.service.ts. */
+export const getCampaignRoiHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const result = await getCampaignRoi(orgId)
+  sendSuccess(res, result)
+})
+
+/** Dashboard's "Competitor Win Rate" chart — every closed Opportunity with a "Primary Competitor" custom field set, grouped by competitor; no query params, Salesforce-only, see competitorWinRate.service.ts. */
+export const getCompetitorWinRateHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const result = await getCompetitorWinRate(orgId)
+  sendSuccess(res, result)
+})
+
+/** Dashboard's "Lead Volume vs. Target MQL" chart — HubSpot-only, no query params, see leadVolumeVsTarget.service.ts. */
+export const getLeadVolumeVsTargetHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const result = await getLeadVolumeVsTarget(orgId)
+  sendSuccess(res, result)
+})
+
+/** Dashboard's "Leads by Month" chart — one Lead-creation-date histogram per Salesforce Campaign, picked via a dropdown client-side; no query params, Salesforce-only, see leadsByMonth.service.ts. */
+export const getLeadsByMonthByCampaignHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const result = await getLeadsByMonthByCampaign(orgId)
+  sendSuccess(res, result)
+})
+
+/** Dashboard's "Opportunities by Lead Source" chart, below Leads by Month — no query params, Salesforce-only, see opportunitiesByLeadSource.service.ts. */
+export const getOpportunitiesByLeadSourceHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const result = await getOpportunitiesByLeadSource(orgId)
+  sendSuccess(res, result)
+})
+
+/** Dashboard's "Opportunities by Lead Source by Month" chart, below Opportunities by Lead Source — `?granularity=monthly|quarterly|yearly` (defaults to monthly), Salesforce-only, see opportunitiesByLeadSourceByMonth.service.ts. */
+export const getOpportunitiesByLeadSourceByMonthHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { granularity } = req.query as unknown as GetOpportunitiesByLeadSourceByMonthQuery
+  const result = await getOpportunitiesByLeadSourceByMonth(orgId, granularity ?? 'monthly')
+  sendSuccess(res, result)
+})
+
+/** Dashboard's "Customer Concentration" chart, below Opportunities by Lead Source by Month — `?item=<QuickBooks Item id>` narrows to one product's revenue, QuickBooks-only, see customerRevenueConcentration.service.ts. */
+export const getCustomerRevenueConcentrationHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { item } = req.query as unknown as GetCustomerRevenueConcentrationQuery
+  const result = await getCustomerRevenueConcentration(orgId, item)
+  sendSuccess(res, result)
+})
+
+/** Record-level detail behind the chart above — every synced invoice (or invoice line, when `?item=` is given) billed to one of the top 10 customers or their subsidiaries, for the dashboard's "export to Excel" verification button. See customerRevenueConcentration.service.ts's getCustomerRevenueConcentrationDetail. */
+export const getCustomerRevenueConcentrationDetailHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { item } = req.query as unknown as GetCustomerRevenueConcentrationQuery
+  const result = await getCustomerRevenueConcentrationDetail(orgId, item)
+  sendSuccess(res, result)
+})
+
+/** Dashboard's "Customer Concentration" trend chart, below the all-time chart above — `?item=<QuickBooks Item id>` narrows to one product's revenue, `?granularity=monthly|quarterly|yearly` (defaults to monthly) picks the bucket size, QuickBooks-only, see customerRevenueConcentrationByMonth.service.ts. */
+export const getCustomerRevenueConcentrationByMonthHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { item, granularity } = req.query as unknown as GetCustomerRevenueConcentrationByMonthQuery
+  const result = await getCustomerRevenueConcentrationByMonth(orgId, item, granularity ?? 'monthly')
+  sendSuccess(res, result)
+})
+
+/** Record-level detail behind the chart above — which customers made up each displayed period's top 10, plus every synced invoice (or invoice line, when `?item=` is given) behind them, for the dashboard's "export to Excel" verification button. See customerRevenueConcentrationByMonth.service.ts's getCustomerRevenueConcentrationByMonthDetail. */
+export const getCustomerRevenueConcentrationByMonthDetailHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { item, granularity } = req.query as unknown as GetCustomerRevenueConcentrationByMonthQuery
+  const result = await getCustomerRevenueConcentrationByMonthDetail(orgId, item, granularity ?? 'monthly')
   sendSuccess(res, result)
 })
 

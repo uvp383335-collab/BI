@@ -194,6 +194,115 @@ export async function getInvoiceRevenueGrowthByProduct(orgId: string, options: I
   return { products: resultProducts }
 }
 
+export interface InvoiceRevenueGrowthByStateOptions {
+  fromYear?: string
+  /** Narrows to one product's revenue by state instead of every product combined. */
+  itemId?: string
+}
+
+export interface InvoiceRevenueGrowthByStateResult {
+  /** One series per billing-address state that has any synced invoice revenue (of the selected product, if filtered) in range, `id`/`name` both the 2-letter state code (same raw value the billing-state filter elsewhere in the app uses). */
+  states: ProductRevenueGrowthProduct[]
+}
+
+/**
+ * "Revenue growth by location" — the same month-over-month revenue growth
+ * as getInvoiceRevenueGrowthByProduct above, grouped by each invoice's
+ * billing-address state instead of by product. Reads this org's own synced
+ * `Invoice.billingAddress.state` (QuickBooks' `BillAddr.CountrySubDivisionCode`,
+ * synced per-invoice — see sync.service.ts's syncQuickBooksInvoices); never
+ * calls QuickBooks live. Unlike product revenue growth, there's no fixed
+ * catalog to join against — the state list is simply whichever states
+ * actually appear in synced invoices, so an org whose invoices predate
+ * billing-address sync (or hasn't run a forced resync since) will see
+ * nothing here until one runs. `options.itemId` answers "how is this one
+ * product doing in each state" instead of blending every product's revenue
+ * together.
+ */
+export async function getInvoiceRevenueGrowthByState(orgId: string, options: InvoiceRevenueGrowthByStateOptions): Promise<InvoiceRevenueGrowthByStateResult> {
+  const startDate = `${options.fromYear ?? '2018'}-01-01`
+  const endDate = lastCompletedMonthEndDate()
+  const canonicalMonths = monthRangeYYYYMM(startDate, endDate)
+
+  const from = new Date(`${startDate}T00:00:00.000Z`)
+  const to = new Date(`${endDate}T23:59:59.999Z`)
+
+  const rows = await invoiceRepository.getRevenueByStateAndMonth(orgId, 'quickbooks', from, to, options.itemId)
+
+  const revenueByStateMonth = new Map<string, Map<string, number>>()
+  for (const row of rows) {
+    if (!revenueByStateMonth.has(row.state)) revenueByStateMonth.set(row.state, new Map())
+    revenueByStateMonth.get(row.state)!.set(row.month, row.revenue)
+  }
+
+  const states: ProductRevenueGrowthProduct[] = Array.from(revenueByStateMonth.entries())
+    .map(([state, monthRevenue]) => ({ id: state, name: state, months: buildInvoiceMonthlySeries(canonicalMonths, monthRevenue) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  return { states }
+}
+
+export interface InvoiceRevenueGrowthByStateDetailLine {
+  providerRecordId: string
+  customerRecordId: string
+  customerName: string | null
+  /** "YYYY-MM-DD" */
+  txnDate: string
+  /** This invoice's (or, when filtered by product, that product's line) amount counted toward this state. */
+  amount: number
+  invoiceTotalAmount: number
+}
+
+export interface InvoiceRevenueGrowthByStateDetailResult {
+  state: string
+  productId: string | null
+  productName: string | null
+  months: MonthlyRevenueGrowthPoint[]
+  /** Every synced invoice (or invoice line, when filtered by product) behind the months above — sums to months[].revenue exactly, same as getInvoiceRevenueGrowthByProductDetail's lines. */
+  lines: InvoiceRevenueGrowthByStateDetailLine[]
+}
+
+/**
+ * Record-level backing data for one state's series in "Revenue growth by
+ * location," for its "export to Excel" verification button. `itemId`/`itemName`
+ * mirror whatever product filter the card currently has selected, so the
+ * export always matches what's on screen — pass neither for "all products."
+ */
+export async function getInvoiceRevenueGrowthByStateDetail(
+  orgId: string,
+  state: string,
+  options: InvoiceRevenueGrowthByStateOptions & { itemName?: string }
+): Promise<InvoiceRevenueGrowthByStateDetailResult> {
+  const startDate = `${options.fromYear ?? '2018'}-01-01`
+  const endDate = lastCompletedMonthEndDate()
+  const canonicalMonths = monthRangeYYYYMM(startDate, endDate)
+
+  const from = new Date(`${startDate}T00:00:00.000Z`)
+  const to = new Date(`${endDate}T23:59:59.999Z`)
+  const lines = await invoiceRepository.getInvoiceDetailByState(orgId, 'quickbooks', from, to, state, options.itemId)
+
+  const revenueByMonth = new Map<string, number>()
+  for (const line of lines) {
+    const month = line.txnDate.toISOString().slice(0, 7)
+    revenueByMonth.set(month, (revenueByMonth.get(month) ?? 0) + line.amount)
+  }
+
+  return {
+    state,
+    productId: options.itemId ?? null,
+    productName: options.itemName ?? null,
+    months: buildInvoiceMonthlySeries(canonicalMonths, revenueByMonth),
+    lines: lines.map((line) => ({
+      providerRecordId: line.providerRecordId,
+      customerRecordId: line.customerRecordId,
+      customerName: line.customerName,
+      txnDate: line.txnDate.toISOString().slice(0, 10),
+      amount: line.amount,
+      invoiceTotalAmount: line.invoiceTotalAmount
+    }))
+  }
+}
+
 export interface InvoiceRevenueGrowthByProductDetailLine {
   providerRecordId: string
   customerRecordId: string

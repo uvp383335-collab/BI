@@ -57,7 +57,7 @@ export const RecurringRevenueTrendChart: React.FC<RecurringRevenueTrendChartProp
     <div className="card p-6 lg:col-span-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Recurring vs. non-recurring revenue</h2>
+          <h2 className="text-lg font-semibold text-ink">Recurring vs. non-recurring revenue VC-13</h2>
           <p className="mt-1 text-sm text-ink-2">
             {granularity === 'quarterly' ? 'Trailing 6 quarters' : 'Trailing 18 months'}, split by how each product is categorized in Settings.
           </p>

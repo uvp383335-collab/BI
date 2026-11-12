@@ -25,6 +25,78 @@ export function useQualifiedPipelineTrend(enabled: boolean, provider: 'hubspot' 
   })
 }
 
+export function useCampaignWonOpportunities(enabled: boolean) {
+  return useQuery({
+    queryKey: ['metrics', 'campaign-won-opportunities'],
+    queryFn: () => metricsApi.getCampaignWonOpportunitiesRequest(),
+    enabled
+  })
+}
+
+export function useCampaignRoi(enabled: boolean) {
+  return useQuery({
+    queryKey: ['metrics', 'campaign-roi'],
+    queryFn: () => metricsApi.getCampaignRoiRequest(),
+    enabled
+  })
+}
+
+export function useCompetitorWinRate(enabled: boolean) {
+  return useQuery({
+    queryKey: ['metrics', 'competitor-win-rate'],
+    queryFn: () => metricsApi.getCompetitorWinRateRequest(),
+    enabled
+  })
+}
+
+export function useLeadVolumeVsTarget(enabled: boolean) {
+  return useQuery({
+    queryKey: ['metrics', 'lead-volume-vs-target-mql'],
+    queryFn: () => metricsApi.getLeadVolumeVsTargetRequest(),
+    enabled
+  })
+}
+
+export function useLeadsByMonthByCampaign(enabled: boolean) {
+  return useQuery({
+    queryKey: ['metrics', 'leads-by-month-by-campaign'],
+    queryFn: () => metricsApi.getLeadsByMonthByCampaignRequest(),
+    enabled
+  })
+}
+
+export function useOpportunitiesByLeadSource(enabled: boolean) {
+  return useQuery({
+    queryKey: ['metrics', 'opportunities-by-lead-source'],
+    queryFn: () => metricsApi.getOpportunitiesByLeadSourceRequest(),
+    enabled
+  })
+}
+
+export function useOpportunitiesByLeadSourceByMonth(enabled: boolean, granularity: metricsApi.StageConversionGranularity) {
+  return useQuery({
+    queryKey: ['metrics', 'opportunities-by-lead-source-by-month', granularity],
+    queryFn: () => metricsApi.getOpportunitiesByLeadSourceByMonthRequest(granularity),
+    enabled
+  })
+}
+
+export function useCustomerRevenueConcentration(enabled: boolean, itemId?: string) {
+  return useQuery({
+    queryKey: ['metrics', 'customer-revenue-concentration', itemId],
+    queryFn: () => metricsApi.getCustomerRevenueConcentrationRequest(itemId),
+    enabled
+  })
+}
+
+export function useCustomerRevenueConcentrationByMonth(enabled: boolean, itemId: string | undefined, granularity: metricsApi.StageConversionGranularity) {
+  return useQuery({
+    queryKey: ['metrics', 'customer-revenue-concentration-by-month', itemId, granularity],
+    queryFn: () => metricsApi.getCustomerRevenueConcentrationByMonthRequest(itemId, granularity),
+    enabled
+  })
+}
+
 export function useLeadToMqlTrend(enabled: boolean, provider: 'hubspot' | 'salesforce', granularity: metricsApi.StageConversionGranularity, from?: string, to?: string) {
   return useQuery({
     queryKey: ['metrics', 'lead-to-mql-trend', provider, granularity, from, to],

@@ -1,7 +1,7 @@
 import type ExcelJS from 'exceljs'
 import { CustomerUpgradesTrendDetailResult, CustomerUpgradesTrendGranularity } from '../api/productRevenueGrowthApi'
 
-export type CustomerUpgradesBucket = 'upgrade' | 'downgrade' | 'churn'
+export type CustomerUpgradesBucket = 'upgrade' | 'downgrade' | 'churn' | 'retention'
 
 interface ExportCustomerUpgradesDetailParams {
   /** Which bucket this button/card cares about — picks the Summary sheet's count/amount columns and the title; the Detail sheet still lists all three buckets (a churned customer is itself always also implied by the prior period's downgrade/upgrade history, so seeing the full picture per customer is more useful than a pre-filtered sheet). */
@@ -17,7 +17,15 @@ const HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' } } as const
 const BUCKET_LABEL: Record<CustomerUpgradesBucket, string> = {
   upgrade: 'Customer upgrades',
   downgrade: 'Customer downgrades',
-  churn: 'Customer churn'
+  churn: 'Customer churn',
+  retention: 'Customer retention (GRR/NRR)'
+}
+
+const BUCKET_FILENAME_SLUG: Record<CustomerUpgradesBucket, string> = {
+  upgrade: 'upgrades',
+  downgrade: 'downgrades',
+  churn: 'churns',
+  retention: 'retention'
 }
 
 const BUCKET_COUNT_KEY = {
@@ -40,14 +48,17 @@ function styleHeaderRow(row: ExcelJS.Row): void {
 }
 
 /**
- * Builds a workbook for one of the Upgrades/Downgrades/Churn cards: a
- * period-by-period summary matching what that card's chart plots, and every
- * existing customer's prior/current revenue for that period — classified
- * into upgrade/downgrade/churn exactly the way the chart counts them, read
- * straight from synced Invoice records (no live QuickBooks call, so this
- * always ties out exactly). The Detail sheet includes all three buckets
- * (not just the one this button's card cares about) since they're computed
- * together from the same customer revenue comparison.
+ * Builds a workbook for one of the Upgrades/Downgrades/Churn/Retention
+ * cards: a period-by-period summary matching what that card's chart plots,
+ * and every existing customer's prior/current revenue for that period —
+ * classified into upgrade/downgrade/churn exactly the way the chart counts
+ * them, read straight from synced Invoice records (no live QuickBooks call,
+ * so this always ties out exactly). The Detail sheet includes all three
+ * buckets (not just the one this button's card cares about) since they're
+ * computed together from the same customer revenue comparison — for the
+ * Retention card specifically, that's the whole point: GRR/NRR are derived
+ * from exactly these upgrade/downgrade/churn amounts, so seeing the
+ * customers behind them is how the ratio gets verified.
  */
 export async function exportCustomerUpgradesDetailToExcel({ bucket, itemName, granularity, detail }: ExportCustomerUpgradesDetailParams): Promise<void> {
   // Loaded on demand — ExcelJS is a heavy library, and most sessions never click "export".
@@ -64,12 +75,21 @@ export async function exportCustomerUpgradesDetailToExcel({ bucket, itemName, gr
   summarySheet.addRow([`Granularity: ${granularity}`])
   summarySheet.addRow([`Generated: ${new Date().toISOString()}`])
   summarySheet.addRow([])
-  const summaryHeaderRow = summarySheet.addRow([periodLabel, 'Count', 'Amount', 'Starting revenue', 'GRR %', 'NRR %'])
-  styleHeaderRow(summaryHeaderRow)
-  for (const p of detail.periods) {
-    summarySheet.addRow([p.period, p[BUCKET_COUNT_KEY[bucket]], p[BUCKET_AMOUNT_KEY[bucket]], p.startingRevenue, p.grrPct, p.nrrPct])
+  if (bucket === 'retention') {
+    const summaryHeaderRow = summarySheet.addRow([periodLabel, 'Starting revenue', 'Downgrade amount', 'Churn amount', 'Upgrade amount', 'GRR %', 'NRR %'])
+    styleHeaderRow(summaryHeaderRow)
+    for (const p of detail.periods) {
+      summarySheet.addRow([p.period, p.startingRevenue, p.downgradeAmount, p.churnAmount, p.upgradeAmount, p.grrPct, p.nrrPct])
+    }
+    summarySheet.columns = [{ width: 12 }, { width: 18 }, { width: 18 }, { width: 14 }, { width: 16 }, { width: 10 }, { width: 10 }]
+  } else {
+    const summaryHeaderRow = summarySheet.addRow([periodLabel, 'Count', 'Amount', 'Starting revenue', 'GRR %', 'NRR %'])
+    styleHeaderRow(summaryHeaderRow)
+    for (const p of detail.periods) {
+      summarySheet.addRow([p.period, p[BUCKET_COUNT_KEY[bucket]], p[BUCKET_AMOUNT_KEY[bucket]], p.startingRevenue, p.grrPct, p.nrrPct])
+    }
+    summarySheet.columns = [{ width: 12 }, { width: 12 }, { width: 16 }, { width: 18 }, { width: 10 }, { width: 10 }]
   }
-  summarySheet.columns = [{ width: 12 }, { width: 12 }, { width: 16 }, { width: 18 }, { width: 10 }, { width: 10 }]
 
   const detailSheet = workbook.addWorksheet('Customer Detail')
   detailSheet.columns = [
@@ -102,7 +122,7 @@ export async function exportCustomerUpgradesDetailToExcel({ bucket, itemName, gr
   const link = document.createElement('a')
   const safeName = (itemName ?? 'all-products').replace(/[^a-z0-9-]/gi, '-')
   link.href = url
-  link.download = `customer-${bucket}s-${safeName}-${granularity}-detail.xlsx`
+  link.download = `customer-${BUCKET_FILENAME_SLUG[bucket]}-${safeName}-${granularity}-detail.xlsx`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)

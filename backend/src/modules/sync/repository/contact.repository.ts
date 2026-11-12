@@ -11,6 +11,8 @@ export interface ContactUpsertInput {
   leadStatus?: string
   analyticsSource?: string
   lifecycleStageHistory: { value: string; timestamp: Date }[]
+  leadCreatedAt?: Date
+  campaignIds?: string[]
 }
 
 /** Resolves the Contact model bound to the given org's own tenant database. */
@@ -43,5 +45,14 @@ export const contactRepository = {
   async findSourcesByProvider(orgId: string | Types.ObjectId, provider: string) {
     const ContactModel = await modelForOrg(orgId)
     return ContactModel.find({ orgId, provider }, { providerRecordId: 1, analyticsSource: 1 }).lean()
+  },
+
+  /** Every Salesforce lead that belongs to at least one Campaign — the raw material for the "Leads by Month" per-campaign chart. */
+  async findCampaignAttributedLeads(orgId: string | Types.ObjectId, provider: string) {
+    const ContactModel = await modelForOrg(orgId)
+    return ContactModel.find(
+      { orgId, provider, campaignIds: { $exists: true, $ne: [] } },
+      { leadCreatedAt: 1, campaignIds: 1 }
+    ).lean()
   }
 }

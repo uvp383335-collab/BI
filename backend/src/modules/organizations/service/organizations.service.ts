@@ -2,7 +2,7 @@ import { organizationsRepository } from '../repository/organizations.repository'
 import { membershipsRepository } from '../repository/memberships.repository'
 import { issueTokenPair } from '../../auth/service/tokenIssuer'
 import { AppError } from '../../../shared/utils/AppError'
-import { OrganizationSettings, Cm04Target, Cm08MqlTarget } from '../model/Organization.model'
+import { OrganizationSettings, Cm04Target, Cm08MqlTarget, LeadVolumeTarget } from '../model/Organization.model'
 import { integrationsRepository } from '../../integrations/repository/integrations.repository'
 import { syncService } from '../../sync/service/sync.service'
 import { funnelStageEventRepository } from '../../sync/repository/funnelStageEvent.repository'
@@ -230,6 +230,13 @@ export async function updateMarketingSpendAccountSettings(orgId: string, marketi
 /** CM-08's monthly MQL plan (Organization.model.ts) — read at compute time like CM-04's targets, so no resync. */
 export async function updateCm08MqlTargets(orgId: string, targets: Cm08MqlTarget[]): Promise<OrganizationSettings> {
   const org = await organizationsRepository.updateCm08MqlTargets(orgId, targets)
+  if (!org) throw AppError.notFound('Organization not found', 'ORGANIZATION_NOT_FOUND')
+  return org.settings ?? {}
+}
+
+/** "Lead Volume vs. Target MQL" chart's monthly target (Organization.model.ts) — read at compute time, so no resync. Independent from updateCm08MqlTargets above. */
+export async function updateLeadVolumeTargets(orgId: string, targets: LeadVolumeTarget[]): Promise<OrganizationSettings> {
+  const org = await organizationsRepository.updateLeadVolumeTargets(orgId, targets)
   if (!org) throw AppError.notFound('Organization not found', 'ORGANIZATION_NOT_FOUND')
   return org.settings ?? {}
 }

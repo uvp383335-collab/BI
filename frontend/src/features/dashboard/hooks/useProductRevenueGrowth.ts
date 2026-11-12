@@ -71,6 +71,15 @@ export function useCustomerUpgradesTrend(enabled: boolean, itemId?: string, gran
   })
 }
 
+/** "Customer retention (GRR/NRR) — Adjusted" card's contents — same storage-backed source as useCustomerUpgradesTrend, just with repeat churns from the same customer suppressed after their first. Shares the "Customer retention" card's own product/granularity selection so the two stay directly comparable. */
+export function useCustomerRetentionTrendAdjusted(enabled: boolean, itemId?: string, granularity: productRevenueGrowthApi.CustomerUpgradesTrendGranularity = 'monthly') {
+  return useQuery({
+    queryKey: ['metrics', 'quickbooks', 'customer-retention-trend-adjusted', itemId, granularity],
+    queryFn: () => productRevenueGrowthApi.getCustomerRetentionTrendAdjustedRequest(itemId, granularity),
+    enabled
+  })
+}
+
 /**
  * "Revenue growth by product" (docs/server.js §5) — this runs one P&L
  * report per product against QuickBooks and can take a while, but auto-loads
@@ -95,6 +104,19 @@ export function useInvoiceRevenueGrowthByProduct(enabled: boolean, fromYear?: st
   return useQuery({
     queryKey: ['metrics', 'quickbooks', 'invoice-revenue-growth-by-product', fromYear],
     queryFn: () => productRevenueGrowthApi.getInvoiceRevenueGrowthByProductRequest({ fromYear }),
+    enabled
+  })
+}
+
+/**
+ * "Revenue growth by location," computed entirely from synced Invoice
+ * billing addresses — cheap and storage-backed, so this auto-loads like the
+ * dropdowns above. `itemId` narrows to one product's revenue by state.
+ */
+export function useInvoiceRevenueGrowthByState(enabled: boolean, fromYear?: string, itemId?: string) {
+  return useQuery({
+    queryKey: ['metrics', 'quickbooks', 'invoice-revenue-growth-by-state', fromYear, itemId],
+    queryFn: () => productRevenueGrowthApi.getInvoiceRevenueGrowthByStateRequest({ fromYear, itemId }),
     enabled
   })
 }

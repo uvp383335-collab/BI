@@ -140,6 +140,63 @@ export async function getInvoiceRevenueGrowthByProductDetailRequest(productId: s
   return res.data.data
 }
 
+export interface InvoiceRevenueGrowthByStateOptions {
+  fromYear?: string
+  /** Narrows to one product's revenue by state instead of every product combined. */
+  itemId?: string
+}
+
+export interface InvoiceRevenueGrowthByStateResult {
+  /** One series per billing-address state with synced invoice revenue (of the selected product, if filtered) in range — `id`/`name` both the 2-letter state code. */
+  states: ProductRevenueGrowthProduct[]
+}
+
+/**
+ * "Revenue growth by location" — the same month-over-month revenue growth as
+ * getInvoiceRevenueGrowthByProductRequest above, grouped by each invoice's
+ * billing-address state instead of by product. Never calls QuickBooks live;
+ * needs invoices synced since billing addresses were added (a forced resync
+ * backfills older ones) — an org with none yet will see an empty list.
+ * `itemId` answers "how is this one product doing in each state."
+ */
+export async function getInvoiceRevenueGrowthByStateRequest(options: InvoiceRevenueGrowthByStateOptions): Promise<InvoiceRevenueGrowthByStateResult> {
+  const res = await httpClient.get<ApiEnvelope<InvoiceRevenueGrowthByStateResult>>('/metrics/quickbooks/invoice-revenue-growth-by-state', {
+    params: { fromYear: options.fromYear, item: options.itemId }
+  })
+  return res.data.data
+}
+
+export interface InvoiceRevenueGrowthByStateDetailLine {
+  providerRecordId: string
+  customerRecordId: string
+  customerName: string | null
+  /** "YYYY-MM-DD" */
+  txnDate: string
+  /** This invoice's (or, when filtered by product, that product's line) amount counted toward this state. */
+  amount: number
+  invoiceTotalAmount: number
+}
+
+export interface InvoiceRevenueGrowthByStateDetailResult {
+  state: string
+  productId: string | null
+  productName: string | null
+  months: MonthlyRevenueGrowthPoint[]
+  /** Every synced invoice (or invoice line, when filtered by product) behind the months above — sums to months[].revenue exactly. */
+  lines: InvoiceRevenueGrowthByStateDetailLine[]
+}
+
+/** Record-level detail behind one state's series above — every synced invoice (or line, when a product filter is active) that fed it, for the "export to Excel" verification button. */
+export async function getInvoiceRevenueGrowthByStateDetailRequest(
+  state: string,
+  options: InvoiceRevenueGrowthByStateOptions & { itemName?: string }
+): Promise<InvoiceRevenueGrowthByStateDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<InvoiceRevenueGrowthByStateDetailResult>>('/metrics/quickbooks/invoice-revenue-growth-by-state/detail', {
+    params: { state, fromYear: options.fromYear, item: options.itemId, itemName: options.itemName }
+  })
+  return res.data.data
+}
+
 export async function getQuickBooksDepartmentsRequest(): Promise<QuickBooksDepartmentOption[]> {
   const res = await httpClient.get<ApiEnvelope<QuickBooksDepartmentOption[]>>('/metrics/quickbooks/departments')
   return res.data.data
@@ -319,6 +376,77 @@ export interface CustomerUpgradesTrendResult {
  */
 export async function getCustomerUpgradesTrendRequest(item?: string, granularity: CustomerUpgradesTrendGranularity = 'monthly'): Promise<CustomerUpgradesTrendResult> {
   const res = await httpClient.get<ApiEnvelope<CustomerUpgradesTrendResult>>('/metrics/quickbooks/customer-upgrades-trend', { params: { item, granularity } })
+  return res.data.data
+}
+
+export interface CustomerRetentionAdjustedPoint {
+  /** "YYYY-MM" for 'monthly', "YYYY" for 'annually'. */
+  period: string
+  upgradeAmount: number
+  downgradeAmount: number
+  churnAmount: number
+  startingRevenue: number
+  grrPct: number | null
+  nrrPct: number | null
+  /** How many customers would have counted as churned again this period, but were excluded because they'd already churned once earlier in this window. */
+  suppressedChurnCount: number
+  /** The $ this adjustment held back from churnAmount — the gap between this card's number and the unadjusted "Customer retention" card's for the same period. */
+  suppressedChurnAmount: number
+}
+
+export interface CustomerRetentionAdjustedTrendResult {
+  hasData: boolean
+  points: CustomerRetentionAdjustedPoint[]
+}
+
+/**
+ * "Customer retention (GRR/NRR) — Adjusted" — same GRR/NRR math as
+ * getCustomerUpgradesTrendRequest, but a customer's revenue dropping to $0
+ * only ever counts as a churn once within the trailing window, instead of
+ * every time it happens. Added after finding customers billed on an
+ * irregular/non-monthly cadence whose every "off" month was reading as a
+ * full churn with no credit ever given back when they returned (a customer
+ * can only ever be "new" once, so a reactivation never registers as an
+ * upgrade). Rendered directly below the unadjusted card for comparison, not
+ * as a replacement — see backend's getCustomerRetentionTrendAdjusted.
+ */
+export async function getCustomerRetentionTrendAdjustedRequest(
+  item?: string,
+  granularity: CustomerUpgradesTrendGranularity = 'monthly'
+): Promise<CustomerRetentionAdjustedTrendResult> {
+  const res = await httpClient.get<ApiEnvelope<CustomerRetentionAdjustedTrendResult>>('/metrics/quickbooks/customer-retention-trend-adjusted', { params: { item, granularity } })
+  return res.data.data
+}
+
+export interface CustomerRetentionAdjustedDetailEntry {
+  customerRecordId: string
+  customerName: string | null
+  priorRevenue: number
+  currentRevenue: number
+  /** currentRevenue - priorRevenue — negative for downgrade/churn/suppressed-churn. */
+  delta: number
+  /** 'suppressed-churn' = dropped to $0 again but excluded from that period's churnAmount because they'd already churned once earlier in this window. */
+  bucket: 'upgrade' | 'downgrade' | 'churn' | 'suppressed-churn'
+}
+
+export interface CustomerRetentionAdjustedPeriodDetail extends CustomerRetentionAdjustedPoint {
+  /** Every existing customer behind this period's upgrade/downgrade/churn/suppressed-churn counts. */
+  entries: CustomerRetentionAdjustedDetailEntry[]
+}
+
+export interface CustomerRetentionAdjustedTrendDetailResult {
+  hasData: boolean
+  periods: CustomerRetentionAdjustedPeriodDetail[]
+}
+
+/** Record-level detail behind the Adjusted retention chart — every existing customer's prior/current revenue and which bucket (including suppressed-churn) they fell into each period, for the "export to Excel" verification button. */
+export async function getCustomerRetentionTrendAdjustedDetailRequest(
+  item?: string,
+  granularity: CustomerUpgradesTrendGranularity = 'monthly'
+): Promise<CustomerRetentionAdjustedTrendDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<CustomerRetentionAdjustedTrendDetailResult>>('/metrics/quickbooks/customer-retention-trend-adjusted/detail', {
+    params: { item, granularity }
+  })
   return res.data.data
 }
 

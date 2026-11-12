@@ -99,6 +99,50 @@ export const dealRepository = {
     ).lean()
   },
 
+  /**
+   * Every deal carrying at least one org-configured custom field
+   * (`customFields`, e.g. an org's "Primary Competitor" extra display
+   * field — see sync.service.ts's `ExtraFields`/`salesforceOpportunityExtraFields`),
+   * across all time, with just enough fields (`pipeline`/`dealstage`) to
+   * resolve won/lost against PipelineStageDefinition. Deliberately reads
+   * `customFields` rather than the dedicated `competitor`/`competitors`
+   * fields CM-03 uses (cmMetrics.service.ts's computeCM03) — for an org
+   * that only ever populated a generic "Primary Competitor" extra field
+   * (not Settings > Salesforce > Competitor tracking), that's the only
+   * place the competitor name actually lives.
+   */
+  async findAllWithCustomFields(orgId: string | Types.ObjectId, provider: string) {
+    const DealModel = await modelForOrg(orgId)
+    return DealModel.find({ orgId, provider, 'customFields.0': { $exists: true } }, { pipeline: 1, dealstage: 1, customFields: 1 }).lean()
+  },
+
+  /** Every deal attributed to a Campaign (`campaignId` set — Salesforce-only), across all time: the raw material for the "Opportunities Won by Campaign" chart. "Won" is resolved against PipelineStageDefinition by the caller, same convention as CM-05's Salesforce leg. */
+  async findCampaignAttributedDeals(orgId: string | Types.ObjectId, provider: string) {
+    const DealModel = await modelForOrg(orgId)
+    return DealModel.find({ orgId, provider, campaignId: { $ne: null } }, { pipeline: 1, dealstage: 1, amount: 1, campaignId: 1 }).lean()
+  },
+
+  /**
+   * Same campaign-attributed deals as findCampaignAttributedDeals above, with
+   * the extra fields (providerRecordId, dealname, closedate) needed to list
+   * them one row per deal — the "Opportunities Won by Campaign" chart's
+   * "export to Excel" verification button, so each campaign's won count/$
+   * can be traced back to the actual Opportunities behind it.
+   */
+  async findCampaignAttributedDealDetail(orgId: string | Types.ObjectId, provider: string) {
+    const DealModel = await modelForOrg(orgId)
+    return DealModel.find(
+      { orgId, provider, campaignId: { $ne: null } },
+      { providerRecordId: 1, dealname: 1, pipeline: 1, dealstage: 1, amount: 1, closedate: 1, campaignId: 1 }
+    ).lean()
+  },
+
+  /** Every deal for the org, projecting `leadSource` and `dealCreatedAt` — raw material for the "Opportunities by Lead Source" chart and its by-month breakdown. Opportunities with no LeadSource set are bucketed under "Unknown" by the caller, not dropped. */
+  async findAllLeadSources(orgId: string | Types.ObjectId, provider: string) {
+    const DealModel = await modelForOrg(orgId)
+    return DealModel.find({ orgId, provider }, { leadSource: 1, dealCreatedAt: 1 }).lean()
+  },
+
   /** Raw deal/opportunity records for the "Campaigns & Opportunities" browse view — full field set, paginated, most-recently-created first. */
   async findAllPaginated(orgId: string | Types.ObjectId, provider: string, opts: { page?: number; pageSize?: number } = {}) {
     const DealModel = await modelForOrg(orgId)

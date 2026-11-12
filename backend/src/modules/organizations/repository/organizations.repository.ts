@@ -1,4 +1,4 @@
-import { OrganizationModel, Cm04Target, Cm08MqlTarget } from '../model/Organization.model'
+import { OrganizationModel, Cm04Target, Cm08MqlTarget, LeadVolumeTarget } from '../model/Organization.model'
 import { Types } from 'mongoose'
 
 export const organizationsRepository = {
@@ -122,6 +122,13 @@ export const organizationsRepository = {
   updateCm08MqlTargets(orgId: string | Types.ObjectId, targets: Cm08MqlTarget[]) {
     const sorted = [...targets].sort((a, b) => a.fromMonth.localeCompare(b.fromMonth))
     const update = sorted.length > 0 ? { $set: { 'settings.cm08MqlTargets': sorted } } : { $unset: { 'settings.cm08MqlTargets': 1 } }
+    return OrganizationModel.findByIdAndUpdate(orgId, update, { new: true })
+  },
+
+  /** Same conventions as updateCm04Targets/updateCm08MqlTargets: empty array clears, stored sorted by `fromMonth`. Independent setting from updateCm08MqlTargets — see Organization.model.ts's leadVolumeTargets doc comment. */
+  updateLeadVolumeTargets(orgId: string | Types.ObjectId, targets: LeadVolumeTarget[]) {
+    const sorted = [...targets].sort((a, b) => a.fromMonth.localeCompare(b.fromMonth))
+    const update = sorted.length > 0 ? { $set: { 'settings.leadVolumeTargets': sorted } } : { $unset: { 'settings.leadVolumeTargets': 1 } }
     return OrganizationModel.findByIdAndUpdate(orgId, update, { new: true })
   },
 

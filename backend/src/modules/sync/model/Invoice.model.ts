@@ -17,6 +17,16 @@ export interface InvoiceLineDocument {
   amount: number
 }
 
+/** QuickBooks' Invoice.BillAddr — the "Bill to" address shown on the invoice itself. Every field optional since QuickBooks only requires what the customer record itself has filled in. */
+export interface InvoiceBillingAddressDocument {
+  line1?: string
+  line2?: string
+  city?: string
+  state?: string
+  postalCode?: string
+  country?: string
+}
+
 export interface InvoiceDocument extends Document {
   _id: Types.ObjectId
   orgId: Types.ObjectId
@@ -26,11 +36,24 @@ export interface InvoiceDocument extends Document {
   txnDate: Date
   totalAmount: number
   lines: InvoiceLineDocument[]
+  billingAddress?: InvoiceBillingAddressDocument
   createdAt: Date
   updatedAt: Date
 }
 
 const invoiceLineSchema = new Schema<InvoiceLineDocument>({ itemId: { type: String, required: true }, amount: { type: Number, required: true } }, { _id: false })
+
+const invoiceBillingAddressSchema = new Schema<InvoiceBillingAddressDocument>(
+  {
+    line1: String,
+    line2: String,
+    city: String,
+    state: String,
+    postalCode: String,
+    country: String
+  },
+  { _id: false }
+)
 
 const invoiceSchema = new Schema<InvoiceDocument>(
   {
@@ -40,7 +63,8 @@ const invoiceSchema = new Schema<InvoiceDocument>(
     customerRecordId: { type: String, required: true },
     txnDate: { type: Date, required: true },
     totalAmount: { type: Number, required: true },
-    lines: { type: [invoiceLineSchema], default: [] }
+    lines: { type: [invoiceLineSchema], default: [] },
+    billingAddress: { type: invoiceBillingAddressSchema, required: false }
   },
   { timestamps: true }
 )

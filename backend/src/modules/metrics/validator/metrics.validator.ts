@@ -85,6 +85,37 @@ export const getInvoiceRevenueGrowthByProductDetailQuerySchema = z.object({
 
 export type GetInvoiceRevenueGrowthByProductDetailQuery = z.infer<typeof getInvoiceRevenueGrowthByProductDetailQuerySchema>
 
+// GET /metrics/quickbooks/invoice-revenue-growth-by-state — "Revenue growth by location," the same
+// synced-invoice computation as invoice-revenue-growth-by-product above, grouped by billing-address
+// state instead of by product.
+export const getInvoiceRevenueGrowthByStateQuerySchema = z.object({
+  fromYear: z
+    .string()
+    .regex(/^\d{4}$/, 'fromYear must be "YYYY"')
+    .optional(),
+  // A QuickBooks Item id — narrows the by-state revenue to just that product.
+  item: z.string().optional()
+})
+
+export type GetInvoiceRevenueGrowthByStateQuery = z.infer<typeof getInvoiceRevenueGrowthByStateQuerySchema>
+
+// GET /metrics/quickbooks/invoice-revenue-growth-by-state/detail — record-level backing data (every
+// synced invoice, or invoice line when `item` is given) behind one state's series in the chart above,
+// for the "export to Excel" verification button. Same fromYear/item filters as the aggregate, plus
+// which state to drill into (required) and that product's display name (only needed alongside `item`,
+// passed through rather than re-fetched so this endpoint doesn't need its own product lookup).
+export const getInvoiceRevenueGrowthByStateDetailQuerySchema = z.object({
+  state: z.string().min(1, 'state is required'),
+  fromYear: z
+    .string()
+    .regex(/^\d{4}$/, 'fromYear must be "YYYY"')
+    .optional(),
+  item: z.string().optional(),
+  itemName: z.string().optional()
+})
+
+export type GetInvoiceRevenueGrowthByStateDetailQuery = z.infer<typeof getInvoiceRevenueGrowthByStateDetailQuerySchema>
+
 // GET /metrics/quickbooks/recurring-revenue-trend — the dashboard's recurring-vs-non-recurring
 // revenue bar chart. `granularity` toggles between the trailing 6 quarters (default) and the
 // trailing 18 months, both covering the same window.
@@ -164,3 +195,30 @@ export type GetLeadToMqlTrendQuery = z.infer<typeof getLeadToMqlTrendQuerySchema
 export const getMqlToSqlTrendQuerySchema = getLeadToMqlTrendQuerySchema
 
 export type GetMqlToSqlTrendQuery = z.infer<typeof getMqlToSqlTrendQuerySchema>
+
+// GET /metrics/salesforce/opportunities-by-lead-source-by-month — the dashboard's
+// "Opportunities by Lead Source by Month" chart. `granularity` picks the histogram's
+// bucket size (defaults to monthly); no from/to, it's an all-time histogram.
+export const getOpportunitiesByLeadSourceByMonthQuerySchema = z.object({
+  granularity: z.enum(['monthly', 'quarterly', 'yearly']).optional()
+})
+
+export type GetOpportunitiesByLeadSourceByMonthQuery = z.infer<typeof getOpportunitiesByLeadSourceByMonthQuerySchema>
+
+// GET /metrics/quickbooks/customer-revenue-concentration — the dashboard's "Customer Concentration"
+// chart. `item` (a QuickBooks Item id) narrows to one product's revenue instead of every product blended.
+export const getCustomerRevenueConcentrationQuerySchema = z.object({
+  item: z.string().optional()
+})
+
+export type GetCustomerRevenueConcentrationQuery = z.infer<typeof getCustomerRevenueConcentrationQuerySchema>
+
+// GET /metrics/quickbooks/customer-revenue-concentration-by-month — the dashboard's "Customer
+// Concentration" trend chart, below the all-time chart above. Same `item` filter, plus
+// `granularity` to pick the trend's bucket size (defaults to monthly).
+export const getCustomerRevenueConcentrationByMonthQuerySchema = z.object({
+  item: z.string().optional(),
+  granularity: z.enum(['monthly', 'quarterly', 'yearly']).optional()
+})
+
+export type GetCustomerRevenueConcentrationByMonthQuery = z.infer<typeof getCustomerRevenueConcentrationByMonthQuerySchema>

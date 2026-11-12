@@ -8,13 +8,18 @@ import {
   getProductRevenueGrowthDetailQuerySchema,
   getInvoiceRevenueGrowthByProductQuerySchema,
   getInvoiceRevenueGrowthByProductDetailQuerySchema,
+  getInvoiceRevenueGrowthByStateQuerySchema,
+  getInvoiceRevenueGrowthByStateDetailQuerySchema,
   getRecurringRevenueTrendQuerySchema,
   getGAndAExpenseTrendQuerySchema,
   getNewCustomersTrendQuerySchema,
   getCustomerUpgradesTrendQuerySchema,
   getQualifiedPipelineTrendQuerySchema,
   getLeadToMqlTrendQuerySchema,
-  getMqlToSqlTrendQuerySchema
+  getMqlToSqlTrendQuerySchema,
+  getOpportunitiesByLeadSourceByMonthQuerySchema,
+  getCustomerRevenueConcentrationQuerySchema,
+  getCustomerRevenueConcentrationByMonthQuerySchema
 } from '../validator/metrics.validator'
 
 export const metricsRouter = Router()
@@ -24,6 +29,8 @@ const productRevenueGrowthGuards = [requireAuth, requireOrgContext, validateQuer
 const productRevenueGrowthDetailGuards = [requireAuth, requireOrgContext, validateQuery(getProductRevenueGrowthDetailQuerySchema)] as const
 const invoiceRevenueGrowthByProductGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByProductQuerySchema)] as const
 const invoiceRevenueGrowthByProductDetailGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByProductDetailQuerySchema)] as const
+const invoiceRevenueGrowthByStateGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByStateQuerySchema)] as const
+const invoiceRevenueGrowthByStateDetailGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByStateDetailQuerySchema)] as const
 const recurringRevenueTrendGuards = [requireAuth, requireOrgContext, validateQuery(getRecurringRevenueTrendQuerySchema)] as const
 const gaExpenseTrendGuards = [requireAuth, requireOrgContext, validateQuery(getGAndAExpenseTrendQuerySchema)] as const
 const newCustomersTrendGuards = [requireAuth, requireOrgContext, validateQuery(getNewCustomersTrendQuerySchema)] as const
@@ -31,9 +38,28 @@ const customerUpgradesTrendGuards = [requireAuth, requireOrgContext, validateQue
 const qualifiedPipelineTrendGuards = [requireAuth, requireOrgContext, validateQuery(getQualifiedPipelineTrendQuerySchema)] as const
 const leadToMqlTrendGuards = [requireAuth, requireOrgContext, validateQuery(getLeadToMqlTrendQuerySchema)] as const
 const mqlToSqlTrendGuards = [requireAuth, requireOrgContext, validateQuery(getMqlToSqlTrendQuerySchema)] as const
+const opportunitiesByLeadSourceByMonthGuards = [requireAuth, requireOrgContext, validateQuery(getOpportunitiesByLeadSourceByMonthQuerySchema)] as const
+const customerRevenueConcentrationGuards = [requireAuth, requireOrgContext, validateQuery(getCustomerRevenueConcentrationQuerySchema)] as const
+const customerRevenueConcentrationByMonthGuards = [requireAuth, requireOrgContext, validateQuery(getCustomerRevenueConcentrationByMonthQuerySchema)] as const
 
 metricsRouter.get('/trend/:id', ...guards, metricsController.getMetricTrend)
 metricsRouter.get('/qualified-pipeline-trend', ...qualifiedPipelineTrendGuards, metricsController.getQualifiedPipelineTrendHandler)
+metricsRouter.get('/salesforce/campaign-won-opportunities', requireAuth, requireOrgContext, metricsController.getCampaignWonOpportunitiesHandler)
+metricsRouter.get('/salesforce/campaign-won-opportunities/detail', requireAuth, requireOrgContext, metricsController.getCampaignWonOpportunitiesDetailHandler)
+metricsRouter.get('/salesforce/campaign-roi', requireAuth, requireOrgContext, metricsController.getCampaignRoiHandler)
+metricsRouter.get('/salesforce/competitor-win-rate', requireAuth, requireOrgContext, metricsController.getCompetitorWinRateHandler)
+metricsRouter.get('/hubspot/lead-volume-vs-target-mql', requireAuth, requireOrgContext, metricsController.getLeadVolumeVsTargetHandler)
+metricsRouter.get('/salesforce/leads-by-month-by-campaign', requireAuth, requireOrgContext, metricsController.getLeadsByMonthByCampaignHandler)
+metricsRouter.get('/salesforce/opportunities-by-lead-source', requireAuth, requireOrgContext, metricsController.getOpportunitiesByLeadSourceHandler)
+metricsRouter.get('/salesforce/opportunities-by-lead-source-by-month', ...opportunitiesByLeadSourceByMonthGuards, metricsController.getOpportunitiesByLeadSourceByMonthHandler)
+metricsRouter.get('/quickbooks/customer-revenue-concentration', ...customerRevenueConcentrationGuards, metricsController.getCustomerRevenueConcentrationHandler)
+metricsRouter.get('/quickbooks/customer-revenue-concentration/detail', ...customerRevenueConcentrationGuards, metricsController.getCustomerRevenueConcentrationDetailHandler)
+metricsRouter.get('/quickbooks/customer-revenue-concentration-by-month', ...customerRevenueConcentrationByMonthGuards, metricsController.getCustomerRevenueConcentrationByMonthHandler)
+metricsRouter.get(
+  '/quickbooks/customer-revenue-concentration-by-month/detail',
+  ...customerRevenueConcentrationByMonthGuards,
+  metricsController.getCustomerRevenueConcentrationByMonthDetailHandler
+)
 metricsRouter.get('/lead-to-mql-trend', ...leadToMqlTrendGuards, metricsController.getLeadToMqlTrendHandler)
 metricsRouter.get('/lead-to-mql-trend/detail', ...leadToMqlTrendGuards, metricsController.getLeadToMqlTrendDetailHandler)
 metricsRouter.get('/mql-to-sql-trend', ...mqlToSqlTrendGuards, metricsController.getMqlToSqlTrendHandler)
@@ -50,12 +76,20 @@ metricsRouter.get(
   ...invoiceRevenueGrowthByProductDetailGuards,
   metricsController.getInvoiceRevenueGrowthByProductDetailHandler
 )
+metricsRouter.get('/quickbooks/invoice-revenue-growth-by-state', ...invoiceRevenueGrowthByStateGuards, metricsController.getInvoiceRevenueGrowthByStateHandler)
+metricsRouter.get(
+  '/quickbooks/invoice-revenue-growth-by-state/detail',
+  ...invoiceRevenueGrowthByStateDetailGuards,
+  metricsController.getInvoiceRevenueGrowthByStateDetailHandler
+)
 metricsRouter.get('/quickbooks/recurring-revenue-trend', ...recurringRevenueTrendGuards, metricsController.getRecurringRevenueTrendHandler)
 metricsRouter.get('/quickbooks/ga-expense-trend', ...gaExpenseTrendGuards, metricsController.getGAndAExpenseTrendHandler)
 metricsRouter.get('/quickbooks/cac-trend', requireAuth, requireOrgContext, metricsController.getCACTrendHandler)
 metricsRouter.get('/quickbooks/new-customers-trend', ...newCustomersTrendGuards, metricsController.getNewCustomersTrendHandler)
 metricsRouter.get('/quickbooks/new-customers-trend/detail', ...newCustomersTrendGuards, metricsController.getNewCustomersTrendDetailHandler)
 metricsRouter.get('/quickbooks/customer-upgrades-trend', ...customerUpgradesTrendGuards, metricsController.getCustomerUpgradesTrendHandler)
+metricsRouter.get('/quickbooks/customer-retention-trend-adjusted', ...customerUpgradesTrendGuards, metricsController.getCustomerRetentionTrendAdjustedHandler)
+metricsRouter.get('/quickbooks/customer-retention-trend-adjusted/detail', ...customerUpgradesTrendGuards, metricsController.getCustomerRetentionTrendAdjustedDetailHandler)
 metricsRouter.get('/quickbooks/customer-upgrades-trend/detail', ...customerUpgradesTrendGuards, metricsController.getCustomerUpgradesTrendDetailHandler)
 
 metricsRouter.get('/vc-01', ...guards, metricsController.getVC01)

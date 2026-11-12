@@ -49,7 +49,7 @@ export const RecurringRevenueShareChart: React.FC<RecurringRevenueShareChartProp
   return (
     <div className="card p-6 lg:col-span-3">
       <div>
-        <h2 className="text-lg font-semibold text-ink">Recurring revenue % of total</h2>
+        <h2 className="text-lg font-semibold text-ink">Recurring revenue % of total VC-12</h2>
         <p className="mt-1 text-sm text-ink-2">
           {granularity === 'quarterly' ? 'Trailing 6 quarters' : 'Trailing 18 months'}, recurring revenue as a share of recurring + non-recurring combined.
         </p>

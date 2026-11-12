@@ -135,3 +135,11 @@ export const updateCm08MqlTargetsSchema = z.object({
 })
 
 export type UpdateCm08MqlTargetsInput = z.infer<typeof updateCm08MqlTargetsSchema>
+
+// "Lead Volume vs. Target MQL" chart's target — independent from updateCm08MqlTargetsSchema
+// above (see Organization.model.ts's leadVolumeTargets doc comment), same row shape otherwise.
+export const updateLeadVolumeTargetsSchema = z.object({
+  targets: monthRangeTargetsSchema(z.object({ ...monthRange, targetMql: z.number().positive('Target must be greater than 0').max(1e9) }))
+})
+
+export type UpdateLeadVolumeTargetsInput = z.infer<typeof updateLeadVolumeTargetsSchema>
