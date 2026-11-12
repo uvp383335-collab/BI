@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { GAndAExpenseTrendGranularity, GAndAExpenseTrendResult } from '../api/productRevenueGrowthApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface GAndAExpenseTrendChartProps {
   data?: GAndAExpenseTrendResult
@@ -54,7 +55,10 @@ export const GAndAExpenseTrendChart: React.FC<GAndAExpenseTrendChartProps> = ({ 
     <div className="card p-6 lg:col-span-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-ink">G&A % of Revenue VC-09</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">G&A % of Revenue VC-09</h2>
+            <AnalyzeButton chartKey="ga-expense-trend" chartTitle="G&A % of Revenue" />
+          </div>
           <p className="mt-1 text-sm text-ink-2">{GRANULARITY_DESCRIPTION[granularity]}, G&A expense (as configured in Settings) as a share of total revenue.</p>
         </div>
         {data?.hasConfiguredAccounts && (

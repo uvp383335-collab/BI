@@ -5,6 +5,7 @@ import { CustomerUpgradesTrendGranularity, CustomerUpgradesTrendResult, getCusto
 import { CategorizedProduct } from '../../integrations/api/productCategoriesApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
 import { exportCustomerUpgradesDetailToExcel } from '../utils/exportCustomerUpgradesDetailToExcel'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface CustomerUpgradesTrendChartProps {
   data?: CustomerUpgradesTrendResult
@@ -99,7 +100,10 @@ export const CustomerUpgradesTrendChart: React.FC<CustomerUpgradesTrendChartProp
     <div className="card p-6 lg:col-span-3">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Customer upgrades{selectedProductName ? ` — ${selectedProductName}` : ''}</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">Customer upgrades{selectedProductName ? ` — ${selectedProductName}` : ''}</h2>
+            <AnalyzeButton chartKey="customer-upgrades-trend" chartTitle="Customer upgrades" />
+          </div>
           <p className="mt-1 text-sm text-ink-2">
             Customers whose bill for this product went up from one {granularity === 'monthly' ? 'month' : 'year'} to the next. Only recurring products billed{' '}
             {granularity === 'monthly' ? 'monthly' : 'yearly'} are eligible for this view.

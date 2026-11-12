@@ -5,6 +5,7 @@ import { CustomerUpgradesTrendGranularity, CustomerUpgradesTrendResult, getCusto
 import { CategorizedProduct } from '../../integrations/api/productCategoriesApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
 import { exportCustomerUpgradesDetailToExcel } from '../utils/exportCustomerUpgradesDetailToExcel'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface CustomerRetentionTrendChartProps {
   data?: CustomerUpgradesTrendResult
@@ -94,7 +95,10 @@ export const CustomerRetentionTrendChart: React.FC<CustomerRetentionTrendChartPr
     <div className="card p-6 lg:col-span-3">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Customer retention (GRR/NRR) VC-01 VC-02 — {selectedProductName}</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">Customer retention (GRR/NRR) VC-01 VC-02 — {selectedProductName}</h2>
+            <AnalyzeButton chartKey="customer-retention-trend" chartTitle="Customer retention (GRR/NRR)" />
+          </div>
           <p className="mt-1 text-sm text-ink-2">
             Gross and net revenue retention {selectedProductId ? 'for this product' : 'blended across every eligible product'},{' '}
             {granularity === 'monthly' ? 'month over month' : 'year over year'}. GRR never gives credit for upgrades; NRR does, and can exceed 100%. Only

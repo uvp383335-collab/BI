@@ -3,11 +3,15 @@ import { Link } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, TooltipContentProps, XAxis, YAxis } from 'recharts'
 import { QualifiedPipelineTrendPoint, QualifiedPipelineTrendResult } from '../api/metricsApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { AnalysisChartKey } from '../../aiAnalysis/api/aiAnalysisApi'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface QualifiedPipelineTrendChartProps {
   title: string
   data?: QualifiedPipelineTrendResult
   isLoading: boolean
+  /** Shows the "Analyze" AI report button for this chart — omitted hides it. */
+  analysisChartKey?: AnalysisChartKey
 }
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -122,7 +126,7 @@ const LEGEND_ITEMS: { status: Status; label: string }[] = [
  * printed value (never only a tooltip), so the ratio reads correctly even
  * for colorblind viewers or at a glance across a wide magnitude range.
  */
-export const QualifiedPipelineTrendChart: React.FC<QualifiedPipelineTrendChartProps> = ({ title, data, isLoading }) => {
+export const QualifiedPipelineTrendChart: React.FC<QualifiedPipelineTrendChartProps> = ({ title, data, isLoading, analysisChartKey }) => {
   const points = data?.points ?? []
   const rows: ChartRow[] = points.map(toChartRow)
   const missingTargetMonths = points.filter((p) => p.target === null).map((p) => p.month)
@@ -132,7 +136,10 @@ export const QualifiedPipelineTrendChart: React.FC<QualifiedPipelineTrendChartPr
     <div className="card p-6 sm:col-span-2 xl:col-span-3">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div>
-          <h2 className="text-lg font-semibold text-ink">{title}</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">{title}</h2>
+            {analysisChartKey && <AnalyzeButton chartKey={analysisChartKey} chartTitle={title} />}
+          </div>
           <p className="mt-1 max-w-xl text-sm text-ink-2">
             Qualified new-business pipeline created each month, divided by that month's target set in Settings — CM-04's formula, applied month by month.
           </p>

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { RecurringRevenueTrendGranularity, RecurringRevenueTrendResult } from '../api/productRevenueGrowthApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface RecurringRevenueShareChartProps {
   data?: RecurringRevenueTrendResult
@@ -49,7 +50,10 @@ export const RecurringRevenueShareChart: React.FC<RecurringRevenueShareChartProp
   return (
     <div className="card p-6 lg:col-span-3">
       <div>
-        <h2 className="text-lg font-semibold text-ink">Recurring revenue % of total VC-12</h2>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h2 className="text-lg font-semibold text-ink">Recurring revenue % of total VC-12</h2>
+          <AnalyzeButton chartKey="recurring-revenue-share" chartTitle="Recurring revenue % of total" />
+        </div>
         <p className="mt-1 text-sm text-ink-2">
           {granularity === 'quarterly' ? 'Trailing 6 quarters' : 'Trailing 18 months'}, recurring revenue as a share of recurring + non-recurring combined.
         </p>

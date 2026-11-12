@@ -2,6 +2,7 @@ import React from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, TooltipContentProps, XAxis, YAxis } from 'recharts'
 import { CompetitorWinRateResult, CompetitorWinRateRow } from '../api/metricsApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface CompetitorWinRateChartProps {
   data?: CompetitorWinRateResult
@@ -57,7 +58,10 @@ export const CompetitorWinRateChart: React.FC<CompetitorWinRateChartProps> = ({ 
     <div className="card p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Competitor Win Rate CM-03</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">Competitor Win Rate CM-03</h2>
+            <AnalyzeButton chartKey="competitor-win-rate" chartTitle="Competitor Win Rate" />
+          </div>
           <p className="mt-1 max-w-xl text-sm text-ink-2">
             Closed Salesforce Opportunities naming a competitor (via the "Primary Competitor" field), won vs. lost per competitor.
           </p>

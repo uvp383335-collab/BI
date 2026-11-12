@@ -4,6 +4,7 @@ import { InvoiceRevenueGrowthByProductResult, getInvoiceRevenueGrowthByProductDe
 import { ProductRevenueGrowthChart } from './ProductRevenueGrowthChart'
 import { MultiSelectDropdown } from './MultiSelectDropdown'
 import { exportInvoiceRevenueGrowthDetailToExcel } from '../utils/exportInvoiceRevenueGrowthDetailToExcel'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface InvoiceRevenueGrowthByProductCardProps {
   data?: InvoiceRevenueGrowthByProductResult
@@ -69,7 +70,10 @@ export const InvoiceRevenueGrowthByProductCard: React.FC<InvoiceRevenueGrowthByP
     <div className="card p-6 lg:col-span-3">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Revenue growth by product (from synced invoices)</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">Revenue growth by product (from synced invoices)</h2>
+            <AnalyzeButton chartKey="invoice-revenue-growth-by-product" chartTitle="Revenue growth by product" />
+          </div>
           <p className="mt-1 text-sm text-ink-2">
             Same month-over-month revenue growth as the card above, computed entirely from this org's own synced invoice line items instead of a live
             QuickBooks Profit &amp; Loss report — a cross-check against the live figures, not a replacement for them.
@@ -103,7 +107,6 @@ export const InvoiceRevenueGrowthByProductCard: React.FC<InvoiceRevenueGrowthByP
               </label>
             </div>
           )}
-
           {selectedProductIds.length === 1 && (
             <button
               type="button"

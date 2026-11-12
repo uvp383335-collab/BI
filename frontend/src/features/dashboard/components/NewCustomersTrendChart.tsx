@@ -5,6 +5,7 @@ import { NewCustomersTrendResult, getNewCustomersTrendDetailRequest } from '../a
 import { Product } from '../api/syncApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
 import { exportNewCustomersDetailToExcel } from '../utils/exportNewCustomersDetailToExcel'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface NewCustomersTrendChartProps {
   data?: NewCustomersTrendResult
@@ -75,7 +76,10 @@ export const NewCustomersTrendChart: React.FC<NewCustomersTrendChartProps> = ({ 
     <div className="card p-6 lg:col-span-3">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">New customers</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">New customers</h2>
+            <AnalyzeButton chartKey="new-customers-trend" chartTitle="New customers" />
+          </div>
           <p className="mt-1 text-sm text-ink-2">
             {selectedProductName
               ? `Customers whose first invoice ever containing "${selectedProductName}" fell in each month — including existing customers trying it for the first time.`

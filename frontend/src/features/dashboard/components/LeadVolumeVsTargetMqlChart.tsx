@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, TooltipContentProps, XAxis, YAxis } from 'recharts'
 import { LeadVolumeVsTargetPoint, LeadVolumeVsTargetResult } from '../api/metricsApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface LeadVolumeVsTargetMqlChartProps {
   data?: LeadVolumeVsTargetResult
@@ -117,7 +118,10 @@ export const LeadVolumeVsTargetMqlChart: React.FC<LeadVolumeVsTargetMqlChartProp
     <div className="card p-6">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Lead Volume vs. Target MQL</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">Lead Volume vs. Target MQL</h2>
+            <AnalyzeButton chartKey="lead-volume-vs-target-mql" chartTitle="Lead Volume vs. Target MQL" />
+          </div>
           <p className="mt-1 max-w-xl text-sm text-ink-2">
             HubSpot contacts sitting at the Lead stage at the start of each month, divided by that month's target set in Settings.
           </p>

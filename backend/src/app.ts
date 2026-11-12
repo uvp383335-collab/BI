@@ -12,6 +12,7 @@ import { organizationsRouter } from './modules/organizations/routes/organization
 import { syncRouter } from './modules/sync/routes/sync.routes'
 import { analyticsRouter } from './modules/sync/routes/analytics.routes'
 import { metricsRouter } from './modules/metrics/routes/metrics.routes'
+import { aiAnalysisRouter } from './modules/aiAnalysis/routes/aiAnalysis.routes'
 import { errorHandler } from './middleware/errorHandler'
 
 /**
@@ -34,6 +35,7 @@ export function createApp() {
   app.use('/api/v1/sync', syncRouter)
   app.use('/api/v1/analytics', analyticsRouter)
   app.use('/api/v1/metrics', metricsRouter)
+  app.use('/api/v1/ai-analysis', aiAnalysisRouter)
 
   app.use(errorHandler)
   return app

@@ -5,6 +5,7 @@ import { CustomerUpgradesTrendGranularity, CustomerUpgradesTrendResult, getCusto
 import { CategorizedProduct } from '../../integrations/api/productCategoriesApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
 import { exportCustomerUpgradesDetailToExcel } from '../utils/exportCustomerUpgradesDetailToExcel'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface CustomerChurnTrendChartProps {
   data?: CustomerUpgradesTrendResult
@@ -98,7 +99,10 @@ export const CustomerChurnTrendChart: React.FC<CustomerChurnTrendChartProps> = (
     <div className="card p-6 lg:col-span-3">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Customer churn{selectedProductName ? ` — ${selectedProductName}` : ''}</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">Customer churn{selectedProductName ? ` — ${selectedProductName}` : ''}</h2>
+            <AnalyzeButton chartKey="customer-churn-trend" chartTitle="Customer churn" />
+          </div>
           <p className="mt-1 text-sm text-ink-2">
             Customers who fully cancelled this product — their bill dropped all the way to $0 from one {granularity === 'monthly' ? 'month' : 'year'} to the
             next. Only recurring products billed {granularity === 'monthly' ? 'monthly' : 'yearly'} are eligible for this view.
@@ -143,7 +147,6 @@ export const CustomerChurnTrendChart: React.FC<CustomerChurnTrendChartProps> = (
               Amount wise
             </label>
           </div>
-
           <button
             type="button"
             onClick={handleExport}

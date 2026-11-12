@@ -193,6 +193,7 @@ function cm04Extras(metric: MetricResult | undefined) {
 
 /** One provider's pipeline/date filters + its three funnel charts — the body of whichever tab is active. */
 const FunnelsBody: React.FC<{
+  provider: 'hubspot' | 'salesforce'
   pipelines?: string[]
   pipelineFilter: string
   onPipelineFilterChange: (value: string) => void
@@ -205,6 +206,7 @@ const FunnelsBody: React.FC<{
   toDate: string
   onDateChange: (range: { from?: string; to?: string }) => void
 }> = ({
+  provider,
   pipelines,
   pipelineFilter,
   onPipelineFilterChange,
@@ -246,13 +248,13 @@ const FunnelsBody: React.FC<{
     ) : (
       <div className="flex flex-col gap-4">
         <div className="card border-line-strong p-4">
-          <FunnelChart title="Lead Stage Funnel" description="Contacts by lifecycle stage" data={funnels?.leadStage} />
+          <FunnelChart title="Lead Stage Funnel" description="Contacts by lifecycle stage" data={funnels?.leadStage} analysisChartKey={`${provider}-lead-stage-funnel`} />
         </div>
         <div className="card border-line-strong p-4">
-          <FunnelChart title="Lead → Deal Conversion" description="Leads that became a deal" data={funnels?.leadToDeal} />
+          <FunnelChart title="Lead → Deal Conversion" description="Leads that became a deal" data={funnels?.leadToDeal} analysisChartKey={`${provider}-lead-to-deal-funnel`} />
         </div>
         <div className="card border-line-strong p-4">
-          <FunnelChart title="Deal Stage Funnel" description="Deals by pipeline stage" data={funnels?.dealStage} />
+          <FunnelChart title="Deal Stage Funnel" description="Deals by pipeline stage" data={funnels?.dealStage} analysisChartKey={`${provider}-deal-stage-funnel`} />
         </div>
       </div>
     )}
@@ -711,6 +713,7 @@ export const CrmDashboardPage: React.FC = () => {
               >
                 {activeFunnelsProvider === 'hubspot' ? (
                   <FunnelsBody
+                    provider="hubspot"
                     pipelines={hubspotPipelines}
                     pipelineFilter={hubspotPipelineFilter}
                     onPipelineFilterChange={setHubspotPipelineFilter}
@@ -728,6 +731,7 @@ export const CrmDashboardPage: React.FC = () => {
                   />
                 ) : (
                   <FunnelsBody
+                    provider="salesforce"
                     pipelines={salesforcePipelines}
                     pipelineFilter={salesforcePipelineFilter}
                     onPipelineFilterChange={setSalesforcePipelineFilter}
@@ -776,6 +780,7 @@ export const CrmDashboardPage: React.FC = () => {
                       <StageConversionTrendChart
                         title={`Lead → MQL Conversion Rate CM-06 (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('HubSpot')}`}
                         fromLabel="lead"
+                        analysisChartKey="lead-to-mql-trend"
                         granularity={conversionTrendGranularity}
                         points={(leadToMqlTrendHubspot?.points ?? []).map((p) => ({ periodStart: p.periodStart, fromCount: p.leadCount, toCount: p.mqlCount, conversionRatePct: p.conversionRatePct }))}
                         isLoading={isLeadToMqlTrendHubspotLoading}
@@ -799,6 +804,7 @@ export const CrmDashboardPage: React.FC = () => {
                       <StageConversionTrendChart
                         title={`MQL → SQL Conversion Rate CM-06 (${GRANULARITY_LABEL[conversionTrendGranularity]})${suffix('HubSpot')}`}
                         fromLabel="MQL"
+                        analysisChartKey="mql-to-sql-trend"
                         granularity={conversionTrendGranularity}
                         points={(mqlToSqlTrendHubspot?.points ?? []).map((p) => ({ periodStart: p.periodStart, fromCount: p.mqlCount, toCount: p.sqlCount, conversionRatePct: p.conversionRatePct }))}
                         isLoading={isMqlToSqlTrendHubspotLoading}
@@ -1045,6 +1051,7 @@ export const CrmDashboardPage: React.FC = () => {
                     title={`Pipeline Coverage Ratio (Monthly)${suffix('HubSpot')}`}
                     data={qualifiedPipelineTrendHubspot}
                     isLoading={isQualifiedPipelineTrendHubspotLoading}
+                    analysisChartKey="qualified-pipeline-trend"
                   />
                 </div>
               </CollapsibleSection>

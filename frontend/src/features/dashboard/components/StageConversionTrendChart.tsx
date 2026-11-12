@@ -2,6 +2,8 @@ import React, { useState } from 'react'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Download, Loader2 } from 'lucide-react'
 import { StageConversionGranularity } from '../api/metricsApi'
+import { AnalysisChartKey } from '../../aiAnalysis/api/aiAnalysisApi'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 export interface StageConversionTrendChartPoint {
   periodStart: string
@@ -19,6 +21,8 @@ interface StageConversionTrendChartProps {
   isLoading: boolean
   /** Fetches the record-level detail and downloads it as an Excel workbook — omitted hides the export button entirely. */
   onExport?: () => Promise<void>
+  /** Shows the "Analyze" AI report button for this chart — omitted hides it. */
+  analysisChartKey?: AnalysisChartKey
 }
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -45,7 +49,7 @@ const MIN_CHART_WIDTH = 360
  * definition of conversion. Shared by the Lead -> MQL and MQL -> SQL charts
  * — only the data and labels differ.
  */
-export const StageConversionTrendChart: React.FC<StageConversionTrendChartProps> = ({ title, fromLabel, granularity, points, isLoading, onExport }) => {
+export const StageConversionTrendChart: React.FC<StageConversionTrendChartProps> = ({ title, fromLabel, granularity, points, isLoading, onExport, analysisChartKey }) => {
   const [isExporting, setIsExporting] = useState(false)
 
   const handleExport = async () => {
@@ -126,7 +130,10 @@ export const StageConversionTrendChart: React.FC<StageConversionTrendChartProps>
     <div className="card border-line-strong p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-base font-semibold text-ink">{title}</h3>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h3 className="text-base font-semibold text-ink">{title}</h3>
+            {analysisChartKey && <AnalyzeButton chartKey={analysisChartKey} chartTitle={title} />}
+          </div>
           <p className="text-sm text-ink-2">Share of each period's cohort that went on to reach the next stage.</p>
         </div>
         {onExport && (

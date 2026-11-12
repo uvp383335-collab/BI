@@ -5,6 +5,7 @@ import { Product } from '../api/syncApi'
 import { ProductRevenueGrowthChart } from './ProductRevenueGrowthChart'
 import { MultiSelectDropdown } from './MultiSelectDropdown'
 import { exportInvoiceRevenueGrowthByStateDetailToExcel } from '../utils/exportInvoiceRevenueGrowthByStateDetailToExcel'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface InvoiceRevenueGrowthByStateCardProps {
   data?: InvoiceRevenueGrowthByStateResult
@@ -80,7 +81,10 @@ export const InvoiceRevenueGrowthByStateCard: React.FC<InvoiceRevenueGrowthBySta
     <div className="card p-6 lg:col-span-3">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Revenue growth by location</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">Revenue growth by location</h2>
+            <AnalyzeButton chartKey="invoice-revenue-growth-by-state" chartTitle="Revenue growth by location" />
+          </div>
           <p className="mt-1 text-sm text-ink-2">
             {selectedProductName
               ? `Month-over-month revenue for "${selectedProductName}" by billing-address state.`

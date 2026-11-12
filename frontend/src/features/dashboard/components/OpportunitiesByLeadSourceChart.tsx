@@ -2,6 +2,7 @@ import React from 'react'
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, TooltipContentProps, XAxis, YAxis } from 'recharts'
 import { OpportunitiesByLeadSourceResult, OpportunitiesByLeadSourceRow } from '../api/metricsApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface OpportunitiesByLeadSourceChartProps {
   data?: OpportunitiesByLeadSourceResult
@@ -49,7 +50,10 @@ export const OpportunitiesByLeadSourceChart: React.FC<OpportunitiesByLeadSourceC
   return (
     <div className="card p-6">
       <div>
-        <h2 className="text-lg font-semibold text-ink">Opportunities by Lead Source CM-07</h2>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h2 className="text-lg font-semibold text-ink">Opportunities by Lead Source CM-07</h2>
+          <AnalyzeButton chartKey="opportunities-by-lead-source" chartTitle="Opportunities by Lead Source" />
+        </div>
         <p className="mt-1 max-w-xl text-sm text-ink-2">Every Salesforce Opportunity, grouped by its Lead Source.</p>
       </div>
 

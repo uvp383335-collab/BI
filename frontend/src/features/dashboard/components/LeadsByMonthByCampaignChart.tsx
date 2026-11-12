@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, Too
 import type { LegendPayload } from 'recharts/types/component/DefaultLegendContent'
 import { LeadsByMonthByCampaignResult } from '../api/metricsApi'
 import { MultiSelectDropdown } from './MultiSelectDropdown'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface LeadsByMonthByCampaignChartProps {
   data?: LeadsByMonthByCampaignResult
@@ -135,7 +136,10 @@ export const LeadsByMonthByCampaignChart: React.FC<LeadsByMonthByCampaignChartPr
     <div className="card p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Leads by Month CM-07</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">Leads by Month CM-07</h2>
+            <AnalyzeButton chartKey="leads-by-month-by-campaign" chartTitle="Leads by Month" />
+          </div>
           <p className="mt-1 max-w-xl text-sm text-ink-2">Salesforce leads created each month — select one or more campaigns to compare them.</p>
         </div>
 

@@ -18,9 +18,11 @@
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "migrate:crm-data": "tsx src/scripts/migrateContactsDealsToTenantDb.ts"
+    "migrate:crm-data": "tsx src/scripts/migrateContactsDealsToTenantDb.ts",
+    "seed:analysis-prompts": "tsx src/scripts/seedAnalysisPrompts.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.58.0",

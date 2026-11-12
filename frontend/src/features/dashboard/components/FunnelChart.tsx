@@ -1,11 +1,15 @@
 import React from 'react'
 import { FunnelChartData, FunnelStage } from '../api/syncApi'
+import { AnalysisChartKey } from '../../aiAnalysis/api/aiAnalysisApi'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface FunnelChartProps {
   title: string
   description: string
   data?: FunnelChartData
   filters?: React.ReactNode
+  /** Shows the "Analyze" AI report button for this chart — omitted hides it. */
+  analysisChartKey?: AnalysisChartKey
 }
 
 // Stages are ordered by magnitude, not distinct identity, so color follows the
@@ -48,7 +52,7 @@ function buildRows(stages: FunnelStage[], total: number): FunnelRow[] {
   }))
 }
 
-export const FunnelChart: React.FC<FunnelChartProps> = ({ title, description, data, filters }) => {
+export const FunnelChart: React.FC<FunnelChartProps> = ({ title, description, data, filters, analysisChartKey }) => {
   const stages = data?.stages ?? []
   const total = data?.totalEntered ?? 0
   const rows = buildRows(stages, total)
@@ -57,7 +61,10 @@ export const FunnelChart: React.FC<FunnelChartProps> = ({ title, description, da
     <div>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-base font-semibold text-ink">{title}</h3>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h3 className="text-base font-semibold text-ink">{title}</h3>
+            {analysisChartKey && <AnalyzeButton chartKey={analysisChartKey} chartTitle={title} />}
+          </div>
           <p className="text-sm text-ink-2">{description}</p>
         </div>
         {filters && <div className="flex gap-3">{filters}</div>}

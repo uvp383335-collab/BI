@@ -2,6 +2,7 @@ import React from 'react'
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, TooltipContentProps, XAxis, YAxis } from 'recharts'
 import { CampaignRoiResult, CampaignRoiRow } from '../api/metricsApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 export type CampaignRoiTopN = 5 | 10 | 15
 
@@ -62,7 +63,10 @@ export const CampaignRoiChart: React.FC<CampaignRoiChartProps> = ({ data, isLoad
     <div className="card p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Campaign ROI CM-07</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">Campaign ROI CM-07</h2>
+            <AnalyzeButton chartKey="campaign-roi" chartTitle="Campaign ROI" />
+          </div>
           <p className="mt-1 max-w-xl text-sm text-ink-2">Closed-won Salesforce Opportunity amount per Campaign, divided by the campaign's actual cost.</p>
         </div>
 

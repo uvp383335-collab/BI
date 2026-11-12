@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { RecurringRevenueTrendGranularity, RecurringRevenueTrendResult } from '../api/productRevenueGrowthApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface RecurringRevenueTrendChartProps {
   data?: RecurringRevenueTrendResult
@@ -57,7 +58,10 @@ export const RecurringRevenueTrendChart: React.FC<RecurringRevenueTrendChartProp
     <div className="card p-6 lg:col-span-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Recurring vs. non-recurring revenue VC-13</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">Recurring vs. non-recurring revenue VC-13</h2>
+            <AnalyzeButton chartKey="recurring-revenue-trend" chartTitle="Recurring vs. non-recurring revenue" />
+          </div>
           <p className="mt-1 text-sm text-ink-2">
             {granularity === 'quarterly' ? 'Trailing 6 quarters' : 'Trailing 18 months'}, split by how each product is categorized in Settings.
           </p>

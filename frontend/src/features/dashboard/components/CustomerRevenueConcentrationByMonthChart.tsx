@@ -10,6 +10,7 @@ import {
 import { Product } from '../api/syncApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
 import { exportCustomerRevenueConcentrationByMonthDetailToExcel } from '../utils/exportCustomerRevenueConcentrationByMonthDetailToExcel'
+import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface CustomerRevenueConcentrationByMonthChartProps {
   data?: CustomerRevenueConcentrationByMonthResult
@@ -109,7 +110,10 @@ export const CustomerRevenueConcentrationByMonthChart: React.FC<CustomerRevenueC
     <div className="card p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Customer Concentration by Month CM-02</h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">Customer Concentration by Month CM-02</h2>
+            <AnalyzeButton chartKey="customer-revenue-concentration-by-month" chartTitle="Customer Concentration by Month" />
+          </div>
           <p className="mt-1 max-w-xl text-sm text-ink-2">Share of each period's invoiced revenue coming from that period's top 10 QuickBooks customers.</p>
         </div>
 

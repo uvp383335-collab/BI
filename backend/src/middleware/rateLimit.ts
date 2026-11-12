@@ -39,6 +39,16 @@ export const invitationRateLimiter = rateLimit({
   limit: 20
 })
 
+// Each "Analyze" click can cost a Claude call, so cap it per organization
+// (not per IP) — runs after requireAuth/requireOrgContext so orgId is set.
+// Cached reports count too; the cap is generous enough that only abuse hits it.
+export const aiAnalysisRateLimiter = rateLimit({
+  ...standardOptions,
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  keyGenerator: (req) => `org:${req.auth?.orgId ?? 'unknown'}`
+})
+
 // Each new org provisions its own tenant database/connection, so cap creation
 // rate to avoid abuse spinning up excessive tenant DBs/connections.
 export const createOrgRateLimiter = rateLimit({
