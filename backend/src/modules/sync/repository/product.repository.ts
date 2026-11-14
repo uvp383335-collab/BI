@@ -21,6 +21,13 @@ async function modelForOrg(orgId: string | Types.ObjectId) {
 }
 
 export const productRepository = {
+  /** When the org's product catalog or categorization last changed (null if no products) — used to version cached metric results. */
+  async latestUpdatedAt(orgId: string | Types.ObjectId): Promise<Date | null> {
+    const ProductModel = await modelForOrg(orgId)
+    const latest = await ProductModel.findOne({}, { updatedAt: 1 }).sort({ updatedAt: -1 }).lean<{ updatedAt?: Date }>()
+    return latest?.updatedAt ?? null
+  },
+
   /** Upserts the product catalog — names overwrite on every sync so a rename in the CRM is reflected. Never touches category/billingFrequency, so a user's categorization survives resync. */
   async bulkUpsert(orgId: string | Types.ObjectId, provider: string, products: ProductInput[]) {
     if (products.length === 0) return

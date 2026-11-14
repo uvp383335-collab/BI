@@ -1,0 +1,204 @@
+@import 'tailwindcss';
+/* Oryon AI design system. Imported into the components layer so Tailwind utilities on the
+   migrated driverinsights components still win over it. */
+@import './features/portfolio/oryon.css' layer(components);
+
+/* Every driverinsights component is styled through these tokens, so pointing them at the
+   Oryon palette restyles the whole app (both themes) without touching component markup. */
+@theme inline {
+  --animate-fade-in: fade-in 0.25s ease-out;
+
+  --color-surface: var(--bg);
+  --color-surface-2: var(--panel);
+  --color-surface-3: var(--surface);
+  --color-surface-4: var(--raise);
+  --color-line: var(--line);
+  --color-line-strong: var(--line2);
+  --color-ink: var(--fg);
+  --color-ink-2: var(--muted);
+  --color-ink-3: var(--faint);
+  --color-brand: var(--gold);
+  --color-brand-2: var(--gold-ink);
+  --color-on-brand: var(--on-gold);
+  --color-success: var(--good);
+  --color-danger: var(--bad);
+  --color-warning: var(--watch);
+  --color-violet: var(--s3);
+  --color-teal: var(--s1);
+
+  --font-sans: var(--f-sans);
+  --font-display: var(--f-display);
+  --font-mono: var(--f-mono);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--f-sans);
+  -webkit-font-smoothing: antialiased;
+  background-color: var(--bg);
+  color: var(--fg);
+}
+
+@layer components {
+  .auth-logo {
+    @apply h-11 w-11 rounded-xl bg-brand text-on-brand flex items-center justify-center text-lg font-bold shadow-md select-none;
+  }
+
+  .auth-card {
+    @apply w-full animate-fade-in;
+  }
+
+  .auth-title {
+    @apply font-display text-4xl font-normal text-ink mb-2;
+  }
+
+  .auth-subtitle {
+    @apply text-base text-ink-2 mb-8;
+  }
+
+  .form-label {
+    @apply block text-sm font-medium text-ink-2 mb-1;
+  }
+
+  .form-input {
+    @apply w-full rounded-lg border border-line-strong bg-surface-3 px-3 py-2.5 text-sm text-ink placeholder:text-ink-3 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand;
+  }
+
+  .form-input-error {
+    @apply border-danger focus:ring-danger/40 focus:border-danger;
+  }
+
+  .form-error {
+    @apply text-sm text-danger mt-1;
+  }
+
+  .btn-primary {
+    @apply w-full inline-flex items-center justify-center gap-2 rounded-lg bg-brand text-on-brand py-2.5 text-sm font-medium shadow-sm transition-colors duration-150 hover:bg-brand-2 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:ring-offset-2 focus:ring-offset-surface-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-outline {
+    @apply w-full text-left border border-line-strong bg-surface-3 rounded-lg px-4 py-3 text-ink transition-colors duration-150 hover:border-brand/40 hover:bg-surface-4 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .auth-link {
+    @apply text-brand hover:text-brand-2 hover:underline transition-colors duration-150;
+  }
+
+  .spinner {
+    @apply h-4 w-4 rounded-full border-2 border-current/40 border-t-current animate-spin;
+  }
+
+
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .btn-outline-dark {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line-strong bg-surface-3 px-4 py-2 text-sm font-medium text-ink transition-colors duration-150 hover:bg-surface-4 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .form-input-dark {
+    @apply rounded-lg border border-line-strong bg-surface-3 px-3 py-2 text-sm text-ink transition-colors duration-150 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/40;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Custom scrollbar styling for metric trend charts */
+.metric-trend-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.metric-trend-scroll::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+.metric-trend-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--color-line-strong);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.metric-trend-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-ink-3);
+  background-clip: content-box;
+}
+
+/* Firefox scrollbar styling */
+.metric-trend-scroll {
+  scrollbar-color: var(--color-line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+/* The Oryon sidebar is always dark (it is the instrument panel), in both themes, so the
+   token-driven components inside it (org switcher, menus) get the dark palette locally. */
+.oryon-side {
+  --bg: #070E19; --surface: #101F33; --panel: #101F33; --raise: #16273F; --line: #1E3350; --line2: #2A4264;
+  --fg: #E8ECF2; --muted: #A7B1C2; --faint: #7F8BA0;
+  color-scheme: dark;
+}
+
+/* Recharts rounds its pixel size up. Inside a scroll container of fractional width that sub-pixel
+   overflow toggled the scrollbars, which resized the chart, which removed the scrollbars, forever
+   (visible as jittering charts). Clipping at the responsive container (which has the real size;
+   Recharts 3 renders the chart inside a 0x0 helper div) breaks the loop. Charts deliberately wider
+   than their card still scroll, because their responsive container is that wide. */
+.recharts-responsive-container {
+  overflow: hidden;
+}
+
+/* ---- First-sync loader (features/sync) ------------------------------------------------------ */
+.syncl-screen {
+  background:
+    radial-gradient(ellipse 60% 50% at 22% 40%, rgba(221, 179, 90, 0.07), transparent 70%),
+    var(--bg);
+}
+.syncl-sky { overflow: visible; }
+.syncl-line {
+  stroke: rgba(167, 177, 194, 0.42);
+  stroke-width: 1;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 900ms ease-out;
+}
+.syncl-line.is-on { stroke: rgba(221, 179, 90, 0.55); }
+.syncl-star .syncl-dot {
+  fill: #2a4264;
+  transition: fill 600ms ease, filter 600ms ease;
+}
+.syncl-star.is-lit .syncl-dot {
+  fill: #f2f4f8;
+  filter: drop-shadow(0 0 4px rgba(242, 244, 248, 0.55));
+}
+.syncl-star.is-centre .syncl-dot {
+  fill: var(--gold);
+  filter: drop-shadow(0 0 6px rgba(221, 179, 90, 0.7));
+}
+.syncl-star.is-centre.is-failed .syncl-dot { fill: var(--bad); filter: none; }
+.syncl-halo { fill: rgba(221, 179, 90, 0.16); opacity: 0; transform-box: fill-box; transform-origin: center; }
+.syncl-star.is-working .syncl-halo { animation: syncl-breathe 2.6s ease-in-out infinite; }
+@keyframes syncl-breathe {
+  0%, 100% { opacity: 0; transform: scale(0.45); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.syncl-bar { transition: width 700ms ease-out; }
+.syncl-spin {
+  display: inline-block;
+  border-radius: 9999px;
+  border: 1.5px solid var(--line2);
+  border-top-color: var(--gold);
+  animation: syncl-rotate 0.9s linear infinite;
+}
+@keyframes syncl-rotate { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .syncl-line, .syncl-bar, .syncl-star .syncl-dot { transition: none; }
+  .syncl-star.is-working .syncl-halo { animation: none; opacity: 0.6; transform: none; }
+  .syncl-spin { animation-duration: 3s; }
+}

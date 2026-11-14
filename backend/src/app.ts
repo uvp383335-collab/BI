@@ -13,6 +13,7 @@ import { syncRouter } from './modules/sync/routes/sync.routes'
 import { analyticsRouter } from './modules/sync/routes/analytics.routes'
 import { metricsRouter } from './modules/metrics/routes/metrics.routes'
 import { aiAnalysisRouter } from './modules/aiAnalysis/routes/aiAnalysis.routes'
+import { dashboardRouter } from './modules/dashboard/routes/dashboard.routes'
 import { errorHandler } from './middleware/errorHandler'
 
 /**
@@ -36,6 +37,7 @@ export function createApp() {
   app.use('/api/v1/analytics', analyticsRouter)
   app.use('/api/v1/metrics', metricsRouter)
   app.use('/api/v1/ai-analysis', aiAnalysisRouter)
+  app.use('/api/v1/dashboard', dashboardRouter)
 
   app.use(errorHandler)
   return app
