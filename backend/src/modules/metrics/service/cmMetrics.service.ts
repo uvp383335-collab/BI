@@ -10,7 +10,13 @@ import { organizationsRepository } from '../../organizations/repository/organiza
 import { getStoredProfitAndLoss, StoredQuarterSnapshot } from './plReport.service'
 import { sumConfiguredAccountIds } from './plParser'
 import { grossMarginFromPL } from './plMetrics.service'
-import { latestClosedMonth, shiftMonth, monthToDateRange, quarterStartOf, quarterToDateRange, latestClosedQuarterStart } from './revenueRollForward.service'
+import { latestClosedMonth, shiftMonth, monthToDateRange, quarterStartOf, latestClosedQuarterStart } from './revenueRollForward.service'
+// getQualifiedPipelineTrend owns the actual CM-04 deal query/filter/target logic; computeCM04 below
+// is a thin quarterly sum over it, not a second implementation. (qualifiedPipelineTrend.service.ts
+// imports resolveQualifiedStageKeys/isNewBusinessOrUntyped/targetForMonths/cm04TargetRows back from
+// this file, so this import is intentionally circular — both sides only call the other lazily,
+// inside function bodies, never at module-load time.)
+import { getQualifiedPipelineTrend } from './qualifiedPipelineTrend.service'
 
 /**
  * CM-02 — Customer Concentration (Top-10 Revenue %). Grouping uses
@@ -262,31 +268,35 @@ export function quarterTargetFromRanges(
 }
 
 /**
- * Qualified new-business pipeline closing next quarter vs. that quarter's
- * new-business target. The target is operating-plan data no CRM holds (gap
- * G-14), so it comes from the org's own CM-04 target rows (Settings); a
- * quarter with any month left uncovered stays `computable: false`, though
- * the numerator (plus the qualified-stage-cutoff work the metrics guide
- * calls out as CM-04's actual gap, G-7) is still returned.
+ * Qualified new-business pipeline created this quarter vs. this quarter's
+ * new-business target. Delegates straight to `getQualifiedPipelineTrend`
+ * (qualifiedPipelineTrend.service.ts) — the same function behind the
+ * "Pipeline Coverage Ratio (Monthly)" dashboard chart — for the quarter's 3
+ * months and sums them, so this card runs the *exact same* deal query,
+ * qualified-stage filter, and target lookup as that chart; there is no
+ * second implementation of "qualified pipeline" left to drift out of sync.
+ * (Previously this measured pipeline closing *next* quarter by close date
+ * instead — a different, forward-looking number under the same CM-04 id,
+ * which is what caused this card to disagree with the dashboard chart.)
+ * The target is operating-plan data no CRM holds (gap G-14), so it comes
+ * from the org's own CM-04 target rows (Settings); a quarter with any month
+ * left uncovered stays `computable: false`, though the numerator (plus the
+ * qualified-stage-cutoff work the metrics guide calls out as CM-04's actual
+ * gap, G-7) is still returned.
  */
 export async function computeCM04(orgId: string, provider: string, period?: string): Promise<MetricResult> {
   const month = period ?? latestClosedMonth()
   const quarterStart = quarterStartOf(month)
-  const nextQuarterStart = shiftMonth(quarterStart, 3)
-  const range = quarterToDateRange(nextQuarterStart)
+  const quarterEnd = shiftMonth(quarterStart, 2)
 
-  const [deals, stageDefs, org] = await Promise.all([
-    dealRepository.findByCloseDateRange(orgId, provider, new Date(range.startDate), new Date(`${range.endDate}T23:59:59.999Z`)),
-    pipelineStageDefinitionRepository.findAllForOrg(orgId, provider),
-    organizationsRepository.findById(orgId)
-  ])
+  const { points } = await getQualifiedPipelineTrend(orgId, provider, quarterStart, quarterEnd)
 
-  const qualifiedKeys = resolveQualifiedStageKeys(stageDefs)
-  const qualifiedAnyType = deals.filter((d) => d.pipeline && d.dealstage && qualifiedKeys.has(`${d.pipeline}::${d.dealstage}`))
-  const qualifiedDeals = qualifiedAnyType.filter((d) => isNewBusinessOrUntyped(d.type))
-  const qualifiedPipelineAmount = qualifiedDeals.reduce((sum, d) => sum + (d.amount ?? 0), 0)
-
-  const { target, missingMonths } = quarterTargetFromRanges(org?.settings?.cm04Targets ?? [], nextQuarterStart)
+  const qualifiedPipelineAmount = points.reduce((sum, p) => sum + p.actual, 0)
+  const qualifiedDealCount = points.reduce((sum, p) => sum + p.qualifiedDealCount, 0)
+  const excludedNonNewBusinessDealCount = points.reduce((sum, p) => sum + p.excludedNonNewBusinessDealCount, 0)
+  const untypedDealCount = points.reduce((sum, p) => sum + p.untypedDealCount, 0)
+  const missingMonths = points.filter((p) => p.target === null).map((p) => p.month)
+  const target = missingMonths.length > 0 ? null : points.reduce((sum, p) => sum + (p.target ?? 0), 0)
   const coverage = target !== null && target > 0 ? qualifiedPipelineAmount / target : null
 
   let flag: MetricFlag | null = null
@@ -309,16 +319,16 @@ export async function computeCM04(orgId: string, provider: string, period?: stri
 
   return {
     id: 'CM-04',
-    period: nextQuarterStart,
+    period: quarterStart,
     computable: coverage !== null,
     value: coverage !== null ? round2(coverage) : null,
     unit: 'multiple',
     data: {
       qualifiedPipelineAmount: round1(qualifiedPipelineAmount),
-      qualifiedDealCount: qualifiedDeals.length,
-      excludedNonNewBusinessDealCount: qualifiedAnyType.length - qualifiedDeals.length,
-      untypedDealCount: qualifiedDeals.filter((d) => !d.type).length,
-      nextQuarterTarget: target !== null ? round1(target) : null,
+      qualifiedDealCount,
+      excludedNonNewBusinessDealCount,
+      untypedDealCount,
+      quarterTarget: target !== null ? round1(target) : null,
       missingTargetMonths: missingMonths
     },
     flag,

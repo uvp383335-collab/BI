@@ -2,10 +2,14 @@ import { Schema, Document, Types, Connection, Model } from 'mongoose'
 
 /**
  * Generic, per-tenant Salesforce Account record. Deliberately narrow (`Id`/
- * `Name`/`ParentId` only, per the existing narrow-sync policy) — this app
- * doesn't treat Account as its Contact entity (Leads are, see
+ * `Name`/`ParentId`/`Segment__c` only, per the existing narrow-sync policy) —
+ * this app doesn't treat Account as its Contact entity (Leads are, see
  * crm-integrations skill's Salesforce section); it exists solely to resolve
- * subsidiary hierarchy for CM-02's customer-concentration grouping.
+ * subsidiary hierarchy for CM-02's customer-concentration grouping, plus the
+ * `Segment__c` picklist (SMB/Mid-Market/Upper Mid-Market/Enterprise — shown
+ * in Salesforce's own Account "Additional Information" panel) for the
+ * dashboard's Segment filter. `segment` is undefined for orgs whose Account
+ * object has no such field — see `getAccounts`'s describe() check.
  * Salesforce-only, unlike Contact/Deal — there's no equivalent "Company"
  * object synced from HubSpot in this app.
  */
@@ -16,6 +20,7 @@ export interface SalesforceAccountDocument extends Document {
   providerRecordId: string
   name?: string
   parentRecordId?: string
+  segment?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -26,7 +31,8 @@ const salesforceAccountSchema = new Schema<SalesforceAccountDocument>(
     provider: { type: String, required: true },
     providerRecordId: { type: String, required: true },
     name: { type: String },
-    parentRecordId: { type: String }
+    parentRecordId: { type: String },
+    segment: { type: String }
   },
   { timestamps: true }
 )

@@ -29,7 +29,7 @@ import {
   getInvoiceRevenueGrowthByState,
   getInvoiceRevenueGrowthByStateDetail
 } from '../service/productRevenueGrowth.service'
-import { getRecurringRevenueTrend } from '../service/recurringRevenueTrend.service'
+import { getRecurringRevenueTrend, getRecurringRevenueTrendDetail } from '../service/recurringRevenueTrend.service'
 import { getGAndAExpenseTrend } from '../service/gaExpenseTrend.service'
 import { getCACTrend } from '../service/cacTrend.service'
 import {
@@ -198,6 +198,14 @@ export const getRecurringRevenueTrendHandler = asyncHandler(async (req: Request,
   const orgId = req.auth!.orgId!
   const { granularity } = req.query as unknown as GetRecurringRevenueTrendQuery
   const result = await getRecurringRevenueTrend(orgId, granularity)
+  sendSuccess(res, result)
+})
+
+/** Record-level detail behind the "recurring vs. non-recurring revenue" chart — every categorized product's revenue for each period, for the dashboard's "export to Excel" verification button. Same query params as the chart endpoint. */
+export const getRecurringRevenueTrendDetailHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { granularity } = req.query as unknown as GetRecurringRevenueTrendQuery
+  const result = await getRecurringRevenueTrendDetail(orgId, granularity)
   sendSuccess(res, result)
 })
 

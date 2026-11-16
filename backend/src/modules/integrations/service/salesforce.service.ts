@@ -79,6 +79,8 @@ export interface SalesforceAccount {
   Id: string;
   Name: string | null;
   ParentId: string | null;
+  /** The org's "Segment" picklist (SMB/Mid-Market/Upper Mid-Market/Enterprise) — present only when `ACCOUNT_OPTIONAL_FIELDS` found it on this org's Account object (see `getAvailableAccountFields`). */
+  Segment__c?: string | null;
 }
 
 export interface SalesforceStageHistoryEntry {
@@ -725,11 +727,31 @@ export class SalesforceService {
     }
   }
 
+  /** `Segment__c` is a custom picklist (SMB/Mid-Market/Upper Mid-Market/Enterprise, shown in Salesforce's own Account "Additional Information" panel) — not every org has it, so it's describe()-checked like Opportunity's OPTIONAL_STANDARD_FIELDS rather than selected unconditionally. */
+  private static readonly ACCOUNT_OPTIONAL_FIELDS = ["Segment__c"] as const;
+
+  /** `GET .../sobjects/Account/describe` — field metadata, used only to check which ACCOUNT_OPTIONAL_FIELDS this org's Account object actually has. */
+  private static async getAvailableAccountFields(accessToken: string, instanceUrl: string): Promise<Set<string>> {
+    try {
+      const response = await axios.get(`${instanceUrl}/services/data/${SALESFORCE_API_VERSION}/sobjects/Account/describe`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const fields = (response.data?.fields ?? []) as { name: string }[];
+      return new Set(fields.map((f) => f.name));
+    } catch {
+      // Describe is a defensive availability check, not core sync data — if it fails, assume all
+      // optional fields are available (prior behavior) rather than silently dropping Segment data
+      // that may be fine.
+      return new Set(this.ACCOUNT_OPTIONAL_FIELDS);
+    }
+  }
+
   /**
-   * Fetches a page of Accounts — deliberately narrow (`Id`, `Name`, `ParentId`
-   * only, per the existing narrow-sync policy). Not this app's Contact entity
-   * (Leads are, see class doc comment) — Account exists here solely to
-   * resolve subsidiary hierarchy for CM-02's customer-concentration grouping.
+   * Fetches a page of Accounts — deliberately narrow (`Id`, `Name`, `ParentId`,
+   * plus the describe()-checked `Segment__c`, per the existing narrow-sync
+   * policy). Not this app's Contact entity (Leads are, see class doc
+   * comment) — Account exists here to resolve subsidiary hierarchy for
+   * CM-02's customer-concentration grouping, and to carry the Segment filter.
    */
   static async getAccounts(
     accessToken: string,
@@ -741,8 +763,12 @@ export class SalesforceService {
     try {
       if (nextRecordsUrl) return await this.runQueryPage<SalesforceAccount>(accessToken, instanceUrl, nextRecordsUrl);
 
+      const availableFields = await this.getAvailableAccountFields(accessToken, instanceUrl);
+      const optionalSelect = this.ACCOUNT_OPTIONAL_FIELDS.filter((f) => availableFields.has(f));
+      const optionalFieldsSelect = optionalSelect.length > 0 ? `, ${optionalSelect.join(", ")}` : "";
+
       const whereClause = since ? ` WHERE LastModifiedDate >= ${since.toISOString()}` : "";
-      const soql = `SELECT Id, Name, ParentId FROM Account${whereClause} ORDER BY LastModifiedDate ASC`;
+      const soql = `SELECT Id, Name, ParentId${optionalFieldsSelect} FROM Account${whereClause} ORDER BY LastModifiedDate ASC`;
       return await this.runQuery<SalesforceAccount>(accessToken, instanceUrl, soql, limit);
     } catch {
       throw AppError.badRequest("Failed to fetch accounts from Salesforce", "SALESFORCE_ACCOUNTS_FETCH_FAILED");

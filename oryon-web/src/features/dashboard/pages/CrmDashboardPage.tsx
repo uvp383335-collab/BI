@@ -174,17 +174,17 @@ function cm07Extras(metric: MetricResult | undefined) {
 /** CM-04's supporting facts: the qualified pipeline (real even without a target), plus the quarter's target — or which months still need one (set in Settings). */
 function cm04Extras(metric: MetricResult | undefined) {
   if (!metric) return undefined
-  const { qualifiedPipelineAmount, qualifiedDealCount, nextQuarterTarget, missingTargetMonths } = metric.data as {
+  const { qualifiedPipelineAmount, qualifiedDealCount, quarterTarget, missingTargetMonths } = metric.data as {
     qualifiedPipelineAmount?: number | null
     qualifiedDealCount?: number | null
-    nextQuarterTarget?: number | null
+    quarterTarget?: number | null
     missingTargetMonths?: string[]
   }
   return [
     ...(qualifiedPipelineAmount != null ? [{ label: 'Qualified Pipeline', value: `$${Number(qualifiedPipelineAmount).toLocaleString()}` }] : []),
     ...(qualifiedDealCount != null ? [{ label: 'Qualified Deals', value: String(qualifiedDealCount) }] : []),
-    ...(nextQuarterTarget != null
-      ? [{ label: 'Target', value: `$${Number(nextQuarterTarget).toLocaleString()}` }]
+    ...(quarterTarget != null
+      ? [{ label: 'Target', value: `$${Number(quarterTarget).toLocaleString()}` }]
       : missingTargetMonths && missingTargetMonths.length > 0
         ? [{ label: 'Target', value: `Not set for ${missingTargetMonths.map(formatMonth).join(', ')} (Settings)` }]
         : [])
@@ -1181,7 +1181,7 @@ export const CrmDashboardPage: React.FC = () => {
                   <MetricCard
                     id="CM-04"
                     title="Pipeline Coverage"
-                    description="Qualified new-business pipeline closing next quarter vs. target"
+                    description="Qualified new-business pipeline created this quarter vs. target"
                     icon={<Target className="h-5 w-5" />}
                     metric={cm04Hubspot}
                     isLoading={isCm04HubspotLoading}
@@ -1227,7 +1227,7 @@ export const CrmDashboardPage: React.FC = () => {
                   <MetricCard
                     id="CM-04"
                     title="Pipeline Coverage"
-                    description="Qualified new-business pipeline closing next quarter vs. target"
+                    description="Qualified new-business pipeline created this quarter vs. target"
                     icon={<Target className="h-5 w-5" />}
                     metric={cm04Salesforce}
                     isLoading={isCm04SalesforceLoading}

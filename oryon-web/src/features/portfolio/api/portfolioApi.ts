@@ -12,6 +12,8 @@ export interface PortfolioView {
   quarter: string | null
   window: 'P' | 'TTM'
   span: number
+  /** 'All', or one or more QuickBooks item labels (as listed in meta.products) to filter by. */
+  product?: 'All' | string[]
 }
 
 export interface PortfolioAlert {
@@ -32,6 +34,8 @@ export function viewParams(v: PortfolioView): URLSearchParams {
   if (asOf) p.set('asOf', asOf)
   p.set('window', v.window)
   p.set('span', String(v.span))
+  // Backend reads the first comma-separated label and matches it against ctx.products by label (dashboard.service.ts parseView).
+  if (v.product && v.product !== 'All' && v.product.length > 0) p.set('product', v.product.join(','))
   return p
 }
 

@@ -32,7 +32,7 @@ export default function Overview({ companyId, meta, view, set, openMetric }) {
     <div style={{ opacity: loading ? 0.6 : 1, transition: 'opacity .15s', display: 'flex', flexDirection: 'column', gap: 16 }}>
       <section className="grid-k" aria-label="Headline figures">
         {data.kpis.map((k) => (
-          <button type="button" className="kpi" key={k.key} onClick={() => openMetric(k.metricId)}>
+          <button type="button" className="kpi" key={k.key} disabled={!k.metricId} title={k.metricId ? undefined : 'No drill-down available for this figure'} onClick={() => k.metricId && openMetric(k.metricId)}>
             <div className="lb"><span>{k.label}</span></div>
             <div className="v">{fmt(k.value, k.unit)}</div>
             <div className={`d ${tone(k.delta, k.dir)}`}>{k.delta == null ? '' : <>{dfmt(k.delta, k.unit)} <span className="fl">vs {pShort(k.series.at(-2)?.period)}</span></>}</div>

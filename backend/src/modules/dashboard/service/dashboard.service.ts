@@ -275,7 +275,7 @@ export async function getOverview(orgId: string, q: DashboardQuery) {
   const ebitda = (p: string) => dataNum(g('VC-10', p), 'ebitda')
   const k = (n0: number | null, suffix: string) => (n0 == null ? null : `${Math.round(n0 / 1e3).toLocaleString('en-US')}K ${suffix}`)
 
-  const kpi = (key: string, label: string, unit: DashUnit, metricId: string, fn: (p: string) => number | null, sub: string | null) => {
+  const kpi = (key: string, label: string, unit: DashUnit, metricId: string | null, fn: (p: string) => number | null, sub: string | null) => {
     const series = ps.map((p) => ({ period: p, value: fn(p) }))
     const value = series[series.length - 1].value
     const prev = fn(prevPeriod(v.asOf))
@@ -283,12 +283,18 @@ export async function getOverview(orgId: string, q: DashboardQuery) {
   }
   const runway = cash.subs.find((s) => s.key === 'runway')?.value ?? null
   const fRevenue = (p: string) => dataNum(gf('VC-13', p), 'revenue')
+  // Same VC-13 result the "Revenue, quarter" tile already reads — just its own totalYoY field, not a second growth calculation.
+  const fRevenueGrowth = (p: string) => dataNum(gf('VC-13', p), 'totalYoY')
   const fGrossMargin = (p: string) => { const c = gf('VC-04', p).value; return c == null ? null : 100 - c }
   const fGrossProfit = (p: string) => { const x = gf('VC-04', p); const r = dataNum(x, 'revenue'), c = dataNum(x, 'cogsTotal'); return r == null || c == null ? null : r - c }
   const fEbitda = (p: string) => dataNum(gf('VC-10', p), 'ebitda')
   const kpis = [
-    kpi('arr', 'ARR', 'USD', 'VC-14', arr, dataNum(g('VC-14', v.asOf), 'activeCustomerCount') == null ? null : `${dataNum(g('VC-14', v.asOf), 'activeCustomerCount')} active customers`),
+    // No dedicated ARR metric exists in METRICS (ARR is derived here from VC-14's avgMonthlyRevenuePerCustomer x
+    // activeCustomerCount x 12) -- metricId stays null rather than pointing at VC-14's own card ("LTV / CAC, whole
+    // base"), which would open on an unrelated headline value and alert.
+    kpi('arr', 'ARR', 'USD', null, arr, dataNum(g('VC-14', v.asOf), 'activeCustomerCount') == null ? null : `${dataNum(g('VC-14', v.asOf), 'activeCustomerCount')} active customers`),
     kpi('revenue', 'Revenue, quarter', 'USD', 'VC-13', fRevenue, v.product ? v.product.label : null),
+    kpi('revenueGrowth', 'Revenue growth', '%', 'VC-13', fRevenueGrowth, v.product ? v.product.label : null),
     kpi('gm', 'Gross margin', '%', 'VC-04', fGrossMargin, k(fGrossProfit(v.asOf), 'gross profit')),
     kpi('nrr', 'NRR', '%', 'VC-02', (p) => g('VC-02', p).value, null),
     kpi('grr', 'GRR', '%', 'VC-01', (p) => g('VC-01', p).value, null),

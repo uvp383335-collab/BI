@@ -6,6 +6,7 @@ export interface SalesforceAccountUpsertInput {
   providerRecordId: string
   name?: string
   parentRecordId?: string
+  segment?: string
 }
 
 async function modelForOrg(orgId: string | Types.ObjectId) {

@@ -233,6 +233,39 @@ export async function getRecurringRevenueTrendRequest(granularity: RecurringReve
   return res.data.data
 }
 
+export interface RecurringRevenueTrendDetailRow {
+  /** "YYYY-MM" — the month itself for 'monthly', the quarter's first month for 'quarterly'. */
+  period: string
+  productName: string
+  category: 'recurring' | 'non_recurring'
+  revenue: number
+}
+
+export interface RecurringRevenueInvoiceLineRow {
+  invoiceId: string
+  /** "YYYY-MM-DD" */
+  txnDate: string
+  customerName: string | null
+  productName: string
+  category: 'recurring' | 'non_recurring'
+  lineAmount: number
+  invoiceTotalAmount: number
+}
+
+export interface RecurringRevenueTrendDetailResult {
+  hasCategorizedProducts: boolean
+  needsResync: boolean
+  rows: RecurringRevenueTrendDetailRow[]
+  /** Every QuickBooks invoice line, for a categorized product, synced in the chart's trailing window. */
+  invoiceLines: RecurringRevenueInvoiceLineRow[]
+}
+
+/** Record-level detail behind the "recurring vs. non-recurring revenue" chart — every categorized product's revenue for each period, for the "export to Excel" verification button. */
+export async function getRecurringRevenueTrendDetailRequest(granularity: RecurringRevenueTrendGranularity = 'quarterly'): Promise<RecurringRevenueTrendDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<RecurringRevenueTrendDetailResult>>('/metrics/quickbooks/recurring-revenue-trend/detail', { params: { granularity } })
+  return res.data.data
+}
+
 export type GAndAExpenseTrendGranularity = 'monthly' | 'quarterly' | 'yearly'
 
 export interface GAndAExpenseTrendPoint {

@@ -175,9 +175,9 @@ export const METRICS: MetricDef[] = [
   },
   {
     id: 'CM-04', family: 'CM', name: 'Pipeline coverage', source: 'CRM; operating plan', unit: 'x', dir: 'up', threshold: 3, grain: 'Q',
-    definition: 'Qualified new-business pipeline closing next quarter divided by next quarter’s new-business target.',
+    definition: 'Qualified new-business pipeline created this quarter divided by this quarter’s new-business target — same create-date logic as the monthly Pipeline Coverage Ratio chart.',
     compute: (o, m, p) => computeCM04(o, p, m),
-    subs: (d) => [sub(d, 'qualifiedPipelineAmount', 'Qualified pipeline', 'USD'), sub(d, 'nextQuarterTarget', 'Target', 'USD'), sub(d, 'qualifiedDealCount', 'Qualified deals', 'count')],
+    subs: (d) => [sub(d, 'qualifiedPipelineAmount', 'Qualified pipeline', 'USD'), sub(d, 'quarterTarget', 'Target', 'USD'), sub(d, 'qualifiedDealCount', 'Qualified deals', 'count')],
     abs: (d) => ({ label: 'Qualified pipeline', unit: 'USD', value: num(d.qualifiedPipelineAmount) })
   },
   {

@@ -83,6 +83,7 @@ metricsRouter.get(
   metricsController.getInvoiceRevenueGrowthByStateDetailHandler
 )
 metricsRouter.get('/quickbooks/recurring-revenue-trend', ...recurringRevenueTrendGuards, metricsController.getRecurringRevenueTrendHandler)
+metricsRouter.get('/quickbooks/recurring-revenue-trend/detail', ...recurringRevenueTrendGuards, metricsController.getRecurringRevenueTrendDetailHandler)
 metricsRouter.get('/quickbooks/ga-expense-trend', ...gaExpenseTrendGuards, metricsController.getGAndAExpenseTrendHandler)
 metricsRouter.get('/quickbooks/cac-trend', requireAuth, requireOrgContext, metricsController.getCACTrendHandler)
 metricsRouter.get('/quickbooks/new-customers-trend', ...newCustomersTrendGuards, metricsController.getNewCustomersTrendHandler)

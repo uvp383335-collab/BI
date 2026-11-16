@@ -186,6 +186,114 @@ export const invoiceRepository = {
   },
 
   /**
+   * Same window/filter as `getRevenueByCategoryAndMonth`, but grouped down to
+   * the individual product too — the per-product rows behind the "recurring
+   * vs. non-recurring revenue" chart's Excel export (recurringRevenueTrend
+   * .service.ts), so the monthly totals shown on screen can be verified
+   * against which products actually rolled into each bucket.
+   */
+  async getRevenueByProductCategoryAndMonth(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    from: Date,
+    to: Date
+  ): Promise<{ month: string; category: 'recurring' | 'non_recurring'; productName: string; revenue: number }[]> {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const results = await Model.aggregate<{ _id: { month: string; category: 'recurring' | 'non_recurring'; productName: string }; revenue: number }>([
+      { $match: { orgId: orgObjectId, provider, txnDate: { $gte: from, $lte: to }, 'lines.0': { $exists: true } } },
+      { $unwind: '$lines' },
+      {
+        $lookup: {
+          from: 'products',
+          let: { itemId: '$lines.itemId' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$orgId', orgObjectId] }, { $eq: ['$provider', provider] }, { $eq: ['$providerRecordId', '$$itemId'] }] } } }
+          ],
+          as: 'product'
+        }
+      },
+      { $unwind: '$product' },
+      { $match: { 'product.category': { $in: ['recurring', 'non_recurring'] } } },
+      {
+        $group: {
+          _id: { month: { $dateToString: { format: '%Y-%m', date: '$txnDate' } }, category: '$product.category', productName: '$product.name' },
+          revenue: { $sum: '$lines.amount' }
+        }
+      }
+    ])
+    return results.map((r) => ({ month: r._id.month, category: r._id.category, productName: r._id.productName, revenue: r.revenue }))
+  },
+
+  /**
+   * The literal QuickBooks invoice lines behind `getRevenueByProductCategoryAndMonth`/
+   * `getRevenueByCategoryAndMonth` — same match/lookup/filter, but one row per invoice
+   * line instead of summed away, so the "recurring vs. non-recurring revenue" chart's
+   * Excel export can show exactly which invoices (not just which products) were imported
+   * from QuickBooks and rolled into each period's total.
+   */
+  async getRevenueByProductCategoryInvoiceLines(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    from: Date,
+    to: Date
+  ): Promise<
+    { providerRecordId: string; txnDate: Date; customerName: string | null; productName: string; category: 'recurring' | 'non_recurring'; lineAmount: number; invoiceTotalAmount: number }[]
+  > {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const results = await Model.aggregate<{
+      providerRecordId: string
+      txnDate: Date
+      customerName: string | null
+      productName: string
+      category: 'recurring' | 'non_recurring'
+      lineAmount: number
+      invoiceTotalAmount: number
+    }>([
+      { $match: { orgId: orgObjectId, provider, txnDate: { $gte: from, $lte: to }, 'lines.0': { $exists: true } } },
+      { $unwind: '$lines' },
+      {
+        $lookup: {
+          from: 'products',
+          let: { itemId: '$lines.itemId' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$orgId', orgObjectId] }, { $eq: ['$provider', provider] }, { $eq: ['$providerRecordId', '$$itemId'] }] } } }
+          ],
+          as: 'product'
+        }
+      },
+      { $unwind: '$product' },
+      { $match: { 'product.category': { $in: ['recurring', 'non_recurring'] } } },
+      {
+        $lookup: {
+          from: 'quickbookscustomers',
+          let: { customerId: '$customerRecordId' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$orgId', orgObjectId] }, { $eq: ['$provider', provider] }, { $eq: ['$providerRecordId', '$$customerId'] }] } } }
+          ],
+          as: 'customer'
+        }
+      },
+      { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
+      { $sort: { txnDate: 1 } },
+      {
+        $project: {
+          _id: 0,
+          providerRecordId: 1,
+          txnDate: 1,
+          customerName: { $ifNull: ['$customer.displayName', null] },
+          productName: '$product.name',
+          category: '$product.category',
+          lineAmount: '$lines.amount',
+          invoiceTotalAmount: '$totalAmount'
+        }
+      }
+    ])
+    return results
+  },
+
+  /**
    * Every customer's total invoiced revenue per calendar month, over
    * `[from, to]`, for ONE specific product's line items only (`itemId`) —
    * the dashboard's "customer upgrades" trend's raw input

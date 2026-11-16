@@ -9,6 +9,10 @@ export interface QualifiedPipelineTrendPoint {
   month: string
   actual: number
   qualifiedDealCount: number
+  /** Qualified-stage deals this month whose type marks them as existing-business (renewal/upsell), excluded from `actual`. */
+  excludedNonNewBusinessDealCount: number
+  /** Of `qualifiedDealCount`, how many carry no deal type at all (kept rather than excluded — see `isNewBusinessOrUntyped`). */
+  untypedDealCount: number
   target: number | null
   /** CM-04's own formula (qualifiedPipelineAmount / target), applied per month instead of per quarter. Null whenever target is. */
   ratio: number | null
@@ -62,15 +66,21 @@ export async function getQualifiedPipelineTrend(
 
   const actualByMonth = new Map<string, number>(months.map((m) => [m, 0]))
   const countByMonth = new Map<string, number>(months.map((m) => [m, 0]))
+  const excludedByMonth = new Map<string, number>(months.map((m) => [m, 0]))
+  const untypedByMonth = new Map<string, number>(months.map((m) => [m, 0]))
 
   for (const deal of deals) {
     if (!deal.pipeline || !deal.dealstage || !deal.dealCreatedAt) continue
     if (!qualifiedKeys.has(`${deal.pipeline}::${deal.dealstage}`)) continue
-    if (!isNewBusinessOrUntyped(deal.type)) continue
     const month = toMonthKey(deal.dealCreatedAt)
     if (!actualByMonth.has(month)) continue
+    if (!isNewBusinessOrUntyped(deal.type)) {
+      excludedByMonth.set(month, excludedByMonth.get(month)! + 1)
+      continue
+    }
     actualByMonth.set(month, actualByMonth.get(month)! + (deal.amount ?? 0))
     countByMonth.set(month, countByMonth.get(month)! + 1)
+    if (!deal.type) untypedByMonth.set(month, untypedByMonth.get(month)! + 1)
   }
 
   const points: QualifiedPipelineTrendPoint[] = months.map((month) => {
@@ -80,6 +90,8 @@ export async function getQualifiedPipelineTrend(
       month,
       actual: round1(actual),
       qualifiedDealCount: countByMonth.get(month) ?? 0,
+      excludedNonNewBusinessDealCount: excludedByMonth.get(month) ?? 0,
+      untypedDealCount: untypedByMonth.get(month) ?? 0,
       target: target !== null ? round1(target) : null,
       ratio: target !== null && target > 0 ? round2(actual / target) : null
     }

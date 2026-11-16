@@ -1,6 +1,8 @@
 import { productRepository } from '../../sync/repository/product.repository'
 import { invoiceRepository } from '../../sync/repository/invoice.repository'
+import { plItemSnapshotRepository } from '../../sync/repository/plItemSnapshot.repository'
 import { getProductRecurringSplit } from './productRecurringRevenue.service'
+import { sumColumn } from './plParser'
 import { latestClosedMonth, latestClosedQuarterStart, shiftMonth, monthRangeUtc } from './revenueRollForward.service'
 
 const QUICKBOOKS = 'quickbooks'
@@ -104,4 +106,115 @@ export async function getRecurringRevenueTrend(orgId: string, granularity: Recur
 
   const points = granularity === 'monthly' ? await getMonthlyTrend(orgId) : await getQuarterlyTrend(orgId)
   return { hasCategorizedProducts: true, needsResync: false, points }
+}
+
+export interface RecurringRevenueTrendDetailRow {
+  /** "YYYY-MM" — the month itself for 'monthly', the quarter's first month for 'quarterly'. */
+  period: string
+  productName: string
+  category: 'recurring' | 'non_recurring'
+  revenue: number
+}
+
+/** One literal QuickBooks invoice line behind the chart's totals — see `getRecurringRevenueTrendDetail`'s own doc comment for the quarterly-view caveat. */
+export interface RecurringRevenueInvoiceLineRow {
+  invoiceId: string
+  /** "YYYY-MM-DD" */
+  txnDate: string
+  customerName: string | null
+  productName: string
+  category: 'recurring' | 'non_recurring'
+  lineAmount: number
+  invoiceTotalAmount: number
+}
+
+export interface RecurringRevenueTrendDetailResult {
+  hasCategorizedProducts: boolean
+  needsResync: boolean
+  rows: RecurringRevenueTrendDetailRow[]
+  /** Every QuickBooks invoice line, for a categorized product, synced in the chart's trailing window — see `getRecurringRevenueTrendDetail`. */
+  invoiceLines: RecurringRevenueInvoiceLineRow[]
+}
+
+/**
+ * Record-level detail behind `getRecurringRevenueTrend` — every categorized
+ * product's revenue for each period, for the dashboard's "export to Excel"
+ * verification button. Sums back to exactly the same recurring/non-recurring
+ * totals the chart shows, since this reads the identical sources
+ * (`getProductRecurringSplit`'s own PLItemSnapshot lookup for 'quarterly',
+ * the same invoice-line aggregation as `getMonthlyTrend` for 'monthly') —
+ * just without collapsing products into the two buckets.
+ */
+async function getQuarterlyTrendDetail(orgId: string): Promise<RecurringRevenueTrendDetailRow[]> {
+  const latestQuarterStart = latestClosedQuarterStart(latestClosedMonth())
+  const quarterStarts = Array.from({ length: TRAILING_QUARTERS }, (_, i) => shiftMonth(latestQuarterStart, -3 * (TRAILING_QUARTERS - 1 - i)))
+  const categorized = await productRepository.findCategorizedForOrg(orgId, QUICKBOOKS)
+
+  const rowsByQuarter = await Promise.all(
+    quarterStarts.map(async (quarterStart) => {
+      const snapshots = await plItemSnapshotRepository.findAllForQuarter(orgId, QUICKBOOKS, quarterStart)
+      const incomeByItemId = new Map(snapshots.map((snapshot) => [snapshot.itemId, sumColumn(snapshot.income, 'Total')]))
+      return categorized
+        .map((product) => ({
+          period: quarterStart,
+          productName: product.name,
+          category: product.category as 'recurring' | 'non_recurring',
+          revenue: incomeByItemId.get(product.providerRecordId) ?? 0
+        }))
+        .filter((row) => row.revenue !== 0)
+    })
+  )
+  return rowsByQuarter.flat()
+}
+
+async function getMonthlyTrendDetail(orgId: string): Promise<RecurringRevenueTrendDetailRow[]> {
+  const latestMonth = latestClosedMonth()
+  const months = Array.from({ length: TRAILING_MONTHS }, (_, i) => shiftMonth(latestMonth, -(TRAILING_MONTHS - 1 - i)))
+  const { start } = monthRangeUtc(months[0])
+  const { end } = monthRangeUtc(months[months.length - 1])
+  const rows = await invoiceRepository.getRevenueByProductCategoryAndMonth(orgId, QUICKBOOKS, start, end)
+  return rows.map((row) => ({ period: row.month, productName: row.productName, category: row.category, revenue: row.revenue }))
+}
+
+/** The same trailing window `getQuarterlyTrendDetail`/`getMonthlyTrendDetail` read, as a plain date range — for fetching the literal invoice lines underneath either granularity. */
+function invoiceLineWindow(granularity: RecurringRevenueTrendGranularity): { start: Date; end: Date } {
+  if (granularity === 'monthly') {
+    const latestMonth = latestClosedMonth()
+    const months = Array.from({ length: TRAILING_MONTHS }, (_, i) => shiftMonth(latestMonth, -(TRAILING_MONTHS - 1 - i)))
+    return { start: monthRangeUtc(months[0]).start, end: monthRangeUtc(months[months.length - 1]).end }
+  }
+  const latestQuarterStart = latestClosedQuarterStart(latestClosedMonth())
+  const earliestQuarterStart = shiftMonth(latestQuarterStart, -3 * (TRAILING_QUARTERS - 1))
+  const latestQuarterLastMonth = shiftMonth(latestQuarterStart, 2)
+  return { start: monthRangeUtc(earliestQuarterStart).start, end: monthRangeUtc(latestQuarterLastMonth).end }
+}
+
+export async function getRecurringRevenueTrendDetail(
+  orgId: string,
+  granularity: RecurringRevenueTrendGranularity = 'quarterly'
+): Promise<RecurringRevenueTrendDetailResult> {
+  const categorized = await productRepository.findCategorizedForOrg(orgId, QUICKBOOKS)
+  if (categorized.length === 0) {
+    return { hasCategorizedProducts: false, needsResync: false, rows: [], invoiceLines: [] }
+  }
+
+  if (granularity === 'monthly' && !(await invoiceRepository.hasAnyLineItems(orgId, QUICKBOOKS))) {
+    return { hasCategorizedProducts: true, needsResync: true, rows: [], invoiceLines: [] }
+  }
+
+  const { start, end } = invoiceLineWindow(granularity)
+  const [rows, invoiceRows] = await Promise.all([
+    granularity === 'monthly' ? getMonthlyTrendDetail(orgId) : getQuarterlyTrendDetail(orgId),
+    invoiceRepository.getRevenueByProductCategoryInvoiceLines(orgId, QUICKBOOKS, start, end)
+  ])
+  const invoiceLines: RecurringRevenueInvoiceLineRow[] = invoiceRows.map((r) => ({
+    invoiceId: r.providerRecordId,
+    txnDate: r.txnDate.toISOString().slice(0, 10),
+    customerName: r.customerName,
+    productName: r.productName,
+    category: r.category,
+    lineAmount: r.lineAmount,
+    invoiceTotalAmount: r.invoiceTotalAmount
+  }))
+  return { hasCategorizedProducts: true, needsResync: false, rows, invoiceLines }
 }

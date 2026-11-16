@@ -1,8 +1,10 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { RecurringRevenueTrendGranularity, RecurringRevenueTrendResult } from '../api/productRevenueGrowthApi'
+import { Download, Loader2 } from 'lucide-react'
+import { RecurringRevenueTrendGranularity, RecurringRevenueTrendResult, getRecurringRevenueTrendDetailRequest } from '../api/productRevenueGrowthApi'
 import { formatMetricValue } from '../utils/formatMetricValue'
+import { exportRecurringRevenueTrendDetailToExcel } from '../utils/exportRecurringRevenueTrendDetailToExcel'
 import { AnalyzeButton } from '../../aiAnalysis/components/AnalyzeButton'
 
 interface RecurringRevenueTrendChartProps {
@@ -41,8 +43,23 @@ function formatValue(value: number | null | undefined, viewMode: ViewMode): stri
  */
 export const RecurringRevenueTrendChart: React.FC<RecurringRevenueTrendChartProps> = ({ data, isLoading, granularity, onGranularityChange }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('revenue')
+  const [isExporting, setIsExporting] = useState(false)
 
   const points = data?.points ?? []
+
+  const handleExport = async () => {
+    if (isExporting) return
+    setIsExporting(true)
+    try {
+      const detail = await getRecurringRevenueTrendDetailRequest(granularity)
+      await exportRecurringRevenueTrendDetailToExcel({ granularity, points, detail })
+    } catch (err) {
+      console.error('Failed to export recurring revenue trend detail to Excel', err)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   const rows = points.map((point) => ({
     period: formatPeriodLabel(point.period, granularity),
     recurring: viewMode === 'revenue' ? point.recurringRevenue : point.recurringGrowthPct,
@@ -89,6 +106,18 @@ export const RecurringRevenueTrendChart: React.FC<RecurringRevenueTrendChartProp
                   Growth %
                 </label>
               </div>
+            )}
+            {points.length > 0 && (
+              <button
+                type="button"
+                onClick={handleExport}
+                disabled={isExporting}
+                className="flex shrink-0 items-center gap-1.5 rounded-md border border-line-strong px-2.5 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:bg-surface-3 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
+                title="Export every period's underlying product revenue to Excel, to verify the calculation"
+              >
+                {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                Excel
+              </button>
             )}
           </div>
         )}

@@ -54,7 +54,7 @@ export const productRepository = {
     const ProductModel = await modelForOrg(orgId)
     return ProductModel.find(
       { orgId, provider, category: { $in: ['recurring', 'non_recurring'] } },
-      { providerRecordId: 1, category: 1, billingFrequency: 1 }
+      { providerRecordId: 1, category: 1, billingFrequency: 1, name: 1 }
     ).lean()
   },
 

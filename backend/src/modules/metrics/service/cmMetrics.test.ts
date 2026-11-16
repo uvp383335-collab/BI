@@ -125,7 +125,7 @@ describe('CM-02 — Customer Concentration, QuickBooks-native ParentRef grouping
 
 describe('CM-04 — Pipeline Coverage Ratio', () => {
   beforeEach(() => {
-    mockedFindByCloseDateRange.mockReset()
+    mockedFindByCreateDateRange.mockReset()
     mockedFindAllStageDefs.mockReset()
     mockedFindOrgById.mockReset()
     mockedFindAllStageDefs.mockResolvedValue([
@@ -133,54 +133,56 @@ describe('CM-04 — Pipeline Coverage Ratio', () => {
       { entityType: 'deal', pipeline: 'default', rawStage: 'qualifiedtobuy', displayOrder: 2, isClosed: false, isWon: false },
       { entityType: 'deal', pipeline: 'default', rawStage: 'closedwon', displayOrder: 3, isClosed: true, isWon: true }
     ])
-    mockedFindByCloseDateRange.mockResolvedValue([
-      { pipeline: 'default', dealstage: 'appointmentscheduled', amount: 1000 }, // intake stage -- not qualified
-      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 5000 }, // qualified
-      { pipeline: 'default', dealstage: 'closedwon', amount: 2000 } // closed -- not open pipeline
+    mockedFindByCreateDateRange.mockResolvedValue([
+      { pipeline: 'default', dealstage: 'appointmentscheduled', amount: 1000, dealCreatedAt: new Date('2026-02-15') }, // intake stage -- not qualified
+      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 5000, dealCreatedAt: new Date('2026-02-15') }, // qualified
+      { pipeline: 'default', dealstage: 'closedwon', amount: 2000, dealCreatedAt: new Date('2026-02-15') } // closed -- not open pipeline
     ])
   })
 
   it('sums only deals in a qualified (non-intake, non-closed) stage; not computable without a target', async () => {
     mockedFindOrgById.mockResolvedValue({ settings: {} })
 
-    // Feb 2026 -> measures next quarter, 2026-Q2 (Apr-Jun).
+    // Feb 2026 -> measures the quarter it falls in, 2026-Q1 (Jan-Mar); deals are bucketed by create date.
     const result = await computeCM04('org1', 'hubspot', '2026-02')
 
-    expect(result.period).toBe('2026-04')
+    expect(result.period).toBe('2026-01')
     expect(result.computable).toBe(false)
     expect(result.value).toBeNull()
     expect(result.data.qualifiedPipelineAmount).toBeCloseTo(5000, 0)
     expect(result.data.qualifiedDealCount).toBe(1)
-    expect(result.data.missingTargetMonths).toEqual(['2026-04', '2026-05', '2026-06'])
+    expect(result.data.missingTargetMonths).toEqual(['2026-01', '2026-02', '2026-03'])
   })
 
   it('divides qualified pipeline by the quarter target, no flag at or above 3.0x', async () => {
-    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-06', targetAmount: 1500 }] } })
+    // targetAmount is per month (500/mo); the quarter target is 500 x 3 months = 1500. 5000 / 1500 = 3.33x.
+    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-01', toMonth: '2026-03', targetAmount: 500 }] } })
 
     const result = await computeCM04('org1', 'hubspot', '2026-02')
 
     expect(result.computable).toBe(true)
     expect(result.value).toBeCloseTo(3.33, 2)
-    expect(result.data.nextQuarterTarget).toBeCloseTo(1500, 0)
+    expect(result.data.quarterTarget).toBeCloseTo(1500, 0)
     expect(result.flag).toBeNull()
   })
 
   it('watch: coverage below 3.0x', async () => {
-    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-06', targetAmount: 2500 }] } })
+    // 600/mo x 3 = 1800 quarter target. 5000 / 1800 = 2.78x.
+    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-01', toMonth: '2026-03', targetAmount: 600 }] } })
 
     const result = await computeCM04('org1', 'hubspot', '2026-02')
 
-    expect(result.value).toBeCloseTo(2, 2)
+    expect(result.value).toBeCloseTo(2.78, 2)
     expect(result.flag?.level).toBe('watch')
   })
 
   it('counts only new-business deals (or untyped ones) toward the new-business target', async () => {
-    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-06', targetAmount: 1000 }] } })
-    mockedFindByCloseDateRange.mockResolvedValue([
-      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 3000, type: 'newbusiness' }, // HubSpot dealtype
-      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 1000, type: 'New Business' }, // Salesforce Opportunity.Type
-      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 500 }, // no type recorded -- kept
-      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 9000, type: 'existingbusiness' } // renewal/upsell -- excluded
+    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-01', toMonth: '2026-03', targetAmount: 1000 }] } })
+    mockedFindByCreateDateRange.mockResolvedValue([
+      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 3000, type: 'newbusiness', dealCreatedAt: new Date('2026-02-15') }, // HubSpot dealtype
+      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 1000, type: 'New Business', dealCreatedAt: new Date('2026-02-15') }, // Salesforce Opportunity.Type
+      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 500, dealCreatedAt: new Date('2026-02-15') }, // no type recorded -- kept
+      { pipeline: 'default', dealstage: 'qualifiedtobuy', amount: 9000, type: 'existingbusiness', dealCreatedAt: new Date('2026-02-15') } // renewal/upsell -- excluded
     ])
 
     const result = await computeCM04('org1', 'hubspot', '2026-02')
@@ -189,15 +191,17 @@ describe('CM-04 — Pipeline Coverage Ratio', () => {
     expect(result.data.qualifiedDealCount).toBe(3)
     expect(result.data.excludedNonNewBusinessDealCount).toBe(1)
     expect(result.data.untypedDealCount).toBe(1)
-    expect(result.value).toBeCloseTo(4.5, 2)
+    // 1000/mo x 3 = 3000 quarter target. 4500 / 3000 = 1.5x.
+    expect(result.value).toBeCloseTo(1.5, 2)
   })
 
   it('act now: coverage below 2.0x', async () => {
-    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-06', targetAmount: 5000 }] } })
+    // 5000/mo x 3 = 15000 quarter target. 5000 / 15000 = 0.33x.
+    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-01', toMonth: '2026-03', targetAmount: 5000 }] } })
 
     const result = await computeCM04('org1', 'hubspot', '2026-02')
 
-    expect(result.value).toBeCloseTo(1, 2)
+    expect(result.value).toBeCloseTo(0.33, 2)
     expect(result.flag?.level).toBe('act_now')
   })
 
@@ -215,12 +219,15 @@ describe('CM-04 — Pipeline Coverage Ratio', () => {
         settings: {
           salesforceCompetitorSource: 'field',
           salesforceCompetitorField: 'Competitor__c',
-          cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-06', targetAmount: 2000 }] // 5000 / 2000 = 2.5x
+          // 700/mo x 3 = 2100 quarter target. 5000 / 2100 = 2.38x -- inside the [2x, 3x) watch band.
+          cm04Targets: [{ fromMonth: '2026-01', toMonth: '2026-03', targetAmount: 700 }]
         }
       })
-      mockedFindByCloseDateRange.mockReset()
-      // CM-04's own next-quarter deals come first; CM-03's current + prior windows follow.
-      mockedFindByCloseDateRange.mockResolvedValueOnce([{ pipeline: 'opportunities-default', dealstage: 'Negotiation', amount: 5000, type: 'New Business' }])
+      mockedFindByCreateDateRange.mockReset()
+      // CM-04's own this-quarter deals come first; CM-03's current + prior windows follow (CM-03 still reads close dates).
+      mockedFindByCreateDateRange.mockResolvedValueOnce([
+        { pipeline: 'opportunities-default', dealstage: 'Negotiation', amount: 5000, type: 'New Business', dealCreatedAt: new Date('2026-02-15') }
+      ])
     })
 
     it('act now when a competitor win rate fell', async () => {
@@ -230,7 +237,7 @@ describe('CM-04 — Pipeline Coverage Ratio', () => {
 
       const result = await computeCM04('org1', 'salesforce', '2026-02')
 
-      expect(result.value).toBeCloseTo(2.5, 2)
+      expect(result.value).toBeCloseTo(2.38, 2)
       expect(result.flag?.level).toBe('act_now')
       expect(result.flag?.reason).toContain('CM-03')
     })
@@ -247,13 +254,13 @@ describe('CM-04 — Pipeline Coverage Ratio', () => {
   })
 
   it('not computable when any month of the quarter has no target', async () => {
-    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-04', toMonth: '2026-05', targetAmount: 1000 }] } })
+    mockedFindOrgById.mockResolvedValue({ settings: { cm04Targets: [{ fromMonth: '2026-01', toMonth: '2026-02', targetAmount: 1000 }] } })
 
     const result = await computeCM04('org1', 'hubspot', '2026-02')
 
     expect(result.computable).toBe(false)
-    expect(result.data.nextQuarterTarget).toBeNull()
-    expect(result.data.missingTargetMonths).toEqual(['2026-06'])
+    expect(result.data.quarterTarget).toBeNull()
+    expect(result.data.missingTargetMonths).toEqual(['2026-03'])
   })
 })
 

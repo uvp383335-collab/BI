@@ -595,9 +595,11 @@ async function syncSalesforceCampaigns(orgId: string, provider: string, accessTo
 }
 
 /**
- * Syncs Salesforce Accounts — narrow (`Id`/`Name`/`ParentId` only), solely to
- * resolve subsidiary hierarchy for CM-02's customer-concentration grouping
- * (metrics guide). Not this app's Contact entity (see syncSalesforceLeadsAsContacts).
+ * Syncs Salesforce Accounts — narrow (`Id`/`Name`/`ParentId`, plus
+ * `Segment__c` when this org's Account object has it), to resolve
+ * subsidiary hierarchy for CM-02's customer-concentration grouping (metrics
+ * guide) and to carry the Segment filter. Not this app's Contact entity (see
+ * syncSalesforceLeadsAsContacts).
  */
 async function syncSalesforceAccounts(
   orgId: string,
@@ -619,7 +621,8 @@ async function syncSalesforceAccounts(
     const accounts = response.records.map((account) => ({
       providerRecordId: account.Id,
       name: account.Name ?? undefined,
-      parentRecordId: account.ParentId ?? undefined
+      parentRecordId: account.ParentId ?? undefined,
+      segment: account.Segment__c ?? undefined
     }))
 
     await salesforceAccountRepository.bulkUpsert(orgId, provider, accounts)
