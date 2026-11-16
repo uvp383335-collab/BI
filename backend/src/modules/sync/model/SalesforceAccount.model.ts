@@ -21,6 +21,8 @@ export interface SalesforceAccountDocument extends Document {
   name?: string
   parentRecordId?: string
   segment?: string
+  /** QuickBooks Customer Id from the Account's `QBO_Customer_Id__c`, when the org has that field. */
+  qboCustomerId?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -32,7 +34,8 @@ const salesforceAccountSchema = new Schema<SalesforceAccountDocument>(
     providerRecordId: { type: String, required: true },
     name: { type: String },
     parentRecordId: { type: String },
-    segment: { type: String }
+    segment: { type: String },
+    qboCustomerId: { type: String }
   },
   { timestamps: true }
 )

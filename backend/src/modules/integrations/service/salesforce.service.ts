@@ -81,6 +81,8 @@ export interface SalesforceAccount {
   ParentId: string | null;
   /** The org's "Segment" picklist (SMB/Mid-Market/Upper Mid-Market/Enterprise) — present only when `ACCOUNT_OPTIONAL_FIELDS` found it on this org's Account object (see `getAvailableAccountFields`). */
   Segment__c?: string | null;
+  /** QuickBooks Customer Id (the Salesforce-to-QuickBooks integration key) — present only when `ACCOUNT_OPTIONAL_FIELDS` found `QBO_Customer_Id__c` on this org's Account object. */
+  QBO_Customer_Id__c?: string | null;
 }
 
 export interface SalesforceStageHistoryEntry {
@@ -728,7 +730,8 @@ export class SalesforceService {
   }
 
   /** `Segment__c` is a custom picklist (SMB/Mid-Market/Upper Mid-Market/Enterprise, shown in Salesforce's own Account "Additional Information" panel) — not every org has it, so it's describe()-checked like Opportunity's OPTIONAL_STANDARD_FIELDS rather than selected unconditionally. */
-  private static readonly ACCOUNT_OPTIONAL_FIELDS = ["Segment__c"] as const;
+  /** `QBO_Customer_Id__c` holds the QuickBooks Customer Id that links an Account to QuickBooks; also custom, so also describe()-checked. */
+  private static readonly ACCOUNT_OPTIONAL_FIELDS = ["Segment__c", "QBO_Customer_Id__c"] as const;
 
   /** `GET .../sobjects/Account/describe` — field metadata, used only to check which ACCOUNT_OPTIONAL_FIELDS this org's Account object actually has. */
   private static async getAvailableAccountFields(accessToken: string, instanceUrl: string): Promise<Set<string>> {
@@ -748,7 +751,7 @@ export class SalesforceService {
 
   /**
    * Fetches a page of Accounts — deliberately narrow (`Id`, `Name`, `ParentId`,
-   * plus the describe()-checked `Segment__c`, per the existing narrow-sync
+   * plus the describe()-checked `Segment__c` and `QBO_Customer_Id__c`, per the existing narrow-sync
    * policy). Not this app's Contact entity (Leads are, see class doc
    * comment) — Account exists here to resolve subsidiary hierarchy for
    * CM-02's customer-concentration grouping, and to carry the Segment filter.

@@ -622,7 +622,8 @@ async function syncSalesforceAccounts(
       providerRecordId: account.Id,
       name: account.Name ?? undefined,
       parentRecordId: account.ParentId ?? undefined,
-      segment: account.Segment__c ?? undefined
+      segment: account.Segment__c ?? undefined,
+      qboCustomerId: account.QBO_Customer_Id__c ?? undefined
     }))
 
     await salesforceAccountRepository.bulkUpsert(orgId, provider, accounts)

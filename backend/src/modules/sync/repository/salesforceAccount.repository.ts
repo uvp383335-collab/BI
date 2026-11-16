@@ -7,6 +7,7 @@ export interface SalesforceAccountUpsertInput {
   name?: string
   parentRecordId?: string
   segment?: string
+  qboCustomerId?: string
 }
 
 async function modelForOrg(orgId: string | Types.ObjectId) {
