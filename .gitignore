@@ -16,3 +16,6 @@ Thumbs.db
 
 .vscode/
 .idea/
+
+# Local Oryon reference dashboard, not shared
+oryon-dashboard/
