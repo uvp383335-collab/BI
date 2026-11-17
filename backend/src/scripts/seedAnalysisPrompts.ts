@@ -2,7 +2,7 @@ import dotenv from 'dotenv'
 import mongoose from 'mongoose'
 import { connectDatabase } from '../database/connection'
 import { analysisPromptRepository } from '../modules/aiAnalysis/repository/analysisPrompt.repository'
-import { DEFAULT_ANALYSIS_PROMPTS } from '../modules/aiAnalysis/service/defaultPrompts'
+import { DEFAULT_ANALYSIS_PROMPTS, LEGACY_SHARED_SYSTEM_PROMPTS, SHARED_SYSTEM_PROMPT } from '../modules/aiAnalysis/service/defaultPrompts'
 
 /**
  * Inserts the default AI analysis prompt for every chart key that doesn't
@@ -11,8 +11,13 @@ import { DEFAULT_ANALYSIS_PROMPTS } from '../modules/aiAnalysis/service/defaultP
  * and those edits must survive re-running this script. To reset a prompt
  * to its default, delete its document and re-run.
  *
+ * `--update-system-prompts` additionally moves prompts whose system prompt
+ * is still an old untouched default (see LEGACY_SHARED_SYSTEM_PROMPTS) to
+ * the current one. Edited system prompts are left alone.
+ *
  * Usage:
  *   npm run seed:analysis-prompts
+ *   npm run seed:analysis-prompts -- --update-system-prompts
  */
 dotenv.config()
 
@@ -22,6 +27,11 @@ async function main() {
     const inserted = await analysisPromptRepository.insertIfMissing(prompt)
     // eslint-disable-next-line no-console
     console.log(`${prompt.chartKey}: ${inserted ? 'inserted' : 'already exists, left unchanged'}`)
+  }
+  if (process.argv.includes('--update-system-prompts')) {
+    const updated = await analysisPromptRepository.replaceSystemPromptWhereUnchanged(LEGACY_SHARED_SYSTEM_PROMPTS, SHARED_SYSTEM_PROMPT)
+    // eslint-disable-next-line no-console
+    console.log(`system prompt moved to the current default on ${updated} prompt(s); edited ones left unchanged`)
   }
 }
 

@@ -37,6 +37,19 @@ const prompt = {
   isActive: true
 }
 
+const REPORT = {
+  status: 'Improving',
+  periodLabel: 'Oct 2026',
+  basis: 'Latest month',
+  headline: 'Churn is $500 a month and steady.',
+  headlineFigure: '$500',
+  whatIsHappening: ['Flat vs Sep 2026.'],
+  whatIsDrivingIt: ['Two customers churned, **$500** in total.'],
+  whyItMatters: 'Retention is holding.',
+  whatToDo: ['Keep watching the renewal cohort.'],
+  askManagement: 'Which accounts are at risk next quarter?'
+}
+
 function churnPoint(period: string) {
   return { period, upgradeCount: 0, upgradeAmount: 0, downgradeCount: 0, downgradeAmount: 0, churnCount: 2, churnAmount: 500, startingRevenue: 10000, grrPct: 95, nrrPct: 98 }
 }
@@ -54,7 +67,7 @@ describe('analyzeChart', () => {
     mockedFindPrompt.mockResolvedValue(prompt)
     mockedChurnTrend.mockResolvedValue({ hasData: true, points: [churnPoint('2024-10'), churnPoint('2024-11'), churnPoint('2026-10')] })
     mockedCreateReport.mockImplementation((_orgId, input) => Promise.resolve({ ...input, createdAt: new Date('2026-11-12T00:00:00Z') }))
-    mockedGenerate.mockResolvedValue({ text: '## Summary\nok', model: 'claude-opus-5-5', inputTokens: 100, outputTokens: 50 })
+    mockedGenerate.mockResolvedValue({ text: JSON.stringify(REPORT), model: 'claude-opus-5-5', inputTokens: 100, outputTokens: 50 })
   })
 
   it('loads the chart for all products (no product filter) and only the last 24 closed months', async () => {
@@ -68,17 +81,35 @@ describe('analyzeChart', () => {
     expect(userPrompt).toContain('2024-11 to 2026-10')
     expect(userPrompt).not.toContain('"2024-10"')
     expect(userPrompt).toContain('"2026-10"')
-    expect(result).toMatchObject({ report: '## Summary\nok', cached: false })
+    expect(result).toMatchObject({ report: REPORT, cached: false })
+    expect(mockedGenerate.mock.calls[0][0].jsonSchema).toMatchObject({ type: 'object', additionalProperties: false })
     expect(mockedCreateReport).toHaveBeenCalledWith(ORG_ID, expect.objectContaining({ chartKey: 'customer-churn-trend', generatedBy: USER_ID }))
   })
 
   it('returns the cached report without calling Claude when inputs are unchanged', async () => {
-    mockedFindByCacheKey.mockResolvedValue({ report: 'cached report', modelId: 'claude-opus-5-5', windowFrom: '2024-11', windowTo: '2026-10', createdAt: new Date('2026-11-01T00:00:00Z') })
+    mockedFindByCacheKey.mockResolvedValue({ report: JSON.stringify(REPORT), modelId: 'claude-opus-5-5', windowFrom: '2024-11', windowTo: '2026-10', createdAt: new Date('2026-11-01T00:00:00Z') })
 
     const result = await analyzeChart(ORG_ID, USER_ID, 'customer-churn-trend')
 
     expect(mockedGenerate).not.toHaveBeenCalled()
-    expect(result).toMatchObject({ report: 'cached report', cached: true })
+    expect(result).toMatchObject({ report: REPORT, cached: true })
+  })
+
+  it('regenerates instead of serving a cached report stored in the old Markdown shape', async () => {
+    mockedFindByCacheKey.mockResolvedValue({ report: '## Summary\nold', modelId: 'claude-opus-5-5', windowFrom: '2024-11', windowTo: '2026-10', createdAt: new Date('2026-11-01T00:00:00Z') })
+
+    const result = await analyzeChart(ORG_ID, USER_ID, 'customer-churn-trend')
+
+    expect(mockedGenerate).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({ report: REPORT, cached: false })
+  })
+
+  it('fails without caching when Claude returns JSON in the wrong shape', async () => {
+    mockedFindByCacheKey.mockResolvedValue(null)
+    mockedGenerate.mockResolvedValue({ text: JSON.stringify({ headline: 'only' }), model: 'claude-opus-5-5', inputTokens: 1, outputTokens: 1 })
+
+    await expect(analyzeChart(ORG_ID, USER_ID, 'customer-churn-trend')).rejects.toMatchObject({ code: 'AI_INVALID_REPORT' })
+    expect(mockedCreateReport).not.toHaveBeenCalled()
   })
 
   it('bypasses the cache when refresh is requested', async () => {

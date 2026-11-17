@@ -28,6 +28,13 @@ export const analysisPromptRepository = {
     return result.upsertedCount > 0
   },
 
+  /** Replaces the system prompt only where it still equals one of `fromAny` — a prompt edited in MongoDB is never touched. Returns how many documents changed. */
+  async replaceSystemPromptWhereUnchanged(fromAny: string[], to: string): Promise<number> {
+    const result = await AnalysisPromptModel.updateMany({ systemPrompt: { $in: fromAny } }, { $set: { systemPrompt: to } })
+    cache.clear()
+    return result.modifiedCount
+  },
+
   clearCache() {
     cache.clear()
   }

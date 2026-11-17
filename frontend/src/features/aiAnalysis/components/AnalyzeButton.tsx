@@ -1,39 +1,108 @@
-import React, { useCallback, useState } from 'react'
-import ReactMarkdown, { Components } from 'react-markdown'
-import { Loader2, RefreshCw, Sparkles } from 'lucide-react'
-import { Modal } from '../../../shared/components/Modal'
-import { AnalysisChartKey } from '../api/aiAnalysisApi'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Loader2, Sparkles } from 'lucide-react'
+import { ANALYSIS_METRIC_CODE, AnalysisChartKey, AnalysisReport, AnalysisStatus } from '../api/aiAnalysisApi'
 import { useChartAnalysis } from '../hooks/useChartAnalysis'
+import './analysisDrawer.css'
 
 interface AnalyzeButtonProps {
   chartKey: AnalysisChartKey
-  /** Modal heading — usually the chart's own title. */
+  /** Drawer heading — usually the chart's own title. */
   chartTitle: string
 }
 
-const MARKDOWN_COMPONENTS: Components = {
-  h1: ({ children }) => <h3 className="mt-5 mb-2 text-base font-semibold text-ink first:mt-0">{children}</h3>,
-  h2: ({ children }) => <h3 className="mt-5 mb-2 text-base font-semibold text-ink first:mt-0">{children}</h3>,
-  h3: ({ children }) => <h4 className="mt-4 mb-1.5 text-sm font-semibold text-ink">{children}</h4>,
-  p: ({ children }) => <p className="mb-3 text-sm leading-relaxed text-ink-2">{children}</p>,
-  ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-ink-2">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5 text-sm text-ink-2">{children}</ol>,
-  strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>
+/** The analysis always runs on unfiltered data — the server loads the chart itself with every dashboard filter off. */
+const SCOPE_LABEL = 'All regions, segments and products'
+
+const STATUS_TONE: Record<AnalysisStatus, string> = {
+  Improving: 'up',
+  Stable: 'flat',
+  Mixed: 'mixed',
+  Worsening: 'down',
+  'Not enough data': 'none'
 }
+
+const METRIC_CODE_IN_TITLE = /\s*\b(?:VC|CB|CM|ER)-\d{2}\b/g
 
 function errorMessage(error: unknown): string {
   return (error as any)?.response?.data?.error?.message || 'Could not generate the analysis. Please try again.'
 }
 
+/** Renders `**bold**` spans; everything else is plain text. */
+function withBold(text: string): React.ReactNode {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') && part.length > 4 ? <b key={i}>{part.slice(2, -2)}</b> : part
+  )
+}
+
+/** Highlights the first occurrence of `figure` in the headline. */
+function withFigure(headline: string, figure: string): React.ReactNode {
+  const at = figure ? headline.indexOf(figure) : -1
+  if (at < 0) return headline
+  return (
+    <>
+      {headline.slice(0, at)}
+      <mark>{figure}</mark>
+      {headline.slice(at + figure.length)}
+    </>
+  )
+}
+
+const plain = (text: string) => text.replace(/\*\*([^*]+)\*\*/g, '$1')
+
+function memoText(code: string | undefined, title: string, report: AnalysisReport): string {
+  const bullets = (items: string[]) => items.map((item) => `- ${plain(item)}`).join('\n')
+  return [
+    `${code ? `${code} ` : ''}${title} (${report.status})`,
+    `${report.periodLabel} · ${report.basis} · ${SCOPE_LABEL}`,
+    '',
+    plain(report.headline),
+    '',
+    'What is happening',
+    bullets(report.whatIsHappening),
+    '',
+    'What is driving it',
+    bullets(report.whatIsDrivingIt),
+    '',
+    'Why it matters',
+    plain(report.whyItMatters),
+    '',
+    'What to do',
+    bullets(report.whatToDo),
+    `Ask management: ${plain(report.askManagement)}`
+  ].join('\n')
+}
+
+const KickerMark: React.FC = () => (
+  <svg width="14" height="10" viewBox="0 0 14 10" aria-hidden="true">
+    <circle cx="2" cy="8" r="1.6" fill="currentColor" />
+    <circle cx="7" cy="5" r="1.6" fill="currentColor" opacity=".75" />
+    <path d="M9.5 9 13 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+  </svg>
+)
+
+const Bullets: React.FC<{ items: string[] }> = ({ items }) => (
+  <ul className="an-list">
+    {items.map((item, i) => (
+      <li key={i}>{withBold(item)}</li>
+    ))}
+  </ul>
+)
+
 /**
- * "Analyze" action for a dashboard chart: opens a modal with an AI-written
- * report. The report always covers all products — the server loads the
- * chart's data itself with every dashboard filter off — so it can differ
- * from a filtered view the user is looking at, which the modal states.
+ * "Analyze" action for a dashboard chart: opens the Oryon AI analysis drawer
+ * (status, headline, what is happening / driving it / why it matters, and
+ * what to do). The report always covers all products, regions and
+ * segments, whatever filters are selected on the chart.
  */
 export const AnalyzeButton: React.FC<AnalyzeButtonProps> = ({ chartKey, chartTitle }) => {
   const [isOpen, setIsOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const closeRef = useRef<HTMLButtonElement>(null)
   const analysis = useChartAnalysis(chartKey)
+
+  const code = ANALYSIS_METRIC_CODE[chartKey]
+  const title = chartTitle.replace(METRIC_CODE_IN_TITLE, '').trim()
+  const report = analysis.data?.report
 
   const open = () => {
     setIsOpen(true)
@@ -41,55 +110,130 @@ export const AnalyzeButton: React.FC<AnalyzeButtonProps> = ({ chartKey, chartTit
   }
   const close = useCallback(() => setIsOpen(false), [])
 
+  useEffect(() => {
+    if (!isOpen) return
+    closeRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, close])
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = window.setTimeout(() => setCopied(false), 2000)
+    return () => window.clearTimeout(timer)
+  }, [copied])
+
+  const copyForMemo = async () => {
+    if (!report) return
+    try {
+      await navigator.clipboard.writeText(memoText(code, title, report))
+      setCopied(true)
+    } catch {
+      // Clipboard can be blocked (permissions, insecure context); the button simply doesn't confirm.
+    }
+  }
+
   return (
     <>
       <button
         type="button"
         onClick={open}
         className="flex shrink-0 items-center gap-1.5 rounded-md border border-line-strong px-2.5 py-1.5 text-xs font-medium text-ink-2 transition-colors hover:bg-surface-3 hover:text-brand"
-        title="Generate an AI analysis of this chart across all products"
+        title="Open the Oryon AI analysis of this chart"
       >
         <Sparkles className="h-3.5 w-3.5" />
         Analyze
       </button>
 
       {isOpen && (
-        <Modal title={`AI analysis — ${chartTitle}`} onClose={close} size="xl">
-          <p className="mb-4 rounded-md border border-line-strong bg-surface-3 px-3 py-2 text-xs text-ink-2">
-            This analysis covers all products. Product or other filters selected on the chart are not applied.
-          </p>
-
-          {analysis.isPending ? (
-            <div className="flex items-center gap-2 py-10 text-sm text-ink-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Analyzing… this can take up to a minute.
-            </div>
-          ) : analysis.isError ? (
-            <div className="py-6">
-              <p className="text-sm text-danger">{errorMessage(analysis.error)}</p>
-              <button type="button" onClick={() => analysis.mutate(false)} className="mt-3 text-sm font-medium text-brand hover:underline">
-                Try again
-              </button>
-            </div>
-          ) : analysis.data ? (
-            <>
-              <ReactMarkdown components={MARKDOWN_COMPONENTS}>{analysis.data.report}</ReactMarkdown>
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line-strong pt-4 text-xs text-ink-3">
-                <span>
-                  Covers {analysis.data.window.from} to {analysis.data.window.to} · Generated {new Date(analysis.data.generatedAt).toLocaleString()}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => analysis.mutate(true)}
-                  className="flex items-center gap-1.5 rounded-md border border-line-strong px-2.5 py-1.5 font-medium text-ink-2 transition-colors hover:bg-surface-3 hover:text-brand"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  Regenerate
+        <>
+          <div className="an-scrim" onClick={close} />
+          <aside className="an-drawer" role="dialog" aria-modal="true" aria-labelledby={`an-title-${chartKey}`}>
+            <div className="an-head">
+              <div>
+                <div className="an-kicker">
+                  <KickerMark />
+                  <span>ORYONAI ANALYSIS{code ? ` · ${code}` : ''}</span>
+                </div>
+                <h2 className="an-title" id={`an-title-${chartKey}`}>
+                  {title}
+                </h2>
+              </div>
+              <div className="an-actions">
+                <button type="button" className="an-btn" onClick={copyForMemo} disabled={!report}>
+                  {copied ? 'Copied' : 'Copy for memo'}
+                </button>
+                <button type="button" className="an-btn an-x" onClick={close} aria-label="Close" ref={closeRef}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                    <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.6" fill="none" />
+                  </svg>
                 </button>
               </div>
-            </>
-          ) : null}
-        </Modal>
+            </div>
+
+            {analysis.isPending ? (
+              <div className="an-state">
+                <Loader2 className="h-4 w-4 an-spin" />
+                Analyzing… this can take up to a minute.
+              </div>
+            ) : analysis.isError ? (
+              <div className="an-state" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                <span className="an-error">{errorMessage(analysis.error)}</span>
+                <button type="button" className="an-link" onClick={() => analysis.mutate(false)}>
+                  Try again
+                </button>
+              </div>
+            ) : report ? (
+              <>
+                <span className={`an-status ${STATUS_TONE[report.status]}`}>{report.status}</span>
+                <div className="an-meta">
+                  {report.periodLabel} · {report.basis} · {SCOPE_LABEL}
+                </div>
+                <p className="an-headline">{withFigure(report.headline, report.headlineFigure)}</p>
+
+                {report.whatIsHappening.length > 0 && (
+                  <section className="an-sec">
+                    <h3 className="an-label">What is happening</h3>
+                    <Bullets items={report.whatIsHappening} />
+                  </section>
+                )}
+                {report.whatIsDrivingIt.length > 0 && (
+                  <section className="an-sec">
+                    <h3 className="an-label">What is driving it</h3>
+                    <Bullets items={report.whatIsDrivingIt} />
+                  </section>
+                )}
+                {report.whyItMatters && (
+                  <section className="an-sec">
+                    <h3 className="an-label">Why it matters</h3>
+                    <p className="an-p">{withBold(report.whyItMatters)}</p>
+                  </section>
+                )}
+
+                <section className="an-todo">
+                  <h3 className="an-label">What to do</h3>
+                  {report.whatToDo.length > 0 && <Bullets items={report.whatToDo} />}
+                  {report.askManagement && (
+                    <div className="an-ask">
+                      <b>Ask management</b>
+                      {withBold(report.askManagement)}
+                    </div>
+                  )}
+                </section>
+
+                <div className="an-foot">
+                  <span>
+                    Covers {analysis.data!.window.from} to {analysis.data!.window.to} · Generated {new Date(analysis.data!.generatedAt).toLocaleString()}
+                  </span>
+                  <button type="button" className="an-link" onClick={() => analysis.mutate(true)}>
+                    Regenerate
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </aside>
+        </>
       )}
     </>
   )

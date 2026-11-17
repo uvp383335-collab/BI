@@ -37,11 +37,53 @@ export type AnalysisChartKey =
   | 'competitor-win-rate'
   | 'lead-volume-vs-target-mql'
 
+/**
+ * The metric code shown in the analysis header ("ORYONAI ANALYSIS · VC-09"),
+ * for charts that trace a metric from the metrics guide. Charts without one
+ * show the header without a code.
+ */
+export const ANALYSIS_METRIC_CODE: Partial<Record<AnalysisChartKey, string>> = {
+  'lead-to-mql-trend': 'CM-06',
+  'mql-to-sql-trend': 'CM-06',
+  'ga-expense-trend': 'VC-09',
+  'recurring-revenue-trend': 'VC-13',
+  'recurring-revenue-share': 'VC-12',
+  'customer-retention-trend': 'VC-01',
+  'qualified-pipeline-trend': 'CM-04',
+  'campaign-won-opportunities': 'CM-07',
+  'campaign-roi': 'CM-07',
+  'leads-by-month-by-campaign': 'CM-07',
+  'opportunities-by-lead-source': 'CM-07',
+  'opportunities-by-lead-source-by-month': 'CM-07',
+  'customer-revenue-concentration': 'CM-02',
+  'customer-revenue-concentration-by-month': 'CM-02',
+  'competitor-win-rate': 'CM-03'
+}
+
+export type AnalysisStatus = 'Improving' | 'Stable' | 'Mixed' | 'Worsening' | 'Not enough data'
+
+/** Mirrors the backend's aiAnalysis/service/analysisReportSchema.ts. */
+export interface AnalysisReport {
+  status: AnalysisStatus
+  /** Latest period covered, e.g. "Oct 2026" or "Q3 2026". */
+  periodLabel: string
+  /** What that period's figure represents, e.g. "Latest month", "At quarter end". */
+  basis: string
+  headline: string
+  /** The figure inside `headline` to highlight. */
+  headlineFigure: string
+  whatIsHappening: string[]
+  /** May contain **bold** markers around key figures. */
+  whatIsDrivingIt: string[]
+  whyItMatters: string
+  whatToDo: string[]
+  askManagement: string
+}
+
 export interface ChartAnalysisResult {
   chartKey: AnalysisChartKey
   title: string
-  /** Markdown. */
-  report: string
+  report: AnalysisReport
   model: string
   /** Inclusive "YYYY-MM" range the analysis covered. */
   window: { from: string; to: string }

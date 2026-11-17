@@ -9,6 +9,8 @@ export interface ClaudeGenerateInput {
   effort: ClaudeEffort
   system: string
   user: string
+  /** When set, the response is constrained to this JSON Schema (structured outputs) and `text` is the JSON. */
+  jsonSchema?: Record<string, unknown>
 }
 
 export interface ClaudeGenerateResult {
@@ -46,7 +48,10 @@ export async function generateWithClaude(input: ClaudeGenerateInput): Promise<Cl
       max_tokens: input.maxTokens,
       system: input.system,
       messages: [{ role: 'user', content: input.user }],
-      output_config: { effort: input.effort },
+      output_config: {
+        effort: input.effort,
+        ...(input.jsonSchema ? { format: { type: 'json_schema' as const, schema: input.jsonSchema } } : {})
+      },
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default'
     })
@@ -59,6 +64,10 @@ export async function generateWithClaude(input: ClaudeGenerateInput): Promise<Cl
       throw new AppError('AI analysis failed, please try again later', 502, 'AI_UPSTREAM_ERROR')
     }
     throw err
+  }
+
+  if (response.stop_reason === 'max_tokens') {
+    throw new AppError('AI analysis was cut off before it finished, please try again', 502, 'AI_TRUNCATED')
   }
 
   if (response.stop_reason === 'refusal') {

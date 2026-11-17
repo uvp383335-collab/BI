@@ -4,11 +4,12 @@ import { generateWithClaude } from '../../../shared/llm/claudeClient'
 import { analysisPromptRepository, AnalysisPrompt } from '../repository/analysisPrompt.repository'
 import { analysisReportRepository } from '../repository/analysisReport.repository'
 import { AnalysisChartKey, AnalysisWindow, CHART_DATA_REGISTRY, currentAnalysisWindow } from './chartDataRegistry'
+import { ANALYSIS_REPORT_JSON_SCHEMA, AnalysisReport, REPORT_FORMAT_VERSION, analysisReportSchema, parseStoredReport } from './analysisReportSchema'
 
 export interface ChartAnalysisResult {
   chartKey: string
   title: string
-  report: string
+  report: AnalysisReport
   model: string
   window: AnalysisWindow
   generatedAt: string
@@ -27,8 +28,23 @@ export function renderTemplate(template: string, values: Record<string, string>)
 
 function computeCacheKey(prompt: AnalysisPrompt, systemPrompt: string, userPrompt: string): string {
   return createHash('sha256')
-    .update(JSON.stringify([prompt.modelId, prompt.effort, prompt.maxTokens, systemPrompt, userPrompt]))
+    .update(JSON.stringify([REPORT_FORMAT_VERSION, prompt.modelId, prompt.effort, prompt.maxTokens, systemPrompt, userPrompt]))
     .digest('hex')
+}
+
+/** Structured outputs guarantee the shape; this still validates so a bad response fails loudly instead of being cached. */
+function parseGeneratedReport(text: string): AnalysisReport {
+  let json: unknown
+  try {
+    json = JSON.parse(text)
+  } catch {
+    throw new AppError('AI analysis returned an unreadable report', 502, 'AI_INVALID_REPORT')
+  }
+  const parsed = analysisReportSchema.safeParse(json)
+  if (!parsed.success) {
+    throw new AppError('AI analysis returned an unreadable report', 502, 'AI_INVALID_REPORT')
+  }
+  return parsed.data
 }
 
 async function loadActivePrompt(chartKey: AnalysisChartKey): Promise<AnalysisPrompt> {
@@ -61,11 +77,12 @@ export async function analyzeChart(orgId: string, userId: string, chartKey: Anal
 
   if (!options.refresh) {
     const cached = await analysisReportRepository.findByCacheKey(orgId, chartKey, cacheKey)
-    if (cached) {
+    const cachedReport = cached ? parseStoredReport(cached.report) : null
+    if (cached && cachedReport) {
       return {
         chartKey,
         title: prompt.title,
-        report: cached.report,
+        report: cachedReport,
         model: cached.modelId,
         window: { from: cached.windowFrom, to: cached.windowTo },
         generatedAt: cached.createdAt.toISOString(),
@@ -79,13 +96,16 @@ export async function analyzeChart(orgId: string, userId: string, chartKey: Anal
     maxTokens: prompt.maxTokens,
     effort: prompt.effort,
     system: prompt.systemPrompt,
-    user: userPrompt
+    user: userPrompt,
+    jsonSchema: ANALYSIS_REPORT_JSON_SCHEMA
   })
+
+  const report = parseGeneratedReport(generated.text)
 
   const saved = await analysisReportRepository.create(orgId, {
     chartKey,
     cacheKey,
-    report: generated.text,
+    report: JSON.stringify(report),
     modelId: generated.model,
     windowFrom: window.from,
     windowTo: window.to,
@@ -97,7 +117,7 @@ export async function analyzeChart(orgId: string, userId: string, chartKey: Anal
   return {
     chartKey,
     title: prompt.title,
-    report: saved.report,
+    report,
     model: saved.modelId,
     window,
     generatedAt: saved.createdAt.toISOString(),
@@ -108,12 +128,13 @@ export async function analyzeChart(orgId: string, userId: string, chartKey: Anal
 /** The most recently generated report for a chart, or null — lets the UI show the last analysis without spending a Claude call. */
 export async function getLatestChartAnalysis(orgId: string, chartKey: AnalysisChartKey): Promise<ChartAnalysisResult | null> {
   const latest = await analysisReportRepository.findLatest(orgId, chartKey)
-  if (!latest) return null
+  const report = latest ? parseStoredReport(latest.report) : null
+  if (!latest || !report) return null
   const prompt = await analysisPromptRepository.findActiveByChartKey(chartKey)
   return {
     chartKey,
     title: prompt?.title ?? CHART_DATA_REGISTRY[chartKey].title,
-    report: latest.report,
+    report,
     model: latest.modelId,
     window: { from: latest.windowFrom, to: latest.windowTo },
     generatedAt: latest.createdAt.toISOString(),
