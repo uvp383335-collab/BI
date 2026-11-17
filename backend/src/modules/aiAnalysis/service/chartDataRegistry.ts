@@ -48,6 +48,20 @@ export interface ChartDataDefinition {
    * aggregates only — customer and contact names are never sent to the model.
    */
   load: (ctx: ChartDataContext) => Promise<unknown>
+  /**
+   * What period the loaded data actually covers, for charts that don't use
+   * the standard analysis window (all-time totals, a fixed trailing year).
+   * Fills `{{window}}` in the prompt and the "Covers …" line in the UI.
+   * Defaults to "<from> to <to>" of the analysis window.
+   */
+  coverage?: (window: AnalysisWindow) => string
+}
+
+const ALL_TIME = () => 'All time'
+
+/** "<from> to <to>" of the analysis window, or the chart's own coverage when it differs. */
+export function describeCoverage(definition: ChartDataDefinition, window: AnalysisWindow): string {
+  return definition.coverage ? definition.coverage(window) : `${window.from} to ${window.to}`
 }
 
 export function currentAnalysisWindow(): AnalysisWindow {
@@ -71,6 +85,13 @@ function windowDates(window: AnalysisWindow): { from: Date; to: Date } {
 }
 
 /** Keeps the top rows by `weight` and sums the rest into a single `others` total. */
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** Sums `pick` over rows. Totals are precomputed for the model so it never has to add up long lists itself. */
+function total<T>(rows: T[], pick: (row: T) => number | null | undefined): number {
+  return round2(rows.reduce((sum, row) => sum + (pick(row) ?? 0), 0))
+}
+
 function topRows<T>(rows: T[], weight: (row: T) => number): { rows: T[]; othersCount: number; othersTotal: number } {
   const sorted = [...rows].sort((a, b) => weight(b) - weight(a))
   const rest = sorted.slice(MAX_LIST_ROWS)
@@ -239,11 +260,16 @@ export const CHART_DATA_REGISTRY = {
 
   'campaign-won-opportunities': {
     title: 'Opportunities Won by Campaign (all time, Salesforce)',
+    coverage: ALL_TIME,
     load: async ({ orgId }) => {
       const result = await getCampaignWonOpportunities(orgId)
       const top = topRows(result.rows, (row) => row.wonAmount)
       return {
         campaignCount: result.rows.length,
+        totalWonAmount: total(result.rows, (row) => row.wonAmount),
+        totalWonCount: total(result.rows, (row) => row.wonCount),
+        listedCampaignsWonAmount: total(top.rows, (row) => row.wonAmount),
+        listedCampaignsWonCount: total(top.rows, (row) => row.wonCount),
         campaigns: top.rows.map((row) => ({ campaign: row.campaignName, wonCount: row.wonCount, wonAmount: row.wonAmount })),
         otherCampaignsCount: top.othersCount,
         otherCampaignsWonAmount: top.othersTotal
@@ -253,11 +279,19 @@ export const CHART_DATA_REGISTRY = {
 
   'campaign-roi': {
     title: 'Campaign ROI (all time, Salesforce)',
+    coverage: ALL_TIME,
     load: async ({ orgId }) => {
       const result = await getCampaignRoi(orgId)
       const top = topRows(result.rows, (row) => row.wonAmount)
+      const listedWon = total(top.rows, (row) => row.wonAmount)
+      const listedCost = total(top.rows, (row) => row.actualCost)
       return {
         campaignCount: result.rows.length,
+        totalWonAmount: total(result.rows, (row) => row.wonAmount),
+        listedCampaignsWonAmount: listedWon,
+        listedCampaignsActualCost: listedCost,
+        // Won amount per unit of cost across the listed campaigns (same definition as each row's `roi`).
+        listedCampaignsBlendedRoi: listedCost > 0 ? round2(listedWon / listedCost) : null,
         campaigns: top.rows.map((row) => ({ campaign: row.campaignName, wonAmount: row.wonAmount, actualCost: row.actualCost, roi: row.roi })),
         otherCampaignsCount: top.othersCount,
         otherCampaignsWonAmount: top.othersTotal
@@ -279,7 +313,12 @@ export const CHART_DATA_REGISTRY = {
 
   'opportunities-by-lead-source': {
     title: 'Opportunities by Lead Source (all time, Salesforce)',
-    load: ({ orgId }) => getOpportunitiesByLeadSource(orgId)
+    coverage: ALL_TIME,
+    load: async ({ orgId }) => {
+      const result = await getOpportunitiesByLeadSource(orgId)
+      const known = result.rows.filter((row) => row.leadSource !== 'Unknown')
+      return { totalOpportunities: total(result.rows, (row) => row.count), knownSourceOpportunities: total(known, (row) => row.count), rows: result.rows }
+    }
   },
 
   'opportunities-by-lead-source-by-month': {
@@ -296,6 +335,7 @@ export const CHART_DATA_REGISTRY = {
 
   'customer-revenue-concentration': {
     title: 'Customer Concentration (all time, all products)',
+    coverage: ALL_TIME,
     load: async ({ orgId }) => {
       const result = await getCustomerRevenueConcentration(orgId, undefined)
       const top = topRows(result.rows, (row) => row.revenue)
@@ -318,11 +358,14 @@ export const CHART_DATA_REGISTRY = {
 
   'competitor-win-rate': {
     title: 'Competitor Win Rate (all time, Salesforce)',
+    coverage: ALL_TIME,
     load: ({ orgId }) => getCompetitorWinRate(orgId)
   },
 
   'lead-volume-vs-target-mql': {
     title: 'Lead Volume vs. Target MQL (monthly, HubSpot)',
+    // The chart itself always shows a trailing 12 months, not the 24-month analysis window.
+    coverage: (window) => `${shiftMonth(window.to, -11)} to ${window.to}`,
     load: async ({ orgId, window }) => {
       const result = await getLeadVolumeVsTarget(orgId)
       return {

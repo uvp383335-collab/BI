@@ -224,7 +224,7 @@ export const AnalyzeButton: React.FC<AnalyzeButtonProps> = ({ chartKey, chartTit
 
                 <div className="an-foot">
                   <span>
-                    Covers {analysis.data!.window.from} to {analysis.data!.window.to} · Generated {new Date(analysis.data!.generatedAt).toLocaleString()}
+                    Covers {analysis.data!.coverage} · Generated {new Date(analysis.data!.generatedAt).toLocaleString()}
                   </span>
                   <button type="button" className="an-link" onClick={() => analysis.mutate(true)}>
                     Regenerate

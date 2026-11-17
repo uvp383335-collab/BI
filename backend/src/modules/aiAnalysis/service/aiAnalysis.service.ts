@@ -3,7 +3,7 @@ import { AppError } from '../../../shared/utils/AppError'
 import { generateWithClaude } from '../../../shared/llm/claudeClient'
 import { analysisPromptRepository, AnalysisPrompt } from '../repository/analysisPrompt.repository'
 import { analysisReportRepository } from '../repository/analysisReport.repository'
-import { AnalysisChartKey, AnalysisWindow, CHART_DATA_REGISTRY, currentAnalysisWindow } from './chartDataRegistry'
+import { AnalysisChartKey, AnalysisWindow, CHART_DATA_REGISTRY, currentAnalysisWindow, describeCoverage } from './chartDataRegistry'
 import { ANALYSIS_REPORT_JSON_SCHEMA, AnalysisReport, REPORT_FORMAT_VERSION, analysisReportSchema, parseStoredReport } from './analysisReportSchema'
 
 export interface ChartAnalysisResult {
@@ -12,6 +12,8 @@ export interface ChartAnalysisResult {
   report: AnalysisReport
   model: string
   window: AnalysisWindow
+  /** What the analyzed data covers in words — the window, or e.g. "All time" for charts that aren't windowed. */
+  coverage: string
   generatedAt: string
   cached: boolean
 }
@@ -69,7 +71,7 @@ export async function analyzeChart(orgId: string, userId: string, chartKey: Anal
 
   const userPrompt = renderTemplate(prompt.userPromptTemplate, {
     chartTitle: definition.title,
-    window: `${window.from} to ${window.to}`,
+    window: describeCoverage(definition, window),
     asOf: window.to,
     data: JSON.stringify(data)
   })
@@ -85,6 +87,7 @@ export async function analyzeChart(orgId: string, userId: string, chartKey: Anal
         report: cachedReport,
         model: cached.modelId,
         window: { from: cached.windowFrom, to: cached.windowTo },
+        coverage: describeCoverage(definition, { from: cached.windowFrom, to: cached.windowTo }),
         generatedAt: cached.createdAt.toISOString(),
         cached: true
       }
@@ -120,6 +123,7 @@ export async function analyzeChart(orgId: string, userId: string, chartKey: Anal
     report,
     model: saved.modelId,
     window,
+    coverage: describeCoverage(definition, window),
     generatedAt: saved.createdAt.toISOString(),
     cached: false
   }
@@ -137,6 +141,7 @@ export async function getLatestChartAnalysis(orgId: string, chartKey: AnalysisCh
     report,
     model: latest.modelId,
     window: { from: latest.windowFrom, to: latest.windowTo },
+    coverage: describeCoverage(CHART_DATA_REGISTRY[chartKey], { from: latest.windowFrom, to: latest.windowTo }),
     generatedAt: latest.createdAt.toISOString(),
     cached: true
   }

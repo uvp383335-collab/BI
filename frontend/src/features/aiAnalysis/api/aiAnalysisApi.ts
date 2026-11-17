@@ -87,6 +87,8 @@ export interface ChartAnalysisResult {
   model: string
   /** Inclusive "YYYY-MM" range the analysis covered. */
   window: { from: string; to: string }
+  /** What the analyzed data covers, e.g. "2024-11 to 2026-10" or "All time". */
+  coverage: string
   generatedAt: string
   /** True when the server returned a previously generated report for unchanged data and prompt. */
   cached: boolean

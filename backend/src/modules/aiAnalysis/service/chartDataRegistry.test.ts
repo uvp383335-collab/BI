@@ -1,4 +1,4 @@
-import { CHART_DATA_REGISTRY, AnalysisWindow } from './chartDataRegistry'
+import { CHART_DATA_REGISTRY, AnalysisWindow, describeCoverage } from './chartDataRegistry'
 import { DEFAULT_ANALYSIS_PROMPTS } from './defaultPrompts'
 import { getInvoiceRevenueGrowthByState } from '../../metrics/service/productRevenueGrowth.service'
 import { getCustomerRevenueConcentration } from '../../metrics/service/customerRevenueConcentration.service'
@@ -82,5 +82,21 @@ describe('CHART_DATA_REGISTRY', () => {
     expect(filters.productId).toBeUndefined()
     expect(filters.from.toISOString()).toBe('2024-11-01T00:00:00.000Z')
     expect(filters.to.toISOString()).toBe('2026-10-31T23:59:59.999Z')
+  })
+})
+
+describe('describeCoverage', () => {
+  it('uses the analysis window for windowed charts', () => {
+    expect(describeCoverage(CHART_DATA_REGISTRY['ga-expense-trend'], window)).toBe('2024-11 to 2026-10')
+  })
+
+  it('says "All time" for charts that load every record', () => {
+    for (const key of ['campaign-won-opportunities', 'campaign-roi', 'opportunities-by-lead-source', 'customer-revenue-concentration', 'competitor-win-rate'] as const) {
+      expect(describeCoverage(CHART_DATA_REGISTRY[key], window)).toBe('All time')
+    }
+  })
+
+  it('reports the trailing 12 months the lead volume chart actually shows', () => {
+    expect(describeCoverage(CHART_DATA_REGISTRY['lead-volume-vs-target-mql'], window)).toBe('2025-11 to 2026-10')
   })
 })
