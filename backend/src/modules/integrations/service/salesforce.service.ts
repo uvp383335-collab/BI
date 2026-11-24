@@ -582,7 +582,9 @@ export class SalesforceService {
   /** Fetches the org's configured Opportunity Stage picklist values (id/label/order/closed-won flags) — Salesforce's equivalent of HubSpot's deal pipelines API. Salesforce has no separate multi-pipeline concept by default, so this is treated as a single synthetic pipeline (see sync.service's OPPORTUNITIES_PIPELINE). */
   static async getOpportunityStages(accessToken: string, instanceUrl: string): Promise<SalesforcePicklistStage[]> {
     try {
-      const soql = "SELECT ApiName, MasterLabel, SortOrder, IsClosed, IsWon FROM OpportunityStage ORDER BY SortOrder";
+      // Inactive stages have a null SortOrder and would otherwise show up at the top of the deal funnel.
+      const soql =
+        "SELECT ApiName, MasterLabel, SortOrder, IsClosed, IsWon FROM OpportunityStage WHERE IsActive = true ORDER BY SortOrder";
       const response = await this.runQuery<{
         ApiName: string;
         MasterLabel: string;
