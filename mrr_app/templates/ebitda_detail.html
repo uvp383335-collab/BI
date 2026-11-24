@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}EBITDA {{ period }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:12.5px;padding:6px 8px}</style>
+<p><a href="{{ url_for('ebitda_page') }}">← EBITDA margin</a></p>
+<div class="row" style="justify-content:space-between">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}EBITDA · {{ period }}</h1>
+  <p class="sub">{{ months[0] }} → {{ months[-1] }} · {{ r.revenue|usd }} − {{ r.cogs|usd }} − {{ r.opex|usd }} + {{ r.da|usd }} = <b>{{ r.ebitda|usd }}</b> ·
+    margin <b>{{ '%.2f%%'|format(r.margin) if r.margin is not none else '-' }}</b>{% if r.vs_plan is not none %} · plan {{ '%.2f%%'|format(r.plan_margin) }} · vs plan <b>{{ '%+.2f'|format(r.vs_plan) }} pts</b>{% endif %}</p></div>
+  <a class="btn ghost" href="{{ url_for('ebitda_detail', period=period, format='csv') }}">Download CSV</a>
+</div>
+<div class="card scroll">
+<table>
+  <thead><tr><th>Category</th><th>Account</th><th class="num">Amount</th></tr></thead>
+  <tbody>
+  {% set ns = namespace(cat=None) %}
+  {% for a in acc_rows %}
+    {% if a.cat != ns.cat %}{% set ns.cat = a.cat %}<tr><td colspan="3" style="padding-top:14px"><b>{{ cats[a.cat] }}</b></td></tr>{% endif %}
+    <tr {% if a.cat == 'exclude' %}style="opacity:.5"{% endif %}><td></td><td>{{ a.name }}{% if a.da and a.cat in ('cogs','opex') %} <span class="tag auto">D&amp;A added back</span>{% endif %}</td><td class="num">{{ a.amount|usd }}</td></tr>
+  {% endfor %}
+  <tr><td colspan="2" style="padding-top:14px"><b>EBITDA</b> = {{ r.revenue|usd }} − {{ r.cogs|usd }} − {{ r.opex|usd }} + {{ r.da|usd }}</td><td class="num" style="padding-top:14px"><b>{{ r.ebitda|usd }}</b></td></tr>
+  </tbody>
+</table>
+</div>
+{% endblock %}

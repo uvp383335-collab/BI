@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Recurring revenue % · Oryon{% endblock %}
+{% block body %}
+<style>.k4 .v{font-size:20px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Recurring revenue %</h1>
+  <p class="sub">Share of revenue from contracted subscriptions and retainers · customer MRR (invoices) ÷ GL revenue (<code>plmonthlysnapshots</code>) · account-tagged: {{ info.tagged|join(' + ') or 'none' }} (<a href="{{ url_for('settings_page') }}#recurring">settings</a>)</p></div>
+  <form class="row" method="get">
+    <select name="grain"><option value="quarter" {{ 'selected' if grain=='quarter' }}>Quarterly</option><option value="month" {{ 'selected' if grain=='month' }}>Monthly</option></select>
+    <select name="window"><option value="period" {{ 'selected' if window=='period' }}>Period</option><option value="ttm" {{ 'selected' if window=='ttm' }}>Trailing 12 months</option></select>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('recurring_csv', grain=grain, window=window) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not info.saved %}<div class="flash err">The account-tagged basis uses the automatically selected accounts. <a href="{{ url_for('settings_page') }}#recurring">Review and save them in Settings</a>.</div>{% endif %}
+{% if unsaved %}<div class="flash err">{{ unsaved }} product mapping{{ 's' if unsaved != 1 }} still on the automatic suggestion. <a href="{{ url_for('settings_page') }}">Review in Settings</a>.</div>{% endif %}
+{% if not rows %}<div class="card">No P&amp;L snapshots found in <code>plmonthlysnapshots</code>.</div>{% else %}
+
+{% if latest %}
+<div class="kpis k4">
+  <div class="kpi"><div class="l">Recurring % · {{ latest.label }}</div><div class="v">{{ '%.2f'|format(latest.pct) }}%</div>
+    <div class="muted" style="font-size:12px">{% if prev and prev.pct is not none %}<span class="{{ 'pos' if latest.pct >= prev.pct else 'neg' }}">{{ '%+.2f'|format(latest.pct - prev.pct) }} pts</span> vs {{ prev.label }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">Account-tagged ({{ info.tagged|length }} account{{ 's' if info.tagged|length != 1 }})</div><div class="v">{{ '%.2f'|format(latest.tagged_pct) }}%</div>
+    <div class="muted" style="font-size:12px">gap {{ '%.2f'|format(latest.gap) }} pts vs the MRR basis</div></div>
+  <div class="kpi"><div class="l">Subscription · retainer share</div><div class="v">{{ '%.1f'|format(latest.sub_pct) }}% · {{ '%.1f'|format(latest.ret_pct) }}%</div>
+    <div class="muted" style="font-size:12px">of GL revenue</div></div>
+  <div class="kpi"><div class="l">MRR summed · GL revenue</div><div class="v">{{ latest.mrr|usd }}</div>
+    <div class="muted" style="font-size:12px">revenue {{ latest.revenue|usd }}</div></div>
+</div>
+{% endif %}
+
+<div class="card"><h2 style="margin-top:0">Recurring revenue % - MRR basis vs account-tagged</h2><canvas id="pct" height="75"></canvas></div>
+<div class="card"><h2 style="margin-top:0">Revenue split: subscription MRR, retainer MRR, non-recurring</h2><canvas id="mix" height="75"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'Period' if window == 'period' else 'Window' }}</th><th class="num">Subscription MRR</th><th class="num">Retainer MRR</th><th class="num">Total MRR</th><th class="num">GL revenue</th>
+    <th class="num">Recurring %</th><th class="num">Tagged revenue</th><th class="num">Account-tagged %</th><th class="num">Gap</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr {% if not r.complete %}style="opacity:.55" title="Not every month in this period has a P&L snapshot and invoices yet"{% endif %}>
+      <td>{{ r.label }}{% if not r.complete %} <span class="tag auto">incomplete</span>{% endif %}</td>
+      <td class="num">{{ r.sub|usd }}</td><td class="num">{{ r.ret|usd }}</td><td class="num">{{ r.mrr|usd }}</td><td class="num">{{ r.revenue|usd }}</td>
+      <td class="num"><b>{{ '%.2f%%'|format(r.pct) if r.pct is not none else '-' }}</b></td>
+      <td class="num">{{ r.tagged|usd }}</td>
+      <td class="num">{{ '%.2f%%'|format(r.tagged_pct) if r.tagged_pct is not none else '-' }}</td>
+      <td class="num">{{ '%+.2f'|format(r.gap) if r.gap is not none else '-' }}</td>
+      <td><a href="{{ url_for('recurring_detail', period=r.label) }}">details</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }};
+const fmt = v => '$' + Math.round(v).toLocaleString('en-US'), p2 = v => v == null ? null : +v.toFixed(2);
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.label + (r.complete ? '' : ' *'));
+new Chart(document.getElementById('pct'), {type:'line', data:{labels, datasets:[
+  {label:'Recurring % (MRR ÷ GL revenue)', data:rows.map(r => p2(r.pct)), borderColor:'#4f8cff', backgroundColor:'#4f8cff', tension:.25},
+  {label:'Account-tagged %', data:rows.map(r => p2(r.tagged_pct)), borderColor:'#f0b429', backgroundColor:'#f0b429', borderDash:[5,4], tension:.25}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${c.raw}%`,
+    footer:i => { const r = rows[i[0].dataIndex]; return `MRR ${fmt(r.mrr)} · revenue ${fmt(r.revenue)}`; }}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid}}}});
+new Chart(document.getElementById('mix'), {type:'bar', data:{labels, datasets:[
+  {label:'Subscription MRR', data:rows.map(r => r.sub), backgroundColor:'#4f8cff', stack:'a'},
+  {label:'Retainer MRR', data:rows.map(r => r.ret), backgroundColor:'#2fbf71', stack:'a'},
+  {label:'Non-recurring (revenue − MRR)', data:rows.map(r => Math.max(r.revenue - r.mrr, 0)), backgroundColor:'#8f9bb3', stack:'a'}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.raw)}`}}},
+    scales:{x:{stacked:true, ticks:tick, grid}, y:{stacked:true, ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+</script>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How recurring revenue % is calculated (spec VC-12)</h2>
+  <ul>
+    <li><b>Recurring %(W) = 100 × Σ<sub>months</sub> Σ<sub>customers</sub> MRR (USD at each month's rate) ÷ GL revenue(W)</b> for a month, a quarter, or the trailing 12 months.</li>
+    <li><b>MRR</b> = subscription + retainer MRR per customer, exactly as on the MRR page (product mapping, annual / quarterly invoices spread, CAD converted at each month's rate).</li>
+    <li><b>GL revenue</b> = the P&amp;L income accounts (QuickBooks demo accounts excluded).</li>
+    <li><b>Account-tagged %</b> = revenue on {{ info.tagged|join(' + ') or 'the tagged accounts' }} ÷ GL revenue - a data-quality contrast: it misses retainers booked to 4120 Professional Services and includes implementation bundled into subscription lines.</li>
+  </ul>
+  <p class="muted" style="font-size:12px">Higher is better. Compared with the Oryon report, the MRR basis runs 0.5–2 points lower mainly because QuickBooks has no service credits or write-offs, so GL revenue is higher; the account-tagged basis matches. The report's region filter (GL Location) isn't available in the monthly P&amp;L snapshot.</p>
+</div>
+{% endblock %}

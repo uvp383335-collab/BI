@@ -1,0 +1,84 @@
+<form method="post" action="{{ url_for('save_fcf_settings') }}" class="card" id="fcf">
+  <h2 style="margin-top:0"><span class="codes"><code>CB-07</code></span>FCF conversion (capex accounts)</h2>
+  <p class="muted" style="margin:0 0 12px;font-size:12.5px">FCF conversion = (operating cash flow − capex) ÷ EBITDA, trailing 12 months (spec CB-07). Net income, D&amp;A and EBITDA come from the <a href="#ebitda">EBITDA account classification</a>; capex and working capital come from the Balance Sheet snapshots in <code>{{ bs_collection }}</code>. Spec capex = 1510 Computer Equipment + 1520 Capitalized Software Development - the "Investing activities" lines on the QuickBooks Statement of Cash Flows.</p>
+  {% if not bs_sections %}<div class="flash err">No snapshots found in <code>{{ bs_collection }}</code> - run a QuickBooks sync first.</div>{% else %}
+
+  {% if capex_accs %}
+  <input type="hidden" name="has_accounts" value="1">
+  <div style="margin-bottom:6px"><b>Capex account classification</b> <span class="muted" style="font-size:12px">- every fixed-asset and other-asset account on the Balance Sheet snapshots, balance at {{ bs_last_month }}. Capex each month = increase in the balances of the accounts marked Capex.
+    {% if not capex_saved %}<b style="color:var(--warn)">Auto-selected, not saved yet:</b> fixed-asset cost accounts (1510, 1520) → Capex; accumulated depreciation / amortization (1590, 1595, 1795) → Accumulated; other assets and QuickBooks' sample assets (Truck) → Exclude.{% endif %}</span></div>
+  <div class="scroll" style="max-height:420px">
+  <table>
+    <thead><tr><th>Account</th><th>Section</th><th class="num">Balance {{ bs_last_month }}</th><th>Capex category</th><th></th></tr></thead>
+    <tbody>
+    {% for a in capex_accs %}
+      <tr {% if a.cat == 'exclude' %}style="opacity:.6"{% endif %}>
+        <td><b>{{ a.name }}</b><div class="muted" style="font-size:11.5px">{{ a.reason }}</div></td>
+        <td class="muted">{{ a.section }}</td>
+        <td class="num">{{ a.latest|usd }}</td>
+        <td><select name="capx_{{ a.id }}">
+          {% for k, label in capex_cats.items() %}<option value="{{ k }}" {{ 'selected' if k == a.cat }}>{{ label }}{{ '  ★' if k == a.auto }}</option>{% endfor %}
+        </select></td>
+        <td>{% if capex_saved %}<span class="tag saved">saved</span>{% else %}<span class="tag auto">auto</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="muted" style="font-size:12px;margin-top:6px">★ = automatic suggestion. Only "Capex" accounts count; the other two categories are shown so every asset account is accounted for.</div>
+  {% else %}
+  <div class="flash err" style="background:#2a2a14;color:#e8d98a">The snapshots don't have per-account balances yet, so individual capex accounts can't be picked. After the backend sync update (stores <code>accounts</code> on each monthly snapshot) and a QuickBooks resync, the account table appears here. Until then capex = change in the section total below + the D&amp;A charged on those assets.</div>
+  <div class="row" style="gap:28px;align-items:flex-start">
+    <div><div class="muted" style="font-size:12px;margin-bottom:6px">Balance Sheet section(s) holding capex</div>
+      {% for k in bs_sections %}<label style="display:block;margin:3px 0"><input type="checkbox" name="cxs_{{ k }}" {{ 'checked' if k in settings.fcf_capex_sections }}> {{ k }}{% if k == 'FixedAssets' %} ★{% endif %}</label>{% endfor %}</div>
+    <div><div class="muted" style="font-size:12px;margin-bottom:6px">D&amp;A charged on those assets (added back, because the section is net of it)</div>
+      {% for a in fa_da_accs %}<label style="display:block;margin:3px 0"><input type="checkbox" name="fada_{{ a.id }}" {{ 'checked' if a.fa }}> {{ a.name }}{% if a.auto_fa %} ★{% endif %}</label>
+      {% else %}<span class="muted">No D&amp;A add-back accounts in the EBITDA settings.</span>{% endfor %}</div>
+  </div>
+  {% endif %}
+
+  <div style="margin:18px 0 6px"><b>Working capital account classification</b> <span class="muted" style="font-size:12px">- spec CB-07: ΔWC = [(AR + Prepaid + Inventory) − (AP + Cards + Accrued + Deferred revenue)] at e minus the same at e − 12. Pick which accounts are AR (accounts receivable) and so on; set an account to Exclude to leave it out.</span></div>
+  {% if wc_accs %}
+  <input type="hidden" name="has_wc_accounts" value="1">
+  {% if not wc_saved %}<div class="muted" style="font-size:12px;margin-bottom:6px"><b style="color:var(--warn)">Auto-selected, not saved yet:</b> Accounts Receivable → AR; Prepaid / Inventory; Accounts Payable → AP; credit cards → Credit card; Accrued; Deferred revenue; undeposited funds, sales-tax payables, loans → Exclude.</div>{% endif %}
+  <div class="scroll" style="max-height:420px">
+  <table>
+    <thead><tr><th>Account</th><th>Section</th><th class="num">Balance {{ bs_last_month }}</th><th>Working-capital category</th><th></th></tr></thead>
+    <tbody>
+    {% for a in wc_accs %}
+      <tr {% if a.cat == 'exclude' %}style="opacity:.6"{% endif %}>
+        <td><b>{{ a.name }}</b><div class="muted" style="font-size:11.5px">{{ a.reason }}</div></td>
+        <td class="muted">{{ a.section }}</td>
+        <td class="num {{ 'neg' if a.cat == 'ar' and a.latest < 0 }}">{{ a.latest|usd }}</td>
+        <td><select name="wcc_{{ a.id }}">
+          {% for k, label in wc_cats.items() %}<option value="{{ k }}" {{ 'selected' if k == a.cat }}>{{ label }}{{ '  ★' if k == a.auto }}</option>{% endfor %}
+        </select></td>
+        <td>{% if wc_saved %}<span class="tag saved">saved</span>{% else %}<span class="tag auto">auto</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="muted" style="font-size:12px;margin-bottom:6px">No per-account balances yet, so working capital is classified by Balance Sheet section until the QuickBooks resync (then every account appears here).</div>
+  <table style="max-width:720px">
+    <thead><tr><th>Section</th><th class="num">Total {{ bs_last_month }}</th><th>Working-capital category</th></tr></thead>
+    <tbody>
+    {% for k in wc_sections %}{% set cur = (settings.fcf_wc_section_map or {}).get(k, 'exclude') %}
+      <tr><td><b>{{ k }}</b></td><td class="num {{ 'neg' if k == 'AR' and (wc_section_totals[k] or 0) < 0 }}">{{ wc_section_totals[k]|usd }}</td>
+        <td><select name="wcs_{{ k }}">{% for c, label in wc_cats.items() %}<option value="{{ c }}" {{ 'selected' if c == cur }}>{{ label }}</option>{% endfor %}</select></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <div class="row" style="gap:28px;align-items:flex-start;margin-top:16px">
+    <label style="max-width:340px"><input type="checkbox" name="fcf_show_ar_check" {{ 'checked' if settings.fcf_show_ar_check }}> Show the data-quality line (FCF % without the A/R swing)
+      <div class="muted" style="font-size:12px">Negative receivables (unmatched customer payments) inflate operating cash flow; the dashed line removes the change in A/R.</div></label>
+  </div>
+  <div style="margin-top:12px"><button class="btn" type="submit">Save FCF settings</button></div>
+  {% endif %}
+</form>
+<form method="post" action="{{ url_for('reset_fcf_settings') }}" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset FCF settings to automatic</button>
+</form>

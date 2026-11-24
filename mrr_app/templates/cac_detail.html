@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}CAC {{ r.month }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:12px;padding:6px 5px} td.num{white-space:nowrap}</style>
+<p><a href="{{ url_for('cac_page') }}">← CAC &amp; payback</a></p>
+<div class="row" style="justify-content:space-between">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}CAC · 12 months {{ r.start }} → {{ r.month }}{% if not r.complete %} <span class="tag auto">incomplete</span>{% endif %}</h1>
+  <p class="sub">S&amp;M {{ r.sm|usd }} ÷ {{ r.new_logos }} new logos = CAC <b>{{ r.cac|usd }}</b> ·
+    payback {{ r.cac|usd }} ÷ (({{ r.new_logo_arr|usd }} ÷ {{ r.new_logos }} ÷ 12) × {{ '%.1f%%'|format(r.gm * 100) if r.gm else '-' }}) = <b>{{ '%.2f'|format(r.payback) if r.payback else '-' }} months</b> ·
+    S&amp;M per $1 of new ARR {{ '%.2fx'|format(r.sm_per_arr) if r.sm_per_arr else '-' }}</p></div>
+  <a class="btn ghost" href="{{ url_for('cac_detail', month=r.month, format='csv') }}">Download S&amp;M CSV</a>
+</div>
+
+<div class="card scroll">
+<h2 style="margin-top:0">S&amp;M spend by account</h2>
+<table>
+  <thead><tr><th>Account</th>{% for m in window %}<th class="num">{{ m[2:] }}</th>{% endfor %}<th class="num">Total</th></tr></thead>
+  <tbody>
+  {% for a in acc_rows %}
+    <tr><td><b>{{ a.name }}</b></td>{% for m in window %}<td class="num">{{ a.months.get(m, 0)|usd }}</td>{% endfor %}<td class="num"><b>{{ a.total|usd }}</b></td></tr>
+  {% endfor %}
+    <tr><td><b>S&amp;M total</b></td>{% for m in window %}<td class="num"><b>{{ month_tot[m]|usd }}</b></td>{% endfor %}<td class="num"><b>{{ r.sm|usd }}</b></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">P&amp;L for gross margin</h2>
+<p>Income {{ r.revenue|usd }} − COGS {{ r.cogs|usd }} = {{ (r.revenue - r.cogs)|usd }} · gross margin {{ '%.2f%%'|format(r.gm * 100) if r.gm else '-' }}</p>
+</div>
+
+<div class="card scroll">
+<h2 style="margin-top:0">{{ logos|length }} new logos (close month in the window)</h2>
+<table>
+  <thead><tr><th>Close month</th><th>Customer</th><th>Salesforce account</th><th>Segment</th><th class="num">ARR</th></tr></thead>
+  <tbody>
+  {% for l in logos %}
+    <tr><td>{{ l.close_month }}</td><td>{{ l.customer_name }}</td><td>{{ l.account_name or '-' }}</td><td>{{ l.segment }}</td><td class="num">{{ l.arr|usd }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -44,6 +44,8 @@ export const OpportunityDetailPanel: React.FC<OpportunityDetailPanelProps> = ({ 
           { label: 'Next Step', value: opportunity.nextStep },
           { label: 'Stage', value: opportunity.dealstage },
           { label: 'Probability (%)', value: opportunity.probability != null ? `${opportunity.probability}%` : undefined },
+          { label: 'ARR', value: formatUsd(opportunity.arr) },
+          { label: 'ARR Change', value: formatUsd(opportunity.arrChange) },
           { label: 'Primary Campaign Source', value: opportunity.campaignName },
           { label: 'Main Competitor(s)', value: competitors }
         ]}

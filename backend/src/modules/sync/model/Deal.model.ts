@@ -53,6 +53,9 @@ export interface DealDocument extends Document {
   createdByName?: string
   lastModifiedByName?: string
   lastModifiedAt?: Date
+  /** Salesforce-only custom currency fields (`ARR__c`/`ARR_Change__c`) — this opportunity's annual recurring revenue and its change. Undefined for HubSpot deals and for Salesforce orgs with no ARR fields configured. */
+  arr?: number
+  arrChange?: number
   /** Org-configured custom fields (Organization.settings.salesforceOpportunityExtraFields — e.g. Order Number, Current Generator(s)). Empty/undefined when none are configured for this org. */
   customFields?: { label: string; value: string | number | boolean | null }[]
   createdAt: Date
@@ -99,6 +102,8 @@ const dealSchema = new Schema<DealDocument>(
     createdByName: { type: String },
     lastModifiedByName: { type: String },
     lastModifiedAt: { type: Date },
+    arr: { type: Number },
+    arrChange: { type: Number },
     customFields: {
       type: [new Schema({ label: { type: String, required: true }, value: { type: Schema.Types.Mixed } }, { _id: false })],
       default: undefined

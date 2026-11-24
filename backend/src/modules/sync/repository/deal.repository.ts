@@ -31,6 +31,8 @@ export interface DealUpsertInput {
   createdByName?: string
   lastModifiedByName?: string
   lastModifiedAt?: Date
+  arr?: number
+  arrChange?: number
   customFields?: { label: string; value: string | number | boolean | null }[]
 }
 
@@ -176,6 +178,8 @@ export const dealRepository = {
         createdByName: 1,
         lastModifiedByName: 1,
         lastModifiedAt: 1,
+        arr: 1,
+        arrChange: 1,
         customFields: 1
       })
         .sort({ dealCreatedAt: -1, createdAt: -1 })

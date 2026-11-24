@@ -26,6 +26,8 @@ import {
   getQuickBooksCustomerStates,
   getInvoiceRevenueGrowthByProduct,
   getInvoiceRevenueGrowthByProductDetail,
+  getInvoiceRevenueGrowthByClass,
+  getInvoiceRevenueGrowthByClassDetail,
   getInvoiceRevenueGrowthByState,
   getInvoiceRevenueGrowthByStateDetail
 } from '../service/productRevenueGrowth.service'
@@ -38,6 +40,8 @@ import {
   GetProductRevenueGrowthDetailQuery,
   GetInvoiceRevenueGrowthByProductQuery,
   GetInvoiceRevenueGrowthByProductDetailQuery,
+  GetInvoiceRevenueGrowthByClassQuery,
+  GetInvoiceRevenueGrowthByClassDetailQuery,
   GetInvoiceRevenueGrowthByStateQuery,
   GetInvoiceRevenueGrowthByStateDetailQuery,
   GetRecurringRevenueTrendQuery,
@@ -174,6 +178,22 @@ export const getInvoiceRevenueGrowthByProductDetailHandler = asyncHandler(async 
   const orgId = req.auth!.orgId!
   const { productId, productName, fromYear } = req.query as unknown as GetInvoiceRevenueGrowthByProductDetailQuery
   const result = await getInvoiceRevenueGrowthByProductDetail(orgId, productId, productName, { fromYear })
+  sendSuccess(res, result)
+})
+
+/** "Revenue growth by class," computed entirely from synced Invoice line items' QuickBooks Class — `?fromYear=YYYY`, see productRevenueGrowth.service.ts's getInvoiceRevenueGrowthByClass. */
+export const getInvoiceRevenueGrowthByClassHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { fromYear } = req.query as unknown as GetInvoiceRevenueGrowthByClassQuery
+  const result = await getInvoiceRevenueGrowthByClass(orgId, { fromYear })
+  sendSuccess(res, result)
+})
+
+/** Record-level detail behind one class's series in the chart above — every synced invoice line, for the dashboard's "export to Excel" verification button. See productRevenueGrowth.service.ts's getInvoiceRevenueGrowthByClassDetail. */
+export const getInvoiceRevenueGrowthByClassDetailHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const orgId = req.auth!.orgId!
+  const { classId, className, fromYear } = req.query as unknown as GetInvoiceRevenueGrowthByClassDetailQuery
+  const result = await getInvoiceRevenueGrowthByClassDetail(orgId, classId, className, { fromYear })
   sendSuccess(res, result)
 })
 

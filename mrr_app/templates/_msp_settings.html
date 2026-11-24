@@ -1,0 +1,32 @@
+<form method="post" action="{{ url_for('save_msp_settings') }}" class="card" id="marketing-sourced">
+  <h2 style="margin-top:0"><span class="codes"><code>CM-05</code></span>Marketing-sourced pipeline</h2>
+  <p class="muted" style="margin:0 0 12px;font-size:12.5px">Marketing-sourced % = ARR of new-business deals created in the period with a marketing lead source ÷ ARR of all new-business deals created (spec CM-05). Sub-metric: the same split of new-logo ARR won in the trailing 12 months (close date). Deals from the <code>deals</code> collection ({{ msp.n_deals }} {{ msp.provider }} deals, {{ msp.has_arr }} with ARR).</p>
+  {% if not msp.n_deals %}<div class="flash err">No {{ msp.provider }} deals in MongoDB yet - run a CRM sync first.</div>{% endif %}
+  <div class="row" style="gap:28px;align-items:flex-start;flex-wrap:wrap">
+    <label>CRM<br><select name="msp_provider">{% for p in msp.providers %}<option value="{{ p }}" {{ 'selected' if p == msp.provider }}>{{ p }}</option>{% endfor %}</select>
+      <div class="muted" style="font-size:12px;max-width:200px">Spec: Salesforce Opportunity (LeadSource).</div></label>
+    <label>Deal value<br><select name="msp_value_field">
+        <option value="arr" {{ 'selected' if msp.value_field == 'arr' }}>Deal ARR (arr) ★</option>
+        <option value="amount" {{ 'selected' if msp.value_field == 'amount' }}>Deal amount (incl. one-time)</option></select>
+      <div class="muted" style="font-size:12px;max-width:220px">Spec: ARR__c.{% if not msp.has_arr %} <b style="color:var(--warn)">No ARR on the synced deals</b> - amount is used.{% endif %}</div></label>
+    <label>Flag below (%)<br><input type="text" name="msp_threshold" value="{{ '%g'|format(msp.threshold) }}" style="width:70px">
+      <div class="muted" style="font-size:12px;max-width:200px">0 = off. The spec sets no threshold (direction: up).</div></label>
+  </div>
+  <div class="row" style="gap:36px;align-items:flex-start;margin-top:14px;flex-wrap:wrap">
+    <div><div class="muted" style="font-size:12px;margin-bottom:6px">Which lead sources are <b>marketing-sourced</b> (★ = automatic pick)</div>
+      {% for s in msp.sources %}<label style="display:block;margin:3px 0"><input type="checkbox" name="msp_sources" value="{{ s }}" {{ 'checked' if s in (msp.mk_sources or []) }}> {{ s }} <span class="muted" style="font-size:12px">{{ msp.source_counts[s] }} deals</span>{{ ' ★' if s in msp.mk_auto }}</label>{% else %}<span class="muted">No lead sources on the deals.</span>{% endfor %}
+      <div class="muted" style="font-size:12px;max-width:300px;margin-top:4px">Automatic: every source except outbound / SDR, partner and customer referral. Unticked sources (and deals with no source) count as not marketing-sourced.</div></div>
+    <div><div class="muted" style="font-size:12px;margin-bottom:6px">Deal types counted as new business</div>
+      {% for t in msp.types %}<label style="display:block;margin:3px 0"><input type="checkbox" name="msp_types" value="{{ t }}" {{ 'checked' if t in (msp.nb_types or []) }}> {{ t }} <span class="muted" style="font-size:12px">{{ msp.type_counts[t] }} deals</span>{{ ' ★' if t in msp.nb_auto }}</label>{% else %}<span class="muted">No deal types found.</span>{% endfor %}</div>
+    <div style="max-width:380px">
+      <label style="display:block;margin:3px 0"><input type="checkbox" name="msp_exclude_duplicates" {{ 'checked' if msp.exclude_dups }}> Exclude duplicate-account deals</label>
+      <div class="muted" style="font-size:12px;margin:2px 0 8px 22px">A duplicate's name is another account's full name plus extra words. Found {{ msp.dup_list|length }}:
+        {% for dupn, orig in msp.dup_list %}<br>· {{ dupn }} <span style="opacity:.7">(duplicate of {{ orig }})</span>{% endfor %}</div>
+      <label style="display:block;margin:3px 0"><input type="checkbox" name="msp_true_new_logos" {{ 'checked' if msp.true_new }}> Sub-metric: true new logos only</label>
+      <div class="muted" style="font-size:12px;margin:2px 0 0 22px">Drops won deals on accounts that already had an earlier won deal.</div></div>
+  </div>
+  <div style="margin-top:12px"><button class="btn" type="submit">Save marketing-sourced settings</button></div>
+</form>
+<form method="post" action="{{ url_for('reset_msp_settings') }}" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset marketing-sourced settings to automatic</button>
+</form>

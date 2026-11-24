@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Cash {{ r.month }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:13px;padding:8px 10px}</style>
+<p><a href="{{ url_for('cash_page') }}">← Cash &amp; runway</a></p>
+<h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Cash &amp; runway · {{ r.month }}</h1>
+<p class="sub">Balance Sheet as of {{ r.as_of }}</p>
+<div class="card">
+<table><tbody>
+  {% if r.mode == 'accounts' %}
+    {% for a in accts %}<tr><td style="padding-left:24px">{{ a.name }}{% if a.restricted %} <span class="tag auto">restricted - not counted</span>{% elif not a.chosen %} <span class="muted">(excluded)</span>{% endif %}</td><td class="num {{ 'muted' if not a.chosen }}">{{ a.amount|usd }}</td></tr>{% endfor %}
+    <tr><td>Unrestricted cash at {{ r.month }} = selected accounts</td><td class="num"><b>{{ r.cash|usd }}</b></td></tr>
+  {% else %}
+  <tr><td>Cash at {{ r.month }} = {{ info.sections|join(' + ') }}{% if info.adjust %} − {{ info.adjust|usd }} restricted{% endif %}</td><td class="num"><b>{{ r.cash|usd }}</b></td></tr>
+  {% endif %}
+  {% if back %}<tr><td>Cash at {{ back.month }} ({{ info.lookback }} months earlier)</td><td class="num">{{ back.cash|usd }}</td></tr>
+  <tr><td>Average monthly decline = ({{ back.cash|usd }} − {{ r.cash|usd }}) ÷ {{ info.lookback }}</td><td class="num">{{ r.avg_decline|usd }}</td></tr>
+  <tr><td><b>Runway</b> = {% if r.self_funding %}cash did not fall → self-funding{% else %}{{ r.cash|usd }} ÷ {{ r.avg_decline|usd }}{% endif %}</td>
+    <td class="num"><b class="{{ 'pos' if r.self_funding }}">{{ 'Self-funding' if r.self_funding else '%.1f months'|format(r.runway) }}</b></td></tr>
+  {% else %}<tr><td colspan="2" class="muted">No snapshot {{ info.lookback }} months earlier, so no runway.</td></tr>{% endif %}
+</tbody></table>
+</div>
+<div class="card">
+<h2 style="margin-top:0">Balance Sheet section totals</h2>
+<table><thead><tr><th>Section</th><th class="num">Total</th></tr></thead><tbody>
+  {% for k, v in r.raw|dictsort %}<tr {% if k in info.sections %}style="font-weight:700"{% endif %}><td>{{ k }}{% if k in info.sections %} <span class="tag saved">cash</span>{% endif %}</td><td class="num {{ 'neg' if k == 'AR' and (v.Total or 0) < 0 }}">{{ v.Total|usd }}</td></tr>{% endfor %}
+</tbody></table>
+{% if r.ar_negative %}<p class="muted" style="font-size:12px;margin:8px 0 0">A/R is negative: more customer payments than invoices are recorded. Cash without that excess ≈ {{ r.cash|usd }} + {{ r.ar|usd }} = {{ r.cash_ex_excess|usd }}.</p>{% endif %}
+</div>
+{% endblock %}

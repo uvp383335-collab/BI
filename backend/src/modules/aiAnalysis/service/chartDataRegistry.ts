@@ -1,5 +1,5 @@
 import { getLeadToMqlTrend, getMqlToSqlTrend } from '../../metrics/service/cmMetrics.service'
-import { getInvoiceRevenueGrowthByProduct, getInvoiceRevenueGrowthByState } from '../../metrics/service/productRevenueGrowth.service'
+import { getInvoiceRevenueGrowthByProduct, getInvoiceRevenueGrowthByClass, getInvoiceRevenueGrowthByState } from '../../metrics/service/productRevenueGrowth.service'
 import { getCustomerUpgradesTrend } from '../../metrics/service/customerUpgradesTrend.service'
 import { getGAndAExpenseTrend } from '../../metrics/service/gaExpenseTrend.service'
 import { getRecurringRevenueTrend } from '../../metrics/service/recurringRevenueTrend.service'
@@ -191,6 +191,17 @@ export const CHART_DATA_REGISTRY = {
         // Products with no revenue anywhere in the window add tokens and nothing to analyze.
         .filter((product) => product.months.some((m) => m.revenue !== 0))
       return { products }
+    }
+  },
+
+  'invoice-revenue-growth-by-class': {
+    title: 'Revenue growth by class (from synced invoices)',
+    load: async ({ orgId, window }) => {
+      const result = await getInvoiceRevenueGrowthByClass(orgId, { fromYear: window.from.slice(0, 4) })
+      const classes = result.classes
+        .map((cls) => ({ name: cls.name, months: cls.months.filter((m) => inWindow(m.month, window)) }))
+        .filter((cls) => cls.months.some((m) => m.revenue !== 0))
+      return { classes }
     }
   },
 

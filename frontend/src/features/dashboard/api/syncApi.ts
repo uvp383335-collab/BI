@@ -103,6 +103,9 @@ export interface Opportunity {
   createdByName?: string
   lastModifiedByName?: string
   lastModifiedAt?: string
+  /** Salesforce-only (`ARR__c`/`ARR_Change__c`) — undefined for HubSpot deals and for Salesforce orgs with no ARR fields configured. */
+  arr?: number
+  arrChange?: number
   /** Org-configured custom fields (Settings → Opportunity detail fields) — e.g. Order Number, Current Generator(s). */
   customFields?: { label: string; value: string | number | boolean | null }[]
 }

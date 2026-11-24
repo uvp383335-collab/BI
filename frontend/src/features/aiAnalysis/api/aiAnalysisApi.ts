@@ -19,6 +19,7 @@ export type AnalysisChartKey =
   | 'recurring-revenue-trend'
   | 'recurring-revenue-share'
   | 'invoice-revenue-growth-by-product'
+  | 'invoice-revenue-growth-by-class'
   | 'invoice-revenue-growth-by-state'
   | 'new-customers-trend'
   | 'cac-trend'

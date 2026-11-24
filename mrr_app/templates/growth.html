@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Revenue growth · Oryon{% endblock %}
+{% block body %}
+<style>.k5 .v{font-size:19px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Revenue growth</h1>
+  <p class="sub">GL revenue against the same window a year earlier · recurring = customer MRR, non-recurring = revenue − MRR · revenue accounts from the <a href="{{ url_for('settings_page') }}#cogs">COGS % mapping</a>, plan from the <a href="{{ url_for('settings_page') }}#ebitda-plan">plan settings</a></p></div>
+  <form class="row" method="get">
+    <select name="grain"><option value="quarter" {{ 'selected' if grain=='quarter' }}>Quarterly</option><option value="month" {{ 'selected' if grain=='month' }}>Monthly</option></select>
+    <select name="window"><option value="period" {{ 'selected' if window=='period' }}>Period</option><option value="ttm" {{ 'selected' if window=='ttm' }}>Trailing 12 months</option></select>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('growth_csv', grain=grain, window=window) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not info.has_plan %}<div class="flash err" style="background:#2a2a14;color:#e8d98a">No plan loaded, so "vs plan" is blank. <a href="{{ url_for('settings_page') }}#ebitda-plan">Paste the budget's monthly plan revenue in Settings</a> (the same plan as EBITDA).</div>{% endif %}
+{% if unsaved %}<div class="flash err">{{ unsaved }} product mapping{{ 's' if unsaved != 1 }} still on the automatic suggestion. <a href="{{ url_for('settings_page') }}">Review in Settings</a>.</div>{% endif %}
+{% if not rows %}<div class="card">Revenue growth needs P&amp;L snapshots for a window and the same months a year earlier (data starts {{ info.first or '-' }}).</div>{% else %}
+
+{% if latest %}
+<div class="kpis k5" style="grid-template-columns:repeat(5,1fr)">
+  <div class="kpi"><div class="l">Revenue growth · {{ latest.label }}</div><div class="v {{ 'pos' if latest.growth >= 0 else 'neg' }}">{{ '%+.2f'|format(latest.growth) }}%</div>
+    <div class="muted" style="font-size:12px">{% if latest.growth_change is not none %}<span class="{{ 'pos' if latest.growth_change >= 0 else 'neg' }}">{{ '%+.2f'|format(latest.growth_change) }} pts</span> vs last year's {{ '%.2f'|format(latest.growth_ly) }}%{% endif %}</div></div>
+  <div class="kpi"><div class="l">Revenue added</div><div class="v">{{ latest.added|usd }}</div>
+    <div class="muted" style="font-size:12px">{{ latest.revenue|usd }} vs {{ latest.prev_revenue|usd }}</div></div>
+  <div class="kpi"><div class="l">Recurring YoY</div><div class="v">{{ '%+.2f'|format(latest.rec_growth) if latest.rec_growth is not none else '-' }}%</div>
+    <div class="muted" style="font-size:12px">MRR {{ latest.mrr|usd }}</div></div>
+  <div class="kpi"><div class="l">Non-recurring YoY</div><div class="v">{{ '%+.2f'|format(latest.nonrec_growth) if latest.nonrec_growth is not none else '-' }}%</div>
+    <div class="muted" style="font-size:12px">{{ latest.nonrec|usd }} vs {{ latest.prev_nonrec|usd }}</div></div>
+  <div class="kpi"><div class="l">Vs plan</div><div class="v {{ 'pos' if latest.vs_plan is not none and latest.vs_plan >= 0 else 'neg' if latest.vs_plan is not none else '' }}">{{ '%+.2f%%'|format(latest.vs_plan) if latest.vs_plan is not none else '-' }}</div>
+    <div class="muted" style="font-size:12px">{% if latest.plan_revenue %}plan {{ latest.plan_revenue|usd }}{% else %}no plan for this period{% endif %}</div></div>
+</div>
+{% endif %}
+
+<div class="card"><h2 style="margin-top:0">Revenue growth vs a year earlier</h2><canvas id="g" height="75"></canvas></div>
+<div class="card"><h2 style="margin-top:0">Revenue: this window vs a year earlier</h2><canvas id="rev" height="75"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'Period' if window == 'period' else 'Window' }}</th><th class="num">Revenue</th><th class="num">Year earlier</th><th class="num">Added</th><th class="num">Growth</th><th class="num">vs last year's growth</th>
+    <th class="num">Recurring YoY</th><th class="num">Non-recurring YoY</th><th class="num">Vs plan</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr {% if not r.complete %}style="opacity:.55" title="Not every month in this window (or a year earlier) has P&L and invoices yet"{% endif %}>
+      <td>{{ r.label }}{% if not r.complete %} <span class="tag auto">incomplete</span>{% endif %}</td>
+      <td class="num">{{ r.revenue|usd }}</td><td class="num">{{ r.prev_revenue|usd }}</td><td class="num">{{ r.added|usd }}</td>
+      <td class="num {{ 'pos' if r.growth is not none and r.growth >= 0 else 'neg' }}"><b>{{ '%+.2f%%'|format(r.growth) if r.growth is not none else '-' }}</b></td>
+      <td class="num">{{ '%+.2f pts'|format(r.growth_change) if r.growth_change is not none else '-' }}</td>
+      <td class="num">{{ '%+.2f%%'|format(r.rec_growth) if r.rec_growth is not none else '-' }}</td>
+      <td class="num">{{ '%+.2f%%'|format(r.nonrec_growth) if r.nonrec_growth is not none else '-' }}</td>
+      <td class="num">{{ '%+.2f%%'|format(r.vs_plan) if r.vs_plan is not none else '-' }}</td>
+      <td><a href="{{ url_for('growth_detail', period=r.label) }}">accounts</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }};
+const fmt = v => (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString('en-US'), p2 = v => v == null ? null : +v.toFixed(2);
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.label + (r.complete ? '' : ' *'));
+const ds = [
+  {label:'Revenue growth', data:rows.map(r => p2(r.growth)), borderColor:'#4f8cff', backgroundColor:'#4f8cff', tension:.25, borderWidth:2.5},
+  {label:'Recurring YoY', data:rows.map(r => p2(r.rec_growth)), borderColor:'#2fbf71', backgroundColor:'#2fbf71', tension:.25},
+  {label:'Non-recurring YoY', data:rows.map(r => p2(r.nonrec_growth)), borderColor:'#8f9bb3', backgroundColor:'#8f9bb3', borderDash:[4,4], tension:.25, hidden:true}];
+if (rows.some(r => r.vs_plan != null)) ds.push({label:'Vs plan', data:rows.map(r => p2(r.vs_plan)), borderColor:'#f0b429', backgroundColor:'#f0b429', borderDash:[6,4]});
+new Chart(document.getElementById('g'), {type:'line', data:{labels, datasets:ds},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${c.raw}%`}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid}}}});
+new Chart(document.getElementById('rev'), {type:'bar', data:{labels, datasets:[
+  {label:'A year earlier', data:rows.map(r => r.prev_revenue), backgroundColor:'#8f9bb3'},
+  {label:'This window', data:rows.map(r => r.revenue), backgroundColor:'#4f8cff'}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.raw)}`,
+    footer:i => { const r = rows[i[0].dataIndex]; return `Added ${fmt(r.added)} · growth ${r.growth.toFixed(2)}%`; }}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+</script>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How revenue growth is calculated (spec VC-13)</h2>
+  <ul>
+    <li><b>Growth(W) = 100 × (Revenue(W) ÷ Revenue(W − 1 year) − 1)</b> - W is a month, a quarter, or the trailing 12 months; W − 1 year is the same months a year earlier.</li>
+    <li><b>Revenue added</b> = Revenue(W) − Revenue(W − 1 year).</li>
+    <li><b>Recurring YoY</b> = the same on summed customer MRR (as on the MRR page); <b>Non-recurring YoY</b> = the same on revenue − MRR.</li>
+    <li><b>Vs plan</b> = 100 × (Revenue(W) ÷ plan total revenue(W) − 1), plan from Settings.</li>
+    <li><b>vs last year's growth</b> = this growth − the growth of the same window a year earlier (in points).</li>
+  </ul>
+  <p class="muted" style="font-size:12px">Higher is better. Growth needs a year of history, so it starts 12 months after the first P&amp;L month ({{ info.first or '-' }}). Region and product filters aren't available - the monthly P&amp;L snapshot has no Location or Class.</p>
+</div>
+{% endblock %}

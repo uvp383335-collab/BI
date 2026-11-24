@@ -1,0 +1,37 @@
+<form method="post" action="{{ url_for('save_fn_settings') }}" class="card" id="funnel">
+  <h2 style="margin-top:0"><span class="codes"><code>CM-06</code></span>Funnel conversion</h2>
+  <p class="muted" style="margin:0 0 12px;font-size:12.5px">MQL → SQL (headline), Lead → MQL and SQL → won by cohort (spec CM-06), from the <code>contacts</code> collection ({{ fn.n }} {{ fn.provider }} contacts). Stage dates come from each contact's lifecycle-stage history, never the current stage. "Won" = the contact is on a won deal (pipeline stage definitions, else stage Closed Won).</p>
+  {% if not fn.n %}<div class="flash err">No {{ fn.provider }} contacts in MongoDB yet - run a CRM sync first.</div>{% endif %}
+  <div class="row" style="gap:28px;align-items:flex-start;flex-wrap:wrap">
+    <label>CRM<br><select name="fn_provider">{% for p in fn.providers %}<option value="{{ p }}" {{ 'selected' if p == fn.provider }}>{{ p }}</option>{% endfor %}</select>
+      <div class="muted" style="font-size:12px;max-width:180px">Spec: HubSpot contacts.</div></label>
+    {% for key, label, cur, auto in [('fn_lead_stage', 'Created (lead) stage', fn.lead_stage, 'lead'), ('fn_mql_stage', 'MQL stage', fn.mql_stage, 'marketingqualifiedlead'), ('fn_sql_stage', 'SQL stage', fn.sql_stage, 'salesqualifiedlead'), ('fn_opp_stage', 'Opportunity stage', fn.opp_stage, 'opportunity')] %}
+    <label>{{ label }}<br><select name="{{ key }}">
+      {% for s in fn.stages %}<option value="{{ s }}" {{ 'selected' if s == cur }}>{{ s }} ({{ fn.stage_counts[s] }}){{ '  ★' if s == auto }}</option>{% endfor %}
+      {% if cur not in fn.stages %}<option value="{{ cur }}" selected>{{ cur }} (not found)</option>{% endif %}
+    </select></label>
+    {% endfor %}
+  </div>
+  <p class="muted" style="font-size:12px;margin:6px 0 0">Created date = the contact's create date when synced, else the date it entered the created stage, else its earliest stage date.</p>
+
+  <div class="row" style="gap:28px;align-items:flex-start;margin-top:14px;flex-wrap:wrap">
+    <div><div class="muted" style="font-size:12px;margin-bottom:6px">Original sources counted as marketing-sourced (Lead → MQL{{ '' if fn.sql_via_mql else ' and the SQL cohort' }})</div>
+      {% for x in fn.sources %}<label style="display:inline-block;min-width:210px;margin:3px 12px 3px 0"><input type="checkbox" name="fnsrc_{{ x }}" {{ 'checked' if x in fn.marketing }}> {{ x }} <span class="muted" style="font-size:12px">{{ fn.source_counts[x] }}</span>{{ ' ★' if x in fn.mkt_auto }}</label>{% else %}<span class="muted">No source values on the contacts.</span>{% endfor %}
+      {% if fn.no_source %}<div class="muted" style="font-size:12px">{{ fn.no_source }} contacts have no source and are never marketing-sourced.</div>{% endif %}</div>
+  </div>
+
+  <div class="row" style="gap:28px;align-items:flex-start;margin-top:14px;flex-wrap:wrap">
+    <label style="max-width:340px"><input type="checkbox" name="fn_sql_via_mql" {{ 'checked' if fn.sql_via_mql }}> SQL cohort = contacts with an SQL date that also have an MQL date ★
+      <div class="muted" style="font-size:12px">SQLs that came through the marketing funnel - reproduces the Oryon report's SQL cohort exactly. Off = SQLs from the marketing sources above.</div></label>
+    <label style="max-width:320px"><input type="checkbox" name="fn_dedupe_email" {{ 'checked' if fn.dedupe }}> Count one contact per email address in Lead → MQL ★
+      <div class="muted" style="font-size:12px">Spec: non-duplicate contacts. The earliest-created contact with an email is kept.</div></label>
+    <div><div class="muted" style="font-size:12px;margin-bottom:6px">Immature when the cohort ended fewer than … days before today</div>
+      {% for name, v in [('MQL → SQL', fn.mature[0]), ('Lead → MQL', fn.mature[1]), ('SQL → won', fn.mature[2]), ('SQL → opportunity', fn.mature[3]), ('Opportunity → won', fn.mature[4])] %}
+      <label style="display:inline-block;margin-right:14px">{{ name }} <input type="number" name="fn_mature_{{ loop.index0 }}" value="{{ v }}" min="0" max="730" style="width:70px"></label>{% endfor %}
+      <div class="muted" style="font-size:12px">Spec: 60 / 90 / 180 days; the report uses 60 for SQL → opportunity and 180 for opportunity → won.</div></div>
+  </div>
+  <div style="margin-top:12px"><button class="btn" type="submit">Save funnel settings</button></div>
+</form>
+<form method="post" action="{{ url_for('reset_fn_settings') }}" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset funnel settings to automatic</button>
+</form>

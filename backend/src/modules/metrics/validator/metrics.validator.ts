@@ -85,6 +85,34 @@ export const getInvoiceRevenueGrowthByProductDetailQuerySchema = z.object({
 
 export type GetInvoiceRevenueGrowthByProductDetailQuery = z.infer<typeof getInvoiceRevenueGrowthByProductDetailQuerySchema>
 
+// GET /metrics/quickbooks/invoice-revenue-growth-by-class — "Revenue growth by class," the same
+// synced-invoice computation as invoice-revenue-growth-by-product above, grouped by each line's
+// QuickBooks Class instead of by product. No department/state filters, same rationale as by-product.
+export const getInvoiceRevenueGrowthByClassQuerySchema = z.object({
+  fromYear: z
+    .string()
+    .regex(/^\d{4}$/, 'fromYear must be "YYYY"')
+    .optional()
+})
+
+export type GetInvoiceRevenueGrowthByClassQuery = z.infer<typeof getInvoiceRevenueGrowthByClassQuerySchema>
+
+// GET /metrics/quickbooks/invoice-revenue-growth-by-class/detail — record-level backing data (every
+// synced invoice line) behind one class's series in the chart above, for the "export to Excel"
+// verification button. Same fromYear filter as the aggregate, plus which class to drill into.
+export const getInvoiceRevenueGrowthByClassDetailQuerySchema = z.object({
+  classId: z.string().min(1, 'classId is required'),
+  // The class's display name, already known client-side from the aggregate response — passed
+  // through rather than re-fetched so this endpoint doesn't need its own class lookup.
+  className: z.string().min(1, 'className is required'),
+  fromYear: z
+    .string()
+    .regex(/^\d{4}$/, 'fromYear must be "YYYY"')
+    .optional()
+})
+
+export type GetInvoiceRevenueGrowthByClassDetailQuery = z.infer<typeof getInvoiceRevenueGrowthByClassDetailQuerySchema>
+
 // GET /metrics/quickbooks/invoice-revenue-growth-by-state — "Revenue growth by location," the same
 // synced-invoice computation as invoice-revenue-growth-by-product above, grouped by billing-address
 // state instead of by product.

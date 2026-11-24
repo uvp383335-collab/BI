@@ -1,0 +1,62 @@
+<form method="post" action="{{ url_for('save_cash_settings') }}" class="card" id="cash">
+  <h2 style="margin-top:0"><span class="codes"><code>CB-05</code></span>Cash &amp; runway</h2>
+  <p class="muted" style="margin:0 0 12px;font-size:12.5px">From the monthly Balance Sheet snapshots in <code>{{ bs_collection }}</code>{% if bs_last_month %} (latest {{ bs_last_month }}){% endif %}. Spec CB-05: unrestricted cash = 1010 + 1015 + 1020; restricted cash (1030) is excluded.</p>
+  {% if not cash_sections_avail %}<div class="flash err">No snapshots found in <code>{{ bs_collection }}</code> - run a QuickBooks sync first.</div>{% else %}
+
+  {% if cash_accs %}
+  <input type="hidden" name="has_accounts" value="1">
+  <div class="row" style="justify-content:space-between;margin-bottom:6px">
+    <div><b>Bank account classification</b> <span class="muted" style="font-size:12px">- every bank account on the Balance Sheet snapshots, balance at {{ bs_last_month }}.
+      {% if not cash_accs_saved %}<b style="color:var(--warn)">Auto-selected, not saved yet:</b> 1010 / 1015 / 1020-type bank accounts → Unrestricted; 1030 / collateral → Restricted; QuickBooks' sample Checking / Savings → Exclude.{% endif %}</span></div>
+  </div>
+  <div class="scroll" style="max-height:420px">
+  <table>
+    <thead><tr><th>Account</th><th class="num">Balance {{ bs_last_month }}</th><th>Cash category</th><th></th></tr></thead>
+    <tbody>
+    {% for a in cash_accs %}
+      <tr {% if a.cat == 'exclude' %}style="opacity:.6"{% endif %}>
+        <td><b>{{ a.name }}</b><div class="muted" style="font-size:11.5px">{{ a.reason }}</div></td>
+        <td class="num">{{ a.latest|usd }}</td>
+        <td><select name="cacc_{{ a.id }}" class="ccsel" data-amt="{{ a.latest }}">
+          {% for k, label in cash_cats.items() %}<option value="{{ k }}" {{ 'selected' if k == a.cat }}>{{ label }}{{ '  ★' if k == a.auto }}</option>{% endfor %}
+        </select></td>
+        <td>{% if cash_accs_saved %}<span class="tag saved">saved</span>{% else %}<span class="tag auto">auto</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="muted" style="font-size:12px;margin-top:6px">At {{ bs_last_month }}: unrestricted cash <b id="ccU">$0</b> · restricted <b id="ccR">$0</b> · ★ = automatic suggestion</div>
+  <script>
+  (function(){const f=v=>(v<0?'-$':'$')+Math.abs(Math.round(v)).toLocaleString('en-US'), sels=[...document.querySelectorAll('.ccsel')];
+    function upd(){let u=0,r=0;sels.forEach(s=>{const v=+s.dataset.amt||0;if(s.value==='unrestricted')u+=v;else if(s.value==='restricted')r+=v;});
+      document.getElementById('ccU').textContent=f(u);document.getElementById('ccR').textContent=f(r);}
+    sels.forEach(s=>s.addEventListener('change',upd));upd();})();
+  </script>
+  {% else %}
+  <div class="flash err" style="background:#2a2a14;color:#e8d98a">The snapshots don't have per-account balances yet, so individual accounts can't be picked. After the backend sync update (stores <code>accounts</code> on each monthly snapshot) and a QuickBooks resync, an account dropdown appears here. Until then cash = the section total below minus the restricted-cash amount.</div>
+  <div class="row" style="gap:28px;align-items:flex-start">
+    <div><div class="muted" style="font-size:12px;margin-bottom:6px">Balance Sheet sections counted as cash</div>
+      {% for k, v in cash_sections_avail %}
+        <label style="display:block;margin:3px 0"><input type="checkbox" name="cs_{{ k }}" {{ 'checked' if k in settings.cash_sections }}> {{ k }}{% if k == 'BankAccounts' %} ★{% endif %}
+          <span class="muted" style="font-size:12px">{{ v|usd if v is not none else '-' }} at {{ bs_last_month }}</span></label>
+      {% endfor %}</div>
+    <label>Restricted cash to subtract<br><input type="text" name="cash_restricted_adjust" value="{{ '%.0f'|format(settings.cash_restricted_adjust or 0) }}" style="width:130px">
+      <div class="muted" style="font-size:12px;max-width:260px">1030 Restricted Cash - Letter of Credit Collateral ($500,000 since the 30 Sep 2022 opening balance). Only used without per-account balances.</div></label>
+  </div>
+  {% endif %}
+
+  <div class="row" style="gap:28px;align-items:flex-start;margin-top:16px">
+    <label>Runway look-back (months)<br><input type="number" name="cash_lookback_months" value="{{ settings.cash_lookback_months }}" min="1" max="12" style="width:80px">
+      <div class="muted" style="font-size:12px;max-width:240px">Runway = cash ÷ average monthly decline over this many months (spec: 3).</div></label>
+    <label style="max-width:360px"><input type="checkbox" name="cash_show_ar_check" {{ 'checked' if settings.cash_show_ar_check }}> Show the data-quality check line (cash + negative A/R)
+      <div class="muted" style="font-size:12px">Negative receivables mean more customer payments than invoices are recorded; that money also sits in the bank.</div></label>
+  </div>
+  <div style="margin-top:12px"><button class="btn" type="submit">Save cash settings</button></div>
+  {% endif %}
+</form>
+{% if cash_accs %}
+<form method="post" action="{{ url_for('reset_cash_accounts') }}" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset bank accounts to automatic classification</button>
+</form>
+{% endif %}

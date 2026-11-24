@@ -1,0 +1,39 @@
+<form method="post" action="{{ url_for('save_wr_settings') }}" class="card" id="win-rate">
+  <h2 style="margin-top:0"><span class="codes"><code>CM-03</code></span>Competitor win rate</h2>
+  <p class="muted" style="margin:0 0 12px;font-size:12.5px">Win rate vs a competitor = won ÷ decided closed New Business deals naming that competitor, trailing {{ wr.window }} months (spec CM-03). Deals from the <code>deals</code> collection ({{ wr.n_deals }} {{ wr.provider }} deals); won / lost from the pipeline stage definitions when synced, else the stage name (Closed Won / Closed Lost).</p>
+  {% if not wr.n_deals %}<div class="flash err">No {{ wr.provider }} deals in MongoDB yet - run a CRM sync first.</div>{% endif %}
+  <div class="row" style="gap:28px;align-items:flex-start;flex-wrap:wrap">
+    <label>CRM<br><select name="wr_provider">{% for p in wr.providers %}<option value="{{ p }}" {{ 'selected' if p == wr.provider }}>{{ p }}</option>{% endfor %}</select>
+      <div class="muted" style="font-size:12px;max-width:200px">Spec: Salesforce Opportunities.</div></label>
+
+    <label>Custom field with the competitor name<br>
+      <select name="wr_competitor_field">
+        {% for l in wr.labels %}<option value="{{ l }}" {{ 'selected' if l == wr.comp_field }}>{{ l }} ({{ wr.label_counts[l] }} deals){{ '  ★' if l == wr.comp_auto }}</option>{% endfor %}
+        {% for k, label in wr.std.items() %}<option value="{{ k }}" {{ 'selected' if k == wr.comp_field }}>{{ label }}{{ '  ★' if k == wr.comp_auto }}</option>{% endfor %}
+      </select>
+      <div class="muted" style="font-size:12px;max-width:300px">Every custom field label found on the deals (spec: Primary_Competitor__c). Or the backend's standard competitor fields.</div></label>
+
+    <label>Custom field with the loss reason<br>
+      <select name="wr_loss_reason_field">
+        <option value="" {{ 'selected' if not wr.loss_field }}>None - don't drop any losses</option>
+        {% for l in wr.labels %}<option value="{{ l }}" {{ 'selected' if l == wr.loss_field }}>{{ l }} ({{ wr.label_counts[l] }} deals){{ '  ★' if l == wr.loss_auto }}</option>{% endfor %}
+      </select>
+      <div class="muted" style="font-size:12px;max-width:300px">Spec: Loss_Reason__c. {% if not wr.loss_auto %}<b style="color:var(--warn)">Not on the synced deals</b> - add it to the Salesforce Opportunity extra fields in the backend and resync.{% endif %}</div></label>
+
+    <label>Loss reasons that aren't a decision<br><textarea name="wr_exclude_loss_reasons" rows="2" cols="28" style="resize:vertical">{{ wr.exclude_reasons|join('\n') }}</textarea>
+      <div class="muted" style="font-size:12px;max-width:240px">One per line; those losses are dropped from "decided". Spec: No Decision / Status Quo.</div></label>
+  </div>
+
+  <div class="row" style="gap:28px;align-items:flex-start;margin-top:14px;flex-wrap:wrap">
+    <div><div class="muted" style="font-size:12px;margin-bottom:6px">Deal types counted as New Business</div>
+      {% for t in wr.types %}<label style="display:block;margin:3px 0"><input type="checkbox" name="wrtyp_{{ t }}" {{ 'checked' if t in (wr.nb_types or []) }}> {{ t }} <span class="muted" style="font-size:12px">{{ wr.type_counts[t] }} deals</span>{{ ' ★' if t in wr.nb_auto }}</label>{% else %}<span class="muted">No deal types found.</span>{% endfor %}</div>
+    <label>Headline competitor<br><input type="text" name="wr_headline" value="{{ wr.headline or '' }}" placeholder="Verdance FSM" size="22">
+      <div class="muted" style="font-size:12px;max-width:240px">The big number on the page. Blank = Verdance FSM if present, else the competitor with the most deals.</div></label>
+    <label>Window (months)<br><input type="number" name="wr_window_months" value="{{ wr.window }}" min="1" max="24" style="width:80px">
+      <div class="muted" style="font-size:12px;max-width:220px">Spec: 6 (two quarters). The page also has a 12-month (TTM) view.</div></label>
+  </div>
+  <div style="margin-top:12px"><button class="btn" type="submit">Save win rate settings</button></div>
+</form>
+<form method="post" action="{{ url_for('reset_wr_settings') }}" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset win rate settings to automatic</button>
+</form>

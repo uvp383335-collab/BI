@@ -37,7 +37,7 @@ export interface QuickBooksCustomer {
 
 export interface QuickBooksInvoiceLine {
   Amount?: number;
-  SalesItemLineDetail?: { ItemRef?: { value: string } };
+  SalesItemLineDetail?: { ItemRef?: { value: string }; ClassRef?: { value: string; name?: string } };
 }
 
 /** QuickBooks' shared postal-address shape — appears as `BillAddr`/`ShipAddr` on both Invoice and Customer. */
@@ -417,13 +417,29 @@ export class QuickBooksService {
     }
   }
 
-  /** Fetches the Balance Sheet as of `asOfDate` — CB-05's bank-account balances (unrestricted cash fallback, per the metrics guide) and CB-07's fallback asset/liability deltas. */
-  static async getBalanceSheetReport(accessToken: string, realmId: string, asOfDate: string): Promise<QuickBooksReport> {
+  /**
+   * Fetches the Balance Sheet as of `asOfDate` — CB-05's bank-account balances
+   * (unrestricted cash fallback, per the metrics guide) and CB-07's fallback
+   * asset/liability deltas. `summarizeColumnBy`/`startDate` mirror
+   * `getProfitAndLossReport`'s `Month` mode: passing `summarizeColumnBy:
+   * "Month"` with a `startDate` returns one column per calendar month in
+   * range (QuickBooks reports each as that month's end-of-month balance,
+   * same point-in-time semantics as the single-day call) — what
+   * `BalanceSheetMonthlySnapshot`'s sync needs. Every other caller omits
+   * both and keeps getting the original single-day "as of" report.
+   */
+  static async getBalanceSheetReport(
+    accessToken: string,
+    realmId: string,
+    asOfDate: string,
+    summarizeColumnBy: "Total" | "Month" = "Total",
+    startDate?: string,
+  ): Promise<QuickBooksReport> {
     return this.getReport(
       accessToken,
       realmId,
       "BalanceSheet",
-      { start_date: asOfDate, end_date: asOfDate },
+      { start_date: startDate ?? asOfDate, end_date: asOfDate, summarize_column_by: summarizeColumnBy },
       "Failed to fetch Balance Sheet report from QuickBooks",
       "QUICKBOOKS_BALANCE_SHEET_FETCH_FAILED",
     );

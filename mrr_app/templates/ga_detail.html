@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}G&A % {{ period }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:12px;padding:6px 5px} td.num{white-space:nowrap}</style>
+<p><a href="{{ url_for('ga_page') }}">← G&amp;A %</a></p>
+<div class="row" style="justify-content:space-between">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}G&amp;A % · {{ period }}</h1>
+  <p class="sub">{{ months[0] }} → {{ months[-1] }} · G&amp;A {{ r.ga|usd }} ÷ revenue {{ r.revenue|usd }} = <b>{{ '%.2f%%'|format(r.pct) if r.pct is not none else '-' }}</b></p></div>
+  <a class="btn ghost" href="{{ url_for('ga_detail', period=period, format='csv') }}">Download CSV</a>
+</div>
+<div class="card scroll">
+<table>
+  <thead><tr><th>Account</th>{% for m in months %}<th class="num">{{ m[2:] }}</th>{% endfor %}<th class="num">Total</th></tr></thead>
+  <tbody>
+  {% for a in acc_rows %}
+    <tr><td><b>{{ a.name }}</b></td>{% for m in months %}<td class="num">{{ a.months.get(m, 0)|usd }}</td>{% endfor %}<td class="num"><b>{{ a.total|usd }}</b></td></tr>
+  {% endfor %}
+    <tr><td><b>G&amp;A total</b></td>{% for m in months %}<td class="num"><b>{{ month_tot[m]|usd }}</b></td>{% endfor %}<td class="num"><b>{{ r.ga|usd }}</b></td></tr>
+    <tr><td class="muted">Revenue</td>{% for m in months %}<td class="num muted">{{ month_rev[m]|usd }}</td>{% endfor %}<td class="num muted">{{ r.revenue|usd }}</td></tr>
+    <tr><td><b>G&amp;A %</b></td>{% for m in months %}<td class="num"><b>{{ '%.2f%%'|format(100 * month_tot[m] / month_rev[m]) if month_rev[m] else '-' }}</b></td>{% endfor %}<td class="num"><b>{{ '%.2f%%'|format(r.pct) if r.pct is not none else '-' }}</b></td></tr>
+  </tbody>
+</table>
+</div>
+{% endblock %}

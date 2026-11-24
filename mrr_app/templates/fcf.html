@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}FCF conversion · Oryon{% endblock %}
+{% block body %}
+<style>.k5 .v{font-size:19px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}FCF conversion</h1>
+  <p class="sub">(Operating cash flow − capex) ÷ EBITDA · {{ 'trailing 12 months' if view == 'ttm' else 'single month' }} · capex = {% if info.mode == 'accounts' %}{{ info.capex_names|join(' + ') or 'no accounts' }}{% else %}change in {{ info.sections|join(' + ') }} + {{ info.fa_da_names|join(' + ') or 'no D&A' }}{% endif %} (<a href="{{ url_for('settings_page') }}#fcf">settings</a>)</p></div>
+  <form class="row" method="get">
+    <select name="view"><option value="ttm" {{ 'selected' if view=='ttm' }}>Trailing 12 months (spec)</option><option value="month" {{ 'selected' if view=='month' }}>Single month</option></select>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('fcf_csv') }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not info.n %}<div class="card">No Balance Sheet snapshots in <code>{{ info.collection }}</code> yet - run a QuickBooks sync.</div>{% elif not rows %}<div class="card">Not enough months yet - TTM needs 13 consecutive Balance Sheet snapshots and P&amp;L months.</div>{% else %}
+{% if info.mode == 'sections' %}<div class="flash err" style="background:#2a2a14;color:#e8d98a">No per-account balances in the snapshots yet, so capex = change in {{ info.sections|join(' + ') }} + D&amp;A on those assets (includes any QuickBooks sample assets such as Truck). Resync QuickBooks after the backend update to pick individual capex accounts in <a href="{{ url_for('settings_page') }}#fcf">Settings</a>.</div>{% endif %}
+{% set L = latest %}
+{% if info.wc_mode == 'sections' %}<div class="flash err" style="background:#2a2a14;color:#e8d98a">Working capital is classified by Balance Sheet section until the QuickBooks resync (per-account balances) - other current assets / liabilities may include accounts outside the spec's list.</div>{% endif %}
+{% if view == 'ttm' and info.show_ar and L.t_dar < 0 %}<div class="flash err">Data check: receivables fell by {{ (-L.t_dar)|usd }} over the 12 months to {{ L.month }}, which adds that much to operating cash flow. With negative A/R (more customer payments than invoices) this is overstated - the dashed line shows FCF % without the A/R swing: {{ '%.1f'|format(L.fcf_pct_x_ar) }}%.</div>{% endif %}
+
+<div class="kpis k5" style="grid-template-columns:repeat(6,1fr)">
+  {% if view == 'ttm' %}
+  <div class="kpi"><div class="l">FCF conversion · TTM {{ L.month }}</div><div class="v">{{ '%.1f%%'|format(L.fcf_pct) if L.fcf_pct is not none else '-' }}</div>
+    <div class="muted" style="font-size:12px">{% if year_ago and year_ago.fcf_pct is not none %}{{ '%+.1f'|format(L.fcf_pct - year_ago.fcf_pct) }} pts vs {{ year_ago.month }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">Free cash flow</div><div class="v {{ 'neg' if L.t_fcf < 0 }}">{{ L.t_fcf|usd }}</div></div>
+  <div class="kpi"><div class="l">Operating cash flow</div><div class="v">{{ L.t_ocf|usd }}</div></div>
+  <div class="kpi"><div class="l">Capex</div><div class="v">{{ L.t_capex|usd }}</div></div>
+  <div class="kpi"><div class="l">EBITDA</div><div class="v">{{ L.t_ebitda|usd }}</div></div>
+  <div class="kpi"><div class="l">Without A/R swing</div><div class="v">{{ '%.1f%%'|format(L.fcf_pct_x_ar) if L.fcf_pct_x_ar is not none else '-' }}</div><div class="muted" style="font-size:12px">data check</div></div>
+  {% else %}
+  <div class="kpi"><div class="l">FCF conversion · {{ L.month }}</div><div class="v">{{ '%.1f%%'|format(L.m_fcf_pct) if L.m_fcf_pct is not none else '-' }}</div></div>
+  <div class="kpi"><div class="l">Free cash flow</div><div class="v {{ 'neg' if L.fcf < 0 }}">{{ L.fcf|usd }}</div></div>
+  <div class="kpi"><div class="l">Operating cash flow</div><div class="v">{{ L.ocf|usd }}</div></div>
+  <div class="kpi"><div class="l">Capex</div><div class="v">{{ L.capex|usd }}</div></div>
+  <div class="kpi"><div class="l">EBITDA</div><div class="v">{{ L.ebitda|usd }}</div></div>
+  <div class="kpi"><div class="l">Change in A/R</div><div class="v">{{ (-L.dar)|usd }}</div></div>
+  {% endif %}
+</div>
+
+<div class="card"><h2 style="margin-top:0">FCF conversion %</h2><canvas id="pct" height="80"></canvas></div>
+<div class="card"><h2 style="margin-top:0">Operating cash flow, capex and EBITDA</h2><canvas id="amt" height="70"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'TTM to' if view == 'ttm' else 'Month' }}</th><th class="num">Net income</th><th class="num">+ D&amp;A</th><th class="num">− Δ working capital</th><th class="num">= OCF</th><th class="num">Capex</th><th class="num">FCF</th><th class="num">EBITDA</th><th class="num">FCF %</th>{% if info.show_ar and view == 'ttm' %}<th class="num">FCF % w/o A/R</th>{% endif %}<th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}{% set p = 't_' if view == 'ttm' else '' %}
+    <tr>
+      <td>{{ r.month }}</td>
+      <td class="num">{{ r[p ~ 'ni']|usd }}</td>
+      <td class="num">{{ r[p ~ 'da']|usd }}</td>
+      <td class="num">{{ (-r[p ~ 'dwc'])|usd }}</td>
+      <td class="num"><b>{{ r[p ~ 'ocf']|usd }}</b></td>
+      <td class="num">{{ r[p ~ 'capex']|usd }}</td>
+      <td class="num {{ 'neg' if r[p ~ 'fcf'] < 0 }}">{{ r[p ~ 'fcf']|usd }}</td>
+      <td class="num">{{ r[p ~ 'ebitda']|usd }}</td>
+      {% set pct = r.fcf_pct if view == 'ttm' else r.m_fcf_pct %}
+      <td class="num"><b>{{ '%.1f%%'|format(pct) if pct is not none else '-' }}</b></td>
+      {% if info.show_ar and view == 'ttm' %}<td class="num muted">{{ '%.1f%%'|format(r.fcf_pct_x_ar) if r.fcf_pct_x_ar is not none else '-' }}</td>{% endif %}
+      <td><a href="{{ url_for('fcf_detail', month=r.month) }}">details</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }}, ttm = {{ 'true' if view == 'ttm' else 'false' }}, showAr = {{ 'true' if info.show_ar else 'false' }};
+const fmt = v => (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString('en-US');
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.month), g = k => rows.map(r => ttm ? r['t_' + k] : r[k]);
+const ds = [{label:'FCF conversion %', data:rows.map(r => ttm ? r.fcf_pct : r.m_fcf_pct), borderColor:'#4f8cff', backgroundColor:'#4f8cff', tension:.2}];
+if (ttm && showAr) ds.push({label:'Without the A/R swing (data check)', data:rows.map(r => r.fcf_pct_x_ar), borderColor:'#f0b429', backgroundColor:'#f0b429', borderDash:[6,4], tension:.2});
+new Chart(document.getElementById('pct'), {type:'line', data:{labels, datasets:ds},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${c.raw == null ? '-' : c.raw.toFixed(1) + '%'}`}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid}}}});
+new Chart(document.getElementById('amt'), {data:{labels, datasets:[
+  {type:'bar', label:'Operating cash flow', data:g('ocf'), backgroundColor:'#2fbf71', order:2},
+  {type:'bar', label:'Capex', data:g('capex').map(v => -v), backgroundColor:'#ef5350', order:2},
+  {type:'line', label:'EBITDA', data:g('ebitda'), borderColor:'#c792ea', backgroundColor:'#c792ea', order:1},
+  {type:'line', label:'Free cash flow', data:g('fcf'), borderColor:'#4f8cff', backgroundColor:'#4f8cff', order:1}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.dataset.label == 'Capex' ? -c.raw : c.raw)}`}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+</script>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How FCF conversion is calculated (spec CB-07)</h2>
+  <ul>
+    <li><b>OCF = Net income + D&amp;A − Δ working capital</b>. Net income and D&amp;A ({{ info.da_names|join(', ') }}) use the <a href="{{ url_for('settings_page') }}#ebitda">EBITDA classification</a>. <b>ΔWC</b> = [({{ info.wc_assets }}) − ({{ info.wc_liabs }})] at e minus the same at e − 12{% if info.wc_mode == 'accounts' %}; AR = {{ info.ar_names|join(', ') or 'no account' }}{% else %} (by Balance Sheet section until the resync){% endif %} - set in <a href="{{ url_for('settings_page') }}#fcf">Settings</a>.</li>
+    <li><b>Capex</b> = {% if info.mode == 'accounts' %}increase in the month-end balances of {{ info.capex_names|join(', ') }}{% if info.accum_names %}; accumulated D&amp;A not counted: {{ info.accum_names|join(', ') }}{% endif %}{% if info.excluded_names %}; excluded: {{ info.excluded_names|join(', ') }}{% endif %}{% else %}change in the {{ info.sections|join(' + ') }} total + D&amp;A charged on those assets ({{ info.fa_da_names|join(', ') }}){% endif %} - spec: 1510 + 1520, the QuickBooks "Investing activities" lines.</li>
+    <li><b>FCF conversion % = (OCF − capex) ÷ EBITDA</b>, each summed over the trailing 12 months. "Single month" shows the same for one month - noisy because of A/R timing.</li>
+    <li>Months after the last month with P&amp;L revenue ({{ info.last_closed or '-' }}) and Balance Sheet months identical to the month before (not synced yet) are left out.</li>
+  </ul>
+</div>
+{% endblock %}

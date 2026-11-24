@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}LTV / CAC · Oryon{% endblock %}
+{% block body %}
+<style>.k5 .v{font-size:19px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}LTV / CAC - new customers and whole base</h1>
+  <p class="sub">Lifetime gross profit of an average new customer (VC-07) or average current customer (VC-14) ÷ what it cost to win · trailing 12 months · lifetime from TTM GRR (cap {{ info.cap|int }} months) · CAC from the <a href="{{ url_for('cac_page') }}">CAC page</a> · <a href="{{ url_for('settings_page') }}#ltv">settings</a></p></div>
+  <form class="row" method="get">
+    <select name="grain"><option value="quarter" {{ 'selected' if grain=='quarter' }}>Quarter ends</option><option value="month" {{ 'selected' if grain=='month' }}>Monthly</option></select>
+    <label>From <input type="text" name="from" value="{{ start }}" size="8"></label>
+    <label>To <input type="text" name="to" value="{{ end }}" size="8"></label>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('ltv_csv', **{'from': start, 'to': end}) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not info.accounts_saved %}<div class="flash err">CAC uses the automatically selected sales &amp; marketing accounts. <a href="{{ url_for('settings_page') }}#cac">Review and save them in Settings</a>.</div>{% endif %}
+{% if unsaved %}<div class="flash err">{{ unsaved }} product mapping{{ 's' if unsaved != 1 }} still on the automatic suggestion. <a href="{{ url_for('settings_page') }}">Review in Settings</a>.</div>{% endif %}
+
+{% if latest %}
+<div class="kpis k5" style="grid-template-columns:repeat(6,1fr)">
+  <div class="kpi"><div class="l">LTV / CAC, new · TTM to {{ latest.month }}</div><div class="v {{ 'neg' if latest.ltv_cac < info.threshold else 'pos' }}">{{ '%.2f'|format(latest.ltv_cac) }}x</div>
+    <div class="muted" style="font-size:12px">threshold {{ info.threshold }}x{% if prev and prev.ltv_cac %} · year ago {{ '%.2f'|format(prev.ltv_cac) }}x{% endif %}</div></div>
+  <div class="kpi"><div class="l">LTV / CAC, whole base</div><div class="v {{ 'neg' if latest.base_ltv_cac and latest.base_ltv_cac < info.threshold else 'pos' }}">{{ '%.2f'|format(latest.base_ltv_cac) if latest.base_ltv_cac else '-' }}x</div>
+    <div class="muted" style="font-size:12px">ARR {{ '$%.2fM'|format(latest.arr / 1e6) }} · {{ latest.customers }} customers{% if prev and prev.base_ltv_cac %} · yr ago {{ '%.2f'|format(prev.base_ltv_cac) }}x{% endif %}</div></div>
+  <div class="kpi"><div class="l">LTV new · whole base</div><div class="v">{{ latest.ltv|usd }}</div>
+    <div class="muted" style="font-size:12px">whole base {{ latest.base_ltv|usd }}</div></div>
+  <div class="kpi"><div class="l">CAC</div><div class="v">{{ latest.cac|usd }}</div>
+    <div class="muted" style="font-size:12px">{% if prev and prev.cac %}year ago {{ prev.cac|usd }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">Lifetime · TTM GRR</div><div class="v">{{ '%.1f'|format(latest.lifetime) }} mo · {{ '%.1f'|format(latest.grr) }}%</div>
+    <div class="muted" style="font-size:12px">{{ 'capped at ' ~ info.cap|int ~ ' months' if latest.capped else 'monthly churn ' ~ '%.2f'|format(latest.churn * 100) ~ '%' }}</div></div>
+  <div class="kpi"><div class="l">Gross profit / month: new · base</div><div class="v">{{ latest.gp_month|usd }} · {{ latest.base_gp_month|usd }}</div>
+    <div class="muted" style="font-size:12px">GM {{ '%.1f'|format(latest.gm * 100) }}% · avg MRR {{ (latest.avg_arr / 12)|usd }} · {{ latest.base_avg_mrr|usd }}</div></div>
+</div>
+{% endif %}
+
+{% if rows %}
+<div class="card"><h2 style="margin-top:0">LTV / CAC vs the {{ info.threshold }}x threshold</h2><canvas id="x" height="80"></canvas></div>
+<div class="card"><h2 style="margin-top:0">LTV (new customers and whole base) and CAC</h2><canvas id="lc" height="80"></canvas></div>
+<div class="card"><h2 style="margin-top:0">Expected lifetime (months) and TTM GRR</h2><canvas id="life" height="70"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'Quarter' if grain == 'quarter' else 'TTM ending' }}</th><th class="num">TTM GRR</th><th class="num">Monthly churn</th><th class="num">Lifetime (mo)</th>
+    <th class="num">New logos</th><th class="num">Avg ARR</th><th class="num">GM</th><th class="num">GP / logo / mo</th><th class="num">LTV</th><th class="num">CAC</th><th class="num">LTV / CAC new</th>
+    <th class="num">ARR</th><th class="num">Customers</th><th class="num">LTV base</th><th class="num">LTV / CAC base</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr {% if not r.complete %}style="opacity:.55" title="{{ 'New logos in this window are not complete yet (deals closed after ' ~ info.complete_until ~ ' bill after the last invoice month)' if r.grr_reliable else 'TTM GRR starts before ' ~ info.reliable_from ~ ' (annual invoices not fully captured)' }}"{% endif %}>
+      <td>{{ r.label }}{% if grain == 'quarter' %} <span class="muted">{{ r.month }}</span>{% endif %}{% if not r.complete %} <span class="tag auto">incomplete</span>{% endif %}</td>
+      <td class="num">{{ '%.2f%%'|format(r.grr) if r.grr is not none else '-' }}</td>
+      <td class="num">{{ '%.3f%%'|format(r.churn * 100) if r.churn is not none else '-' }}</td>
+      <td class="num">{{ '%.1f'|format(r.lifetime) if r.lifetime is not none else '-' }}{% if r.capped %} <span class="tag auto">cap</span>{% endif %}</td>
+      <td class="num">{{ r.new_logos }}</td><td class="num">{{ r.avg_arr|usd }}</td>
+      <td class="num">{{ '%.1f%%'|format(r.gm * 100) if r.gm is not none else '-' }}</td>
+      <td class="num">{{ r.gp_month|usd }}</td><td class="num">{{ r.ltv|usd }}</td><td class="num">{{ r.cac|usd }}</td>
+      <td class="num {{ 'neg' if r.ltv_cac and r.ltv_cac < info.threshold else 'pos' if r.ltv_cac else '' }}"><b>{{ '%.2fx'|format(r.ltv_cac) if r.ltv_cac else '-' }}</b></td>
+      <td class="num">{{ '$%.2fM'|format(r.arr / 1e6) }}</td><td class="num">{{ r.customers }}</td><td class="num">{{ r.base_ltv|usd }}</td>
+      <td class="num {{ 'neg' if r.base_ltv_cac and r.base_ltv_cac < info.threshold else 'pos' if r.base_ltv_cac else '' }}"><b>{{ '%.2fx'|format(r.base_ltv_cac) if r.base_ltv_cac else '-' }}</b></td>
+      <td><a href="{{ url_for('ltv_detail', month=r.month) }}">details</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }}, th = {{ info.threshold }};
+const fmt = v => '$' + Math.round(v).toLocaleString('en-US');
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.label + (r.complete ? '' : ' *'));
+new Chart(document.getElementById('x'), {type:'line', data:{labels, datasets:[
+  {label:'Whole base (VC-14)', data:rows.map(r => r.base_ltv_cac == null ? null : +r.base_ltv_cac.toFixed(2)), borderColor:'#2fbf71', backgroundColor:'#2fbf71', tension:.25,
+   segment:{borderDash:c => rows[c.p1DataIndex].complete ? undefined : [5,4]}},
+  {label:'New customers (VC-07)', data:rows.map(r => r.ltv_cac == null ? null : +r.ltv_cac.toFixed(2)), borderColor:'#4f8cff', backgroundColor:'#4f8cff', tension:.25,
+   segment:{borderDash:c => rows[c.p1DataIndex].complete ? undefined : [5,4]}, pointBackgroundColor:rows.map(r => r.ltv_cac < th ? '#ef5350' : '#2fbf71')},
+  {label:th + 'x threshold', data:rows.map(() => th), borderColor:'#ef5350', borderDash:[6,4], borderWidth:1.5, pointRadius:0}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${c.raw}x`,
+    footer:i => { const r = rows[i[0].dataIndex]; return `LTV new ${fmt(r.ltv||0)} · LTV base ${fmt(r.base_ltv||0)} · CAC ${fmt(r.cac||0)} · lifetime ${(r.lifetime||0).toFixed(1)} mo` + (r.complete ? '' : ' · incomplete'); }}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + 'x'}, grid, suggestedMin:0}}}});
+new Chart(document.getElementById('lc'), {type:'bar', data:{labels, datasets:[
+  {label:'LTV new customer', data:rows.map(r => r.ltv), backgroundColor:'#4f8cff'}, {label:'LTV whole base', data:rows.map(r => r.base_ltv), backgroundColor:'#2fbf71'},
+  {label:'CAC', data:rows.map(r => r.cac), backgroundColor:'#ef5350'}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.raw)}`}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+new Chart(document.getElementById('life'), {type:'line', data:{labels, datasets:[
+  {label:'Lifetime (months)', data:rows.map(r => r.lifetime == null ? null : +r.lifetime.toFixed(1)), borderColor:'#f0b429', backgroundColor:'#f0b429', yAxisID:'y', tension:.25},
+  {label:'TTM GRR %', data:rows.map(r => r.grr == null ? null : +r.grr.toFixed(2)), borderColor:'#b07cff', backgroundColor:'#b07cff', yAxisID:'y1', tension:.25}]},
+  options:{plugins:{legend:leg}, scales:{x:{ticks:tick, grid}, y:{ticks:tick, grid, title:{display:true, text:'months', color:'#8f9bb3'}},
+    y1:{position:'right', ticks:{...tick, callback:v => v + '%'}, grid:{drawOnChartArea:false}}}}});
+</script>
+{% else %}
+<div class="card">Not enough data: LTV/CAC needs the CAC inputs (12 months of P&amp;L and new logos) and 12 months of MRR for GRR.</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How LTV / CAC is calculated (spec VC-07 and VC-14)</h2>
+  <ul>
+    <li><b>Monthly churn c = 1 − (GRR<sub>TTM</sub> ÷ 100)<sup>1/12</sup></b> - company TTM GRR ({{ 'subscription only' if info.sub_only else 'all recurring revenue' }}), same as the Retention page.</li>
+    <li><b>Expected lifetime = min(1 ÷ c, {{ info.cap|int }}) months</b>; "cap" marks windows where the cap binds (ltv_capped).</li>
+    <li><b>LTV = new-logo ARR ÷ (new logos × 12) × GM<sub>TTM</sub> × lifetime</b> - new logos, new-logo ARR and GM as on the CAC page.</li>
+    <li><b>LTV / CAC = LTV ÷ CAC</b>, CAC = TTM S&amp;M ÷ TTM new logos. Higher is better; below {{ info.threshold }}x is a warning.</li>
+    <li><b>Whole base (VC-14): LTV<sub>base</sub> = ARR(e) ÷ (active customers(e) × 12) × GM<sub>TTM</sub> × lifetime</b> - the same lifetime and CAC, with the average MRR of all customers with MRR &gt; 0 at e (ARR and customers as on the MRR page) in place of new-logo MRR.</li>
+  </ul>
+  <p class="muted" style="font-size:12px">Equivalent: LTV / CAC = lifetime ÷ CAC payback. The latest quarter is "incomplete" while deals closed in it haven't billed yet - CAC is too high until the next invoice month arrives. The Oryon report's values between quarter ends don't follow this formula, so compare on quarter ends.</p>
+</div>
+{% endblock %}

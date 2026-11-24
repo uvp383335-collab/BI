@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}G&A % · Oryon{% endblock %}
+{% block body %}
+<style>.k4 .v{font-size:20px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}G&amp;A % of revenue</h1>
+  <p class="sub">General &amp; administrative cost as a share of revenue, excluding one-time transaction fees and D&amp;A · <code>plmonthlysnapshots</code> · {{ selected|length }} G&amp;A accounts from <a href="{{ url_for('settings_page') }}#ga">Settings</a></p></div>
+  <form class="row" method="get">
+    <select name="grain"><option value="month" {{ 'selected' if grain=='month' }}>Monthly</option><option value="quarter" {{ 'selected' if grain=='quarter' }}>Quarterly</option></select>
+    <select name="window"><option value="period" {{ 'selected' if window=='period' }}>Period</option><option value="ttm" {{ 'selected' if window=='ttm' }}>Trailing 12 months</option></select>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('ga_csv', grain=grain, window=window) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not saved %}<div class="flash err">G&amp;A % uses the automatically selected G&amp;A accounts. <a href="{{ url_for('settings_page') }}#ga">Review and save them in Settings</a>.</div>{% endif %}
+{% if not rows %}<div class="card">No P&amp;L snapshots found in <code>plmonthlysnapshots</code>.</div>{% else %}
+
+{% if latest %}
+<div class="kpis k4">
+  <div class="kpi"><div class="l">G&amp;A % · {{ latest.label }}</div><div class="v">{{ '%.2f'|format(latest.pct) }}%</div>
+    <div class="muted" style="font-size:12px">{% if prev and prev.pct is not none %}<span class="{{ 'pos' if latest.pct <= prev.pct else 'neg' }}">{{ '%+.2f'|format(latest.pct - prev.pct) }} pts</span> vs {{ prev.label }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">G&amp;A expense</div><div class="v">{{ latest.ga|usd }}</div>
+    <div class="muted" style="font-size:12px">{% if prev %}{{ prev.ga|usd }} in {{ prev.label }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">Revenue</div><div class="v">{{ latest.revenue|usd }}</div>
+    <div class="muted" style="font-size:12px">{% if prev %}{{ prev.revenue|usd }} in {{ prev.label }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">G&amp;A growth vs revenue growth</div>
+    <div class="v">{% if prev and prev.ga and prev.revenue %}{{ '%+.1f'|format((latest.ga / prev.ga - 1) * 100) }}% / {{ '%+.1f'|format((latest.revenue / prev.revenue - 1) * 100) }}%{% else %}-{% endif %}</div>
+    <div class="muted" style="font-size:12px">vs {{ prev.label if prev else '-' }}</div></div>
+</div>
+{% endif %}
+
+<div class="card"><h2 style="margin-top:0">G&amp;A % of revenue</h2><canvas id="pct" height="75"></canvas></div>
+<div class="card"><h2 style="margin-top:0">G&amp;A expense by account</h2><canvas id="dollars" height="85"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'Period' if window == 'period' else 'Window' }}</th><th class="num">Revenue</th><th class="num">G&amp;A</th><th class="num">G&amp;A %</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr {% if not r.complete %}style="opacity:.55" title="Not every month in this period has a P&L snapshot yet"{% endif %}>
+      <td>{{ r.label }}{% if not r.complete %} <span class="tag auto">incomplete</span>{% endif %}</td>
+      <td class="num">{{ r.revenue|usd }}</td><td class="num">{{ r.ga|usd }}</td>
+      <td class="num"><b>{{ '%.2f%%'|format(r.pct) if r.pct is not none else '-' }}</b></td>
+      <td><a href="{{ url_for('ga_detail', period=r.label) }}">accounts</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }}, stacks = {{ stacks|tojson }};
+const pal = ['#4f8cff','#2fbf71','#f0b429','#b07cff','#ef5350','#26c6da','#ff8a65','#9ccc65','#8f9bb3','#f48fb1','#ffd54f','#4db6ac'];
+const fmt = v => '$' + Math.round(v).toLocaleString('en-US');
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5', boxWidth:12}};
+const labels = rows.map(r => r.label + (r.complete ? '' : ' *'));
+new Chart(document.getElementById('pct'), {type:'line', data:{labels, datasets:[
+  {label:'G&A % of revenue', data:rows.map(r => r.pct == null ? null : +r.pct.toFixed(2)), borderColor:'#4f8cff', backgroundColor:'#4f8cff', tension:.25}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `G&A %: ${c.raw}%`,
+    footer:i => { const r = rows[i[0].dataIndex]; return `G&A ${fmt(r.ga)} · revenue ${fmt(r.revenue)}`; }}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid}}}});
+new Chart(document.getElementById('dollars'), {type:'bar', data:{labels, datasets:stacks.map((s, i) => ({
+  label:s.name, data:s.data, backgroundColor:pal[i % pal.length], stack:'a'}))},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.raw)}`,
+    footer:i => `Total ${fmt(rows[i[0].dataIndex].ga)}`}}},
+    scales:{x:{stacked:true, ticks:tick, grid}, y:{stacked:true, ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+</script>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How G&amp;A % is calculated (spec VC-09)</h2>
+  <ul>
+    <li><b>G&amp;A %(W) = 100 × Σ G&amp;A ÷ Revenue(W)</b> for a month, a quarter, or the trailing 12 months (TTM = sum of 12 months' G&amp;A ÷ sum of 12 months' revenue).</li>
+    <li><b>G&amp;A</b> = the ticked accounts: {{ selected|map(attribute='name')|join(', ') }}.</li>
+    <li>Excluded: one-time transaction &amp; deal fees (6490) and D&amp;A (6510, 6520).</li>
+    <li><b>Revenue</b> = the income accounts{% if excluded_rev %}, without the excluded QuickBooks demo accounts ({{ excluded_rev|map(attribute='name')|join(', ') }}){% endif %} - the same revenue as the COGS % page.</li>
+  </ul>
+  <p class="muted" style="font-size:12px">Lower is better. Compared with the Oryon report, quarters run 0.1–0.5 points lower mainly because QuickBooks has no service credits or write-offs, so revenue is a little higher; single months can differ by a few points because some G&amp;A costs land in a different month, which evens out over a quarter.</p>
+</div>
+{% endblock %}

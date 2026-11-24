@@ -104,6 +104,71 @@ export function extractLeafAccounts(report: QuickBooksReport): LeafAccount[] {
   return accounts
 }
 
+/**
+ * `extractLeafAccounts` for a multi-column report (e.g. Balance Sheet with
+ * `summarize_column_by=Month`): every real chart-of-accounts leaf row with its
+ * amount in each column, keyed by the column title. Used to store per-account
+ * month-end balances on `BalanceSheetMonthlySnapshot` so cash metrics (CB-05)
+ * can sum specific accounts (e.g. unrestricted cash 1010 + 1015 + 1020) rather
+ * than a whole section total that also includes restricted cash.
+ */
+export interface LeafAccountByColumn {
+  id: string
+  name: string
+  section: string | null
+  amounts: Record<string, number>
+}
+
+export function extractLeafAccountsByColumn(report: QuickBooksReport): LeafAccountByColumn[] {
+  const columns = report.Columns.Column.slice(1).map((c) => c.ColTitle || 'Total')
+  const accounts: LeafAccountByColumn[] = []
+  const amountsOf = (colData: QuickBooksReportRow['ColData']): Record<string, number> => {
+    const amounts: Record<string, number> = {}
+    columns.forEach((col, i) => {
+      amounts[col] = parseFloat(colData?.[i + 1]?.value || '0') || 0
+    })
+    return amounts
+  }
+
+  // Returns the per-column total of the rows it walked, so a parent account's own balance can be
+  // derived as (its section's Summary total) - (its sub-accounts). QuickBooks puts a parent account
+  // (e.g. "1510 Computer Equipment" with sub-account "1590 Accumulated Depreciation") on the section
+  // Header, not as a data row - without this its own balance would be missing from `accounts`.
+  function walk(rows: QuickBooksReportRow[] | undefined, section: string | null): Record<string, number> {
+    const total: Record<string, number> = Object.fromEntries(columns.map((c) => [c, 0]))
+    if (!rows) return total
+    for (const row of rows) {
+      const group = row.group ?? section
+      if (row.Rows?.Row) {
+        const children = walk(row.Rows.Row, group)
+        const summary = row.Summary?.ColData ? amountsOf(row.Summary.ColData) : children
+        const headerId = row.Header?.ColData?.[0]?.id
+        const headerName = row.Header?.ColData?.[0]?.value
+        if (headerId && headerName) {
+          const own: Record<string, number> = {}
+          let any = false
+          columns.forEach((col) => {
+            own[col] = Math.round(((summary[col] ?? 0) - (children[col] ?? 0)) * 100) / 100
+            if (Math.abs(own[col]) > 0.005) any = true
+          })
+          if (any) accounts.push({ id: headerId, name: headerName, section: group, amounts: own })
+        }
+        columns.forEach((col) => { total[col] += summary[col] ?? 0 })
+      } else if (row.ColData && row.ColData.length > 1) {
+        const id = row.ColData[0]?.id
+        const name = row.ColData[0]?.value
+        const amounts = amountsOf(row.ColData)
+        if (id && name) accounts.push({ id, name, section: group, amounts })
+        columns.forEach((col) => { total[col] += amounts[col] ?? 0 })
+      }
+    }
+    return total
+  }
+
+  walk(report.Rows.Row, null)
+  return accounts
+}
+
 /** `extractLeafAccounts`, flattened to id -> amount for storage on `PLSnapshot`. */
 export function leafAccountAmounts(report: QuickBooksReport): Record<string, number> {
   const amounts: Record<string, number> = {}

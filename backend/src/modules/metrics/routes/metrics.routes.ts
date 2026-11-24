@@ -8,6 +8,8 @@ import {
   getProductRevenueGrowthDetailQuerySchema,
   getInvoiceRevenueGrowthByProductQuerySchema,
   getInvoiceRevenueGrowthByProductDetailQuerySchema,
+  getInvoiceRevenueGrowthByClassQuerySchema,
+  getInvoiceRevenueGrowthByClassDetailQuerySchema,
   getInvoiceRevenueGrowthByStateQuerySchema,
   getInvoiceRevenueGrowthByStateDetailQuerySchema,
   getRecurringRevenueTrendQuerySchema,
@@ -29,6 +31,8 @@ const productRevenueGrowthGuards = [requireAuth, requireOrgContext, validateQuer
 const productRevenueGrowthDetailGuards = [requireAuth, requireOrgContext, validateQuery(getProductRevenueGrowthDetailQuerySchema)] as const
 const invoiceRevenueGrowthByProductGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByProductQuerySchema)] as const
 const invoiceRevenueGrowthByProductDetailGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByProductDetailQuerySchema)] as const
+const invoiceRevenueGrowthByClassGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByClassQuerySchema)] as const
+const invoiceRevenueGrowthByClassDetailGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByClassDetailQuerySchema)] as const
 const invoiceRevenueGrowthByStateGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByStateQuerySchema)] as const
 const invoiceRevenueGrowthByStateDetailGuards = [requireAuth, requireOrgContext, validateQuery(getInvoiceRevenueGrowthByStateDetailQuerySchema)] as const
 const recurringRevenueTrendGuards = [requireAuth, requireOrgContext, validateQuery(getRecurringRevenueTrendQuerySchema)] as const
@@ -75,6 +79,12 @@ metricsRouter.get(
   '/quickbooks/invoice-revenue-growth-by-product/detail',
   ...invoiceRevenueGrowthByProductDetailGuards,
   metricsController.getInvoiceRevenueGrowthByProductDetailHandler
+)
+metricsRouter.get('/quickbooks/invoice-revenue-growth-by-class', ...invoiceRevenueGrowthByClassGuards, metricsController.getInvoiceRevenueGrowthByClassHandler)
+metricsRouter.get(
+  '/quickbooks/invoice-revenue-growth-by-class/detail',
+  ...invoiceRevenueGrowthByClassDetailGuards,
+  metricsController.getInvoiceRevenueGrowthByClassDetailHandler
 )
 metricsRouter.get('/quickbooks/invoice-revenue-growth-by-state', ...invoiceRevenueGrowthByStateGuards, metricsController.getInvoiceRevenueGrowthByStateHandler)
 metricsRouter.get(

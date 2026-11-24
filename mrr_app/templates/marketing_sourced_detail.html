@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Marketing-sourced {{ r.label }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:12.5px;padding:6px 8px} td.num{white-space:nowrap}</style>
+<p><a href="{{ url_for('msp_page', grain=grain, view=view) }}">← Marketing-sourced pipeline</a></p>
+<h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Marketing-sourced pipeline · {{ r.label }}</h1>
+<p class="sub">Deals created {{ r.window[0] }} to {{ r.window[1] }}: {{ '%.2f%%'|format(r.pct) if r.pct is not none else '-' }} ({{ r.mk|usd }} of {{ r.total|usd }}) · new logos won {{ r.ttm_window[0] }} to {{ r.ttm_window[1] }}: {{ '%.2f%%'|format(r.won_pct) if r.won_pct is not none else '-' }}</p>
+<div class="card" style="max-width:560px">
+<table><thead><tr><th>Lead source</th><th></th><th class="num">Deals</th><th class="num">{{ 'ARR' if cfg.value_field == 'arr' else 'Amount' }}</th></tr></thead><tbody>
+{% for s, v in by_src %}<tr><td>{{ s }}</td><td>{% if v[2] %}<span class="tag">marketing</span>{% endif %}</td><td class="num">{{ v[0] }}</td><td class="num">{{ v[1]|usd }}</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="card scroll"><h2 style="margin-top:0">Deals created</h2>
+<table><thead><tr><th>Created</th><th>Deal</th><th>Lead source</th><th>Stage</th><th class="num">{{ 'ARR' if cfg.value_field == 'arr' else 'Amount' }}</th><th></th></tr></thead><tbody>
+{% for d in created %}<tr style="{{ 'opacity:.45' if cfg.exclude_dups and d.dup }}"><td class="num">{{ d.date }}</td><td>{{ d.name }}</td><td>{{ d.source or '-' }}{% if d.mk %} <span class="tag">marketing</span>{% endif %}</td><td>{{ d.stage }}</td><td class="num">{{ d.value|usd }}</td><td>{% if d.dup %}<span class="tag auto">duplicate account{{ ' - excluded' if cfg.exclude_dups }}</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="card scroll"><h2 style="margin-top:0">New logos won (TTM)</h2>
+<table><thead><tr><th>Closed</th><th>Deal</th><th>Lead source</th><th class="num">{{ 'ARR' if cfg.value_field == 'arr' else 'Amount' }}</th><th></th></tr></thead><tbody>
+{% for d in won %}<tr style="{{ 'opacity:.45' if d.repeat or (cfg.exclude_dups and d.dup) }}"><td class="num">{{ d.date }}</td><td>{{ d.name }}</td><td>{{ d.source or '-' }}{% if d.mk %} <span class="tag">marketing</span>{% endif %}</td><td class="num">{{ d.value|usd }}</td><td>{% if d.repeat %}<span class="tag auto">earlier win - excluded</span>{% elif d.dup %}<span class="tag auto">duplicate account{{ ' - excluded' if cfg.exclude_dups }}</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

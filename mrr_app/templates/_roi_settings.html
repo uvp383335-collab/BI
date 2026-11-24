@@ -1,0 +1,55 @@
+<form method="post" action="{{ url_for('save_roi_settings') }}" class="card" id="marketing-roi">
+  <h2 style="margin-top:0"><span class="codes"><code>CM-07</code></span>Marketing ROI by channel</h2>
+  <p class="muted" style="margin:0 0 12px;font-size:12.5px">ROI = new-business pipeline created in the period from marketing lead sources ÷ marketing spend (spec CM-07). Pipeline from the <code>deals</code> collection ({{ roi.n_deals }} {{ roi.provider }} deals, {{ roi.has_arr }} with ARR) by created date and lead source; spend from the P&amp;L accounts below.</p>
+  {% if not roi.n_deals %}<div class="flash err">No {{ roi.provider }} deals in MongoDB yet - run a CRM sync first.</div>{% endif %}
+  <div class="row" style="gap:28px;align-items:flex-start;flex-wrap:wrap">
+    <label>CRM<br><select name="roi_provider">{% for p in roi.providers %}<option value="{{ p }}" {{ 'selected' if p == roi.provider }}>{{ p }}</option>{% endfor %}</select>
+      <div class="muted" style="font-size:12px;max-width:200px">Spec: Salesforce Opportunities (LeadSource, Campaign).</div></label>
+    <label>Pipeline value<br><select name="roi_value_field">
+        <option value="arr" {{ 'selected' if roi.value_field == 'arr' }}>Deal ARR (arr){{ ' ★' }}</option>
+        <option value="amount" {{ 'selected' if roi.value_field == 'amount' }}>Deal amount (incl. one-time)</option></select>
+      <div class="muted" style="font-size:12px;max-width:240px">Spec: ARR__c. {% if not roi.has_arr %}<b style="color:var(--warn)">No ARR on the synced deals</b> - falls back to amount.{% endif %}</div></label>
+    <label>Flag ROI below (x)<br><input type="text" name="roi_threshold" value="{{ '%g'|format(roi.threshold) }}" style="width:70px">
+      <div class="muted" style="font-size:12px;max-width:200px">1x = pipeline smaller than spend.</div></label>
+  </div>
+
+  <div class="row" style="gap:36px;align-items:flex-start;margin-top:14px;flex-wrap:wrap">
+    <div><div class="muted" style="font-size:12px;margin-bottom:6px">Marketing lead sources (count toward blended / programs pipeline)</div>
+      {% for s in roi.sources %}<label style="display:block;margin:3px 0"><input type="checkbox" name="roi_sources" value="{{ s }}" {{ 'checked' if s in (roi.mk_sources or []) }}> {{ s }} <span class="muted" style="font-size:12px">{{ roi.source_counts[s] }} deals</span>{{ ' ★' if s in roi.mk_auto }}</label>{% else %}<span class="muted">No lead sources on the deals.</span>{% endfor %}</div>
+    <div><div class="muted" style="font-size:12px;margin-bottom:6px">Deal types counted as new business</div>
+      {% for t in roi.types %}<label style="display:block;margin:3px 0"><input type="checkbox" name="roi_types" value="{{ t }}" {{ 'checked' if t in (roi.nb_types or []) }}> {{ t }} <span class="muted" style="font-size:12px">{{ roi.type_counts[t] }} deals</span>{{ ' ★' if t in roi.nb_auto }}</label>{% else %}<span class="muted">No deal types found.</span>{% endfor %}</div>
+    <div><div class="muted" style="font-size:12px;margin-bottom:6px">P&amp;L accounts: <b>Blended</b> = total marketing spend · <b>Programs</b> = program spend</div>
+      {% macro accrow(aid, name) %}<tr><td>{{ name }}{{ ' ★' if aid in roi.bl_auto }}</td>
+          <td style="text-align:center"><input type="checkbox" name="roi_blended" value="{{ aid }}" {{ 'checked' if aid in roi.blended_ids }}></td>
+          <td style="text-align:center"><input type="checkbox" name="roi_programs" value="{{ aid }}" {{ 'checked' if aid in roi.programs_ids }}></td></tr>{% endmacro %}
+      {% set shown = roi.bl_auto + roi.blended_ids + roi.programs_ids %}
+      <table style="width:auto"><thead><tr><th>Account</th><th>Blended</th><th>Programs</th></tr></thead><tbody>
+      {% for aid, name in roi.accounts if aid in shown %}{{ accrow(aid, name) }}{% else %}<tr><td colspan="3" class="muted">No marketing accounts picked.</td></tr>{% endfor %}
+      </tbody></table>
+      <details style="margin-top:6px"><summary class="muted" style="font-size:12px;cursor:pointer">Show all {{ roi.accounts|length }} P&amp;L expense accounts</summary>
+      <table style="width:auto"><tbody>{% for aid, name in roi.accounts if aid not in shown %}{{ accrow(aid, name) }}{% endfor %}</tbody></table></details>
+      <div class="muted" style="font-size:12px;max-width:340px;margin-top:6px">Oryon: blended = all 61xx marketing accounts; programs = the same minus salaries and payroll taxes &amp; benefits (6110, 6115).</div></div>
+  </div>
+
+  <h3 style="margin:18px 0 6px">Channels</h3>
+  <p class="muted" style="margin:0 0 10px;font-size:12.5px">Channel ROI = pipeline from the channel's lead sources ÷ spend on the channel's P&amp;L accounts. Only spend that is in MongoDB (the P&amp;L snapshots) is used - a channel needs its own expense account.</p>
+  {% for c in roi.channels + [{'name': '', 'sources': [], 'gl_accounts': []}] %}
+  {% set i = loop.index0 %}
+  <div style="border:1px solid var(--line, #263049);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+    <div class="row" style="gap:28px;align-items:flex-start;flex-wrap:wrap">
+      <div><label>{{ 'Channel' if c.name else 'Add a channel' }}<br><input type="text" name="roi_ch_{{ i }}_name" value="{{ c.name }}" size="16" placeholder="channel name"></label>
+        {% if c.name %}<div style="font-size:12px;margin-top:4px"><label><input type="checkbox" name="roi_ch_{{ i }}_remove"> remove</label></div>{% endif %}</div>
+      <div><div class="muted" style="font-size:12px;margin-bottom:4px">Lead sources</div>
+        <div style="columns:2;column-gap:18px">{% for s in roi.sources %}<label style="display:block;margin:2px 0;font-size:12.5px"><input type="checkbox" name="roi_ch_{{ i }}_sources" value="{{ s }}" {{ 'checked' if s in c.sources }}> {{ s }}</label>{% endfor %}</div></div>
+      <div><div class="muted" style="font-size:12px;margin-bottom:4px">Spend = P&amp;L accounts</div>
+        <select name="roi_ch_{{ i }}_gl" multiple size="5" style="min-width:260px">
+          {% for aid, name in roi.accounts %}<option value="{{ aid }}" {{ 'selected' if aid in c.gl_accounts or name in c.gl_accounts or name.split(' ')[0] in c.gl_accounts }}>{{ name }}</option>{% endfor %}
+        </select></div>
+    </div>
+  </div>
+  {% endfor %}
+  <div style="margin-top:12px"><button class="btn" type="submit">Save marketing ROI settings</button></div>
+</form>
+<form method="post" action="{{ url_for('reset_roi_settings') }}" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset marketing ROI settings to automatic</button>
+</form>

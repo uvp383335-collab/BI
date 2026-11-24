@@ -1,0 +1,14 @@
+<form method="post" action="{{ url_for('save_div_settings') }}" class="card" id="diversification">
+  <h2 style="margin-top:0"><span class="codes"><code>ER-05</code></span>Customer &amp; revenue diversification</h2>
+  <p class="muted" style="margin:0 0 12px;font-size:12.5px">Top-5 share = revenue of the 5 largest customer groups ÷ all revenue, trailing 12 months (spec ER-05). Same build as <a href="#concentration">Customer concentration (CM-02)</a>: the invoices, the item mapping (annual subscriptions spread 1/12 per month), CAD→USD rates, and parent grouping - {{ 'on' if div.group_parent else 'off' }}, set under CM-02. No lead-source / marketing settings apply to this metric.</p>
+  <div class="row" style="gap:28px;align-items:flex-start">
+    <label>Top N customer groups<br><input type="number" name="div_top_n" value="{{ div.top_n }}" min="1" max="100" style="width:80px">
+      <div class="muted" style="font-size:12px;max-width:220px">Spec: 5 ★ (preselected).</div></label>
+    <label>Flag a share above (%)<br><input type="text" name="div_threshold" value="{{ '%g'|format(div.threshold) }}" style="width:70px">
+      <div class="muted" style="font-size:12px;max-width:220px">0 = off. The spec sets no threshold (direction: down - lower is better).</div></label>
+  </div>
+  <div style="margin-top:12px"><button class="btn" type="submit">Save diversification settings</button></div>
+</form>
+<form method="post" action="{{ url_for('reset_div_settings') }}" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset diversification settings (top 5)</button>
+</form>

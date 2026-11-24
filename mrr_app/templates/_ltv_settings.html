@@ -1,0 +1,15 @@
+<form method="post" action="{{ url_for('save_ltv_settings') }}" class="card" id="ltv">
+  <h2 style="margin-top:0"><span class="codes"><code>VC-07 · VC-14</code></span>LTV / CAC</h2>
+  <p class="muted" style="margin:0 0 10px;font-size:12.5px">LTV/CAC uses the CAC page (S&amp;M accounts above, new logos, gross margin) and the trailing-12-month GRR from the Retention page. Used for both new customers (VC-07) and the whole base (VC-14, which also uses ARR and active customers from the MRR page). Pre-set to the Oryon spec.</p>
+  <div class="row" style="gap:28px;align-items:flex-start">
+    <label>Lifetime cap (months)<br><input type="number" name="ltv_cap_months" value="{{ settings.ltv_cap_months|int }}" min="1" max="600" style="width:90px">
+      <div class="muted" style="font-size:12px;max-width:260px">Expected lifetime = 1 ÷ monthly churn, capped here (spec: 84 = 7 years).</div></label>
+    <label>Threshold (x)<br><input type="number" name="ltv_threshold" value="{{ settings.ltv_threshold }}" min="0.1" step="0.1" style="width:90px">
+      <div class="muted" style="font-size:12px;max-width:220px">LTV/CAC below this is a warning (spec: 3.0x).</div></label>
+    <label>GRR used for churn<br><select name="ltv_grr_scope">
+        <option value="all" {{ 'selected' if settings.ltv_grr_scope != 'subscription' }}>All recurring (subscription + retainers) ★</option>
+        <option value="subscription" {{ 'selected' if settings.ltv_grr_scope == 'subscription' }}>Subscription only</option></select>
+      <div class="muted" style="font-size:12px;max-width:280px">Company TTM GRR, no filters (spec), same as the Retention page.</div></label>
+  </div>
+  <div style="margin-top:12px"><button class="btn" type="submit">Save LTV/CAC settings</button></div>
+</form>

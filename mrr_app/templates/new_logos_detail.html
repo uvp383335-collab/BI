@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}New logos {{ period }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:12.5px;padding:7px 6px} td.num{white-space:nowrap}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}New logos · {{ period }}</h1>
+  <p class="sub">{{ n }} new logos · new-logo ARR {{ total|usd }} · dated to the close month (first billing month − {{ info.lag }})</p></div>
+  <div class="row"><a class="btn ghost" href="{{ url_for('newlogo_page') }}">← Back</a>
+  <a class="btn ghost" href="{{ url_for('newlogo_detail', period=period, format='csv') }}">Download CSV</a></div>
+</div>
+<div class="card scroll">
+<table>
+  <thead><tr><th>#</th><th>Close month</th><th>First billed</th><th>QuickBooks customer</th><th>Salesforce account</th><th>Segment</th><th>Linked by</th>
+    <th class="num">First-month MRR</th><th class="num">New-logo ARR</th><th></th></tr></thead>
+  <tbody>
+  {% for l in logos %}
+    <tr {% if not l.counted %}style="opacity:.5"{% endif %}>
+      <td class="muted">{{ loop.index }}</td><td>{{ l.close_month }}</td><td>{{ l.billing_month }}</td>
+      <td>{{ l.customer_name or '-' }}<div class="muted" style="font-size:11px">id {{ l.customer }}</div></td>
+      <td>{{ l.account_name or '-' }}{% if l.parent_id %}<div class="muted" style="font-size:11px">parent {{ l.parent_id }}</div>{% endif %}</td>
+      <td>{{ l.segment }}</td><td class="muted">{{ l.link_method }}</td>
+      <td class="num">{{ l.first_mrr|usd }}</td><td class="num"><b>{{ l.arr|usd }}</b></td>
+      <td>{% if l.subsidiary_of_existing %}<span class="tag {{ 'auto' if not l.counted else '' }}">{{ 'subsidiary · expansion' if not l.counted else 'subsidiary' }}</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

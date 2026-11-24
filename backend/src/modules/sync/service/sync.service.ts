@@ -6,6 +6,7 @@ import { invoiceRepository } from '../repository/invoice.repository'
 import { plSnapshotRepository } from '../repository/plSnapshot.repository'
 import { plItemSnapshotRepository } from '../repository/plItemSnapshot.repository'
 import { plMonthlySnapshotRepository } from '../repository/plMonthlySnapshot.repository'
+import { balanceSheetMonthlySnapshotRepository } from '../repository/balanceSheetMonthlySnapshot.repository'
 import { salesforceAccountRepository } from '../repository/salesforceAccount.repository'
 import { salesforceCampaignRepository, SalesforceCampaignUpsertInput } from '../repository/salesforceCampaign.repository'
 import { cashBalanceSnapshotRepository } from '../repository/cashBalanceSnapshot.repository'
@@ -14,7 +15,7 @@ import { cashBalanceSnapshotRepository } from '../repository/cashBalanceSnapshot
 // plMetrics.service.ts) — reused here rather than duplicated.
 import { parseProfitAndLoss, PLLineItem } from '../../metrics/service/plParser'
 import { shiftMonth, latestClosedMonth, monthRangeUtc, monthToDateRange } from '../../metrics/service/revenueRollForward.service'
-import { extractSectionTotals, extractFlatReportGrandTotal, leafAccountAmounts } from '../../metrics/service/reportParser'
+import { extractSectionTotals, extractFlatReportGrandTotal, leafAccountAmounts, extractLeafAccountsByColumn } from '../../metrics/service/reportParser'
 import { funnelStageEventRepository, FunnelStageEventInput } from '../repository/funnelStageEvent.repository'
 import { pipelineStageDefinitionRepository, PipelineStageDefinitionInput } from '../repository/pipelineStageDefinition.repository'
 import { productRepository, ProductCategoryUpdate } from '../repository/product.repository'
@@ -154,6 +155,7 @@ async function executeSyncJob(orgId: string, provider: string, jobId: string, fo
       const items = await syncQuickBooksItems(orgId, provider, jobId, accessToken, realmId)
       await syncQuickBooksProfitAndLoss(orgId, provider, jobId, accessToken, realmId)
       await syncQuickBooksProfitAndLossMonthly(orgId, provider, jobId, accessToken, realmId)
+      await syncQuickBooksBalanceSheetMonthly(orgId, provider, jobId, accessToken, realmId)
       await syncQuickBooksItemProfitAndLoss(orgId, provider, jobId, accessToken, realmId, items)
       await syncQuickBooksCashBalance(orgId, provider, jobId, accessToken, realmId)
     } else {
@@ -796,6 +798,8 @@ async function syncSalesforceOpportunitiesAsDeals(
       nextStep: opportunity.NextStep ?? undefined,
       probability: opportunity.Probability ?? undefined,
       description: opportunity.Description ?? undefined,
+      arr: opportunity.ARR ?? undefined,
+      arrChange: opportunity.ARRChange ?? undefined,
       createdByName: opportunity.CreatedByName ?? undefined,
       lastModifiedByName: opportunity.LastModifiedByName ?? undefined,
       lastModifiedAt: opportunity.LastModifiedDate ? new Date(opportunity.LastModifiedDate) : undefined,
@@ -879,8 +883,11 @@ function toInvoiceBillingAddress(addr?: QuickBooksAddress) {
 /**
  * Syncs QuickBooks Invoices — the raw material for the customer revenue
  * roll-forward that VC-01/VC-02 (and every other QuickBooks-revenue metric)
- * read from, plus each line's Item reference/amount and the invoice's own
- * "Bill to" address (see Invoice.model.ts for why those are each kept).
+ * read from, plus each line's Item reference/amount, its optional Class
+ * reference, and the invoice's own "Bill to" address (see Invoice.model.ts
+ * for why those are each kept). ClassRef is only present when the org has
+ * QuickBooks' opt-in Class tracking enabled and the line was assigned one —
+ * absent otherwise, which is a normal missing field, not a sync failure.
  */
 async function syncQuickBooksInvoices(
   orgId: string,
@@ -908,7 +915,12 @@ async function syncQuickBooksInvoices(
       // Only sales-item lines carry a resolvable Item ref — discount/subtotal/description lines don't and are dropped.
       lines: (invoice.Line ?? [])
         .filter((line) => line.SalesItemLineDetail?.ItemRef?.value)
-        .map((line) => ({ itemId: line.SalesItemLineDetail!.ItemRef!.value, amount: line.Amount ?? 0 })),
+        .map((line) => ({
+          itemId: line.SalesItemLineDetail!.ItemRef!.value,
+          amount: line.Amount ?? 0,
+          classId: line.SalesItemLineDetail?.ClassRef?.value,
+          className: line.SalesItemLineDetail?.ClassRef?.name
+        })),
       billingAddress: toInvoiceBillingAddress(invoice.BillAddr)
     }))
 
@@ -1121,6 +1133,67 @@ async function syncQuickBooksProfitAndLossMonthly(
 
   await plMonthlySnapshotRepository.upsertMany(orgId, provider, snapshots)
   await syncJobRepository.updateEntityProgress(jobId, 'plMonthlySnapshots', { total: snapshots.length, synced: snapshots.length, status: 'completed' })
+}
+
+/**
+ * Refreshes `BalanceSheetMonthlySnapshot` for the same trailing 36 months as
+ * `syncQuickBooksProfitAndLossMonthly`, mirroring its "one report call for
+ * the whole window" shape: a single `summarize_column_by=Month` Balance
+ * Sheet report returns one column per month natively, so there's no need
+ * for 36 separate calls. Unlike P&L (incremental per period), a Balance
+ * Sheet column is a point-in-time snapshot — QuickBooks reports each month
+ * column as that month's end-of-month balance.
+ *
+ * Same trailing-grand-total-column quirk and month-alignment safety as
+ * `syncQuickBooksProfitAndLossMonthly`: QuickBooks appends a "Total" column
+ * after the real month columns, filtered out before aligning by index to
+ * `months` (assumed chronological ascending); a length mismatch skips the
+ * sync rather than risk misaligned data.
+ */
+async function syncQuickBooksBalanceSheetMonthly(
+  orgId: string,
+  provider: string,
+  jobId: string,
+  accessToken: string,
+  realmId: string
+): Promise<void> {
+  await syncJobRepository.updateEntityProgress(jobId, 'balanceSheetMonthlySnapshots', { status: 'syncing' })
+  await syncJobRepository.updateProgress(jobId, 97, 'Syncing monthly balance sheet snapshots')
+
+  const endMonth = latestClosedMonth()
+  const startMonth = shiftMonth(endMonth, -(TRAILING_MONTHS_FOR_GA - 1))
+  const months = Array.from({ length: TRAILING_MONTHS_FOR_GA }, (_, i) => shiftMonth(startMonth, i))
+
+  const { startDate } = monthToDateRange(startMonth)
+  const { endDate } = monthToDateRange(endMonth)
+
+  const report = await QuickBooksService.getBalanceSheetReport(accessToken, realmId, endDate, 'Month', startDate)
+  const columns = report.Columns.Column.slice(1).map((c) => c.ColTitle || 'Total')
+  const monthColumns = columns.filter((column) => column !== 'Total')
+  const sectionTotals = extractSectionTotals(report)
+  const leafAccounts = extractLeafAccountsByColumn(report)
+
+  if (monthColumns.length !== months.length) {
+    // Can't safely align columns to months — skip rather than store mis-aligned data.
+    await syncJobRepository.updateEntityProgress(jobId, 'balanceSheetMonthlySnapshots', { total: months.length, synced: 0, status: 'completed' })
+    return
+  }
+
+  const fetchedAt = new Date()
+  const snapshots = months.map((month, i) => {
+    const column = monthColumns[i]
+    const { endDate: asOfDate } = monthToDateRange(month)
+    const monthSectionTotals: Record<string, Record<string, number>> = {}
+    for (const [section, totals] of Object.entries(sectionTotals)) {
+      monthSectionTotals[section] = { Total: totals[column] ?? 0 }
+    }
+    // Per-account month-end balances (CB-05 picks its unrestricted cash accounts from these).
+    const accounts = leafAccounts.map((a) => ({ id: a.id, name: a.name, section: a.section, amount: a.amounts[column] ?? 0 }))
+    return { month, asOfDate, sectionTotals: monthSectionTotals, accounts, fetchedAt }
+  })
+
+  await balanceSheetMonthlySnapshotRepository.upsertMany(orgId, provider, snapshots)
+  await syncJobRepository.updateEntityProgress(jobId, 'balanceSheetMonthlySnapshots', { total: snapshots.length, synced: snapshots.length, status: 'completed' })
 }
 
 // QuickBooks' Reports API only accepts a sellable Item as a report `item`

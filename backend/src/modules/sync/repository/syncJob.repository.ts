@@ -12,6 +12,7 @@ export type EntityKey =
   | 'items'
   | 'plItemSnapshots'
   | 'plMonthlySnapshots'
+  | 'balanceSheetMonthlySnapshots'
 
 // Sync jobs run fire-and-forget in-process (executeSyncJob isn't backed by a
 // durable queue/worker yet) — a dev-server restart or an unhandled crash

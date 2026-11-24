@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}MRR {{ month }} · Oryon{% endblock %}
+{% block body %}
+<div class="row" style="justify-content:space-between">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}MRR by customer · {{ month }}</h1>
+  <p class="sub">{{ custs|length }} active customers · total MRR {{ total|usd }} · ARR {{ (total*12)|usd }}</p></div>
+  <div class="row"><a class="btn ghost" href="{{ url_for('mrr_page') }}">← Back</a>
+  <a class="btn ghost" href="{{ url_for('month_csv', month=month) }}">Download CSV</a></div>
+</div>
+<div class="card scroll">
+<table>
+  <thead><tr><th>#</th><th>Customer (customerRecordId)</th><th>Currency</th><th class="num">Subscription MRR</th><th class="num">Retainer MRR</th><th class="num">Total MRR</th><th class="num">ARR</th><th class="num">Share</th></tr></thead>
+  <tbody>
+  {% for c, sub, ret, tot, arr in custs %}
+    <tr><td class="muted">{{ loop.index }}</td><td>{{ c }}</td><td>{{ 'CAD → USD' if is_cad.get(c) else 'USD' }}</td>
+    <td class="num">{{ sub|usd }}</td><td class="num">{{ ret|usd }}</td><td class="num"><b>{{ tot|usd }}</b></td>
+    <td class="num">{{ arr|usd }}</td>
+    <td class="num">{{ '%.2f%%'|format(100*tot/total) if total else '-' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

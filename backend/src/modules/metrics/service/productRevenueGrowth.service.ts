@@ -194,6 +194,111 @@ export async function getInvoiceRevenueGrowthByProduct(orgId: string, options: I
   return { products: resultProducts }
 }
 
+export interface InvoiceRevenueGrowthByClassOptions {
+  fromYear?: string
+}
+
+export interface InvoiceRevenueGrowthByClassResult {
+  /** One series per QuickBooks Class that has any synced invoice revenue in range. `id`/`name` are the Class's QuickBooks id/name. */
+  classes: ProductRevenueGrowthProduct[]
+}
+
+/**
+ * "Revenue growth by class," the Class-dimension counterpart to
+ * getInvoiceRevenueGrowthByProduct above — same month-over-month shape, read
+ * entirely from this org's own synced QuickBooks `Invoice` line items, never
+ * calling QuickBooks live. Unlike product, there's no synced Class catalog
+ * to join against: `invoiceRepository.getRevenueByClassAndMonth` carries
+ * each class's name straight off the invoice line itself, so every class
+ * that appears on a synced line in range shows up here, named from that
+ * line. QuickBooks Class tracking is an opt-in, org-wide setting — an org
+ * that never enabled it (or hasn't run a forced resync since this field was
+ * added) simply gets `{ classes: [] }`, not an error.
+ */
+export async function getInvoiceRevenueGrowthByClass(orgId: string, options: InvoiceRevenueGrowthByClassOptions): Promise<InvoiceRevenueGrowthByClassResult> {
+  const startDate = `${options.fromYear ?? '2018'}-01-01`
+  const endDate = lastCompletedMonthEndDate()
+  const canonicalMonths = monthRangeYYYYMM(startDate, endDate)
+
+  const from = new Date(`${startDate}T00:00:00.000Z`)
+  const to = new Date(`${endDate}T23:59:59.999Z`)
+
+  const rows = await invoiceRepository.getRevenueByClassAndMonth(orgId, 'quickbooks', from, to)
+
+  const revenueByClassMonth = new Map<string, Map<string, number>>()
+  const classNames = new Map<string, string>()
+  for (const row of rows) {
+    classNames.set(row.classId, row.className)
+    if (!revenueByClassMonth.has(row.classId)) revenueByClassMonth.set(row.classId, new Map())
+    revenueByClassMonth.get(row.classId)!.set(row.month, row.revenue)
+  }
+
+  const classes: ProductRevenueGrowthProduct[] = Array.from(revenueByClassMonth.entries())
+    .map(([classId, monthRevenue]) => ({ id: classId, name: classNames.get(classId) ?? classId, months: buildInvoiceMonthlySeries(canonicalMonths, monthRevenue) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  return { classes }
+}
+
+export interface InvoiceRevenueGrowthByClassDetailLine {
+  providerRecordId: string
+  customerRecordId: string
+  customerName: string | null
+  /** "YYYY-MM-DD" */
+  txnDate: string
+  lineAmount: number
+  invoiceTotalAmount: number
+}
+
+export interface InvoiceRevenueGrowthByClassDetailResult {
+  classId: string
+  className: string
+  months: MonthlyRevenueGrowthPoint[]
+  /** Every synced invoice line behind the months above — sums to months[].revenue exactly, same as getInvoiceRevenueGrowthByProductDetail's lines. */
+  lines: InvoiceRevenueGrowthByClassDetailLine[]
+}
+
+/**
+ * Record-level backing data for one class's series in "Revenue growth by
+ * class," for its "export to Excel" verification button. Mirrors
+ * getInvoiceRevenueGrowthByProductDetail exactly, backed by
+ * invoiceRepository.getInvoiceLinesForClass instead of getInvoiceLinesForItem.
+ */
+export async function getInvoiceRevenueGrowthByClassDetail(
+  orgId: string,
+  classId: string,
+  className: string,
+  options: InvoiceRevenueGrowthByClassOptions
+): Promise<InvoiceRevenueGrowthByClassDetailResult> {
+  const startDate = `${options.fromYear ?? '2018'}-01-01`
+  const endDate = lastCompletedMonthEndDate()
+  const canonicalMonths = monthRangeYYYYMM(startDate, endDate)
+
+  const from = new Date(`${startDate}T00:00:00.000Z`)
+  const to = new Date(`${endDate}T23:59:59.999Z`)
+  const lines = await invoiceRepository.getInvoiceLinesForClass(orgId, 'quickbooks', from, to, classId)
+
+  const revenueByMonth = new Map<string, number>()
+  for (const line of lines) {
+    const month = line.txnDate.toISOString().slice(0, 7)
+    revenueByMonth.set(month, (revenueByMonth.get(month) ?? 0) + line.lineAmount)
+  }
+
+  return {
+    classId,
+    className,
+    months: buildInvoiceMonthlySeries(canonicalMonths, revenueByMonth),
+    lines: lines.map((line) => ({
+      providerRecordId: line.providerRecordId,
+      customerRecordId: line.customerRecordId,
+      customerName: line.customerName,
+      txnDate: line.txnDate.toISOString().slice(0, 10),
+      lineAmount: line.lineAmount,
+      invoiceTotalAmount: line.invoiceTotalAmount
+    }))
+  }
+}
+
 export interface InvoiceRevenueGrowthByStateOptions {
   fromYear?: string
   /** Narrows to one product's revenue by state instead of every product combined. */

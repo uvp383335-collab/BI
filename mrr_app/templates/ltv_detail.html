@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}LTV / CAC {{ r.month }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:13px;padding:8px 10px}</style>
+<p><a href="{{ url_for('ltv_page') }}">← LTV / CAC</a> · <a href="{{ url_for('cac_detail', month=r.month) }}">CAC details for this window</a></p>
+<h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}LTV / CAC · 12 months {{ r.start }} → {{ r.month }}{% if not r.complete %} <span class="tag auto">incomplete</span>{% endif %}</h1>
+<p class="sub">Step by step, with this window's numbers - new customers (VC-07), then the whole base (VC-14)</p>
+<div class="card">
+<table>
+  <tbody>
+    <tr><td>TTM GRR (cohort at {{ r.month[:4]|int - 1 }}{{ r.month[4:] }} → {{ r.month }})</td><td class="num"><b>{{ '%.2f%%'|format(r.grr) if r.grr is not none else '-' }}</b></td></tr>
+    <tr><td>Monthly churn c = 1 − ({{ '%.4f'|format(r.grr / 100) if r.grr is not none else '-' }})<sup>1/12</sup></td><td class="num">{{ '%.3f%%'|format(r.churn * 100) if r.churn is not none else '-' }}</td></tr>
+    <tr><td>Expected lifetime = min(1 ÷ c, {{ info.cap|int }}) = min({{ '%.1f'|format(r.lifetime_raw) if r.lifetime_raw is defined and r.lifetime_raw != inf else '∞' }}, {{ info.cap|int }})</td><td class="num"><b>{{ '%.1f'|format(r.lifetime) if r.lifetime is not none else '-' }} months</b>{% if r.capped %} <span class="tag auto">capped</span>{% endif %}</td></tr>
+    <tr><td>New-logo ARR ÷ (new logos × 12) = {{ r.new_logo_arr|usd }} ÷ ({{ r.new_logos }} × 12)</td><td class="num">{{ (r.new_logo_arr / (r.new_logos * 12)) |usd if r.new_logos else '-' }}</td></tr>
+    <tr><td>× gross margin (TTM)</td><td class="num">{{ '%.2f%%'|format(r.gm * 100) if r.gm is not none else '-' }}</td></tr>
+    <tr><td>= gross profit per new logo per month</td><td class="num">{{ r.gp_month|usd }}</td></tr>
+    <tr><td><b>LTV</b> = {{ r.gp_month|usd }} × {{ '%.1f'|format(r.lifetime) if r.lifetime is not none else '-' }}</td><td class="num"><b>{{ r.ltv|usd }}</b></td></tr>
+    <tr><td><b>CAC</b> = S&amp;M {{ r.sm|usd }} ÷ {{ r.new_logos }} new logos</td><td class="num"><b>{{ r.cac|usd }}</b></td></tr>
+    <tr><td><b>LTV / CAC</b> = {{ r.ltv|usd }} ÷ {{ r.cac|usd }}</td><td class="num"><b class="{{ 'neg' if r.ltv_cac and r.ltv_cac < info.threshold else 'pos' }}">{{ '%.2fx'|format(r.ltv_cac) if r.ltv_cac else '-' }}</b> <span class="muted">(threshold {{ info.threshold }}x)</span></td></tr>
+    <tr><td class="muted">Check: lifetime ÷ CAC payback = {{ '%.1f'|format(r.lifetime) if r.lifetime is not none else '-' }} ÷ {{ '%.2f'|format(r.payback) if r.payback else '-' }}</td><td class="num muted">{{ '%.2fx'|format(r.lifetime / r.payback) if r.lifetime and r.payback else '-' }}</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="card">
+<h2 style="margin-top:0">Whole base (VC-14)</h2>
+<table>
+  <tbody>
+    <tr><td>ARR at {{ r.month }} ÷ (active customers × 12) = {{ r.arr|usd }} ÷ ({{ r.customers }} × 12)</td><td class="num">{{ r.base_avg_mrr|usd }}</td></tr>
+    <tr><td>× gross margin (TTM) {{ '%.2f%%'|format(r.gm * 100) if r.gm is not none else '-' }} = gross profit per customer per month</td><td class="num">{{ r.base_gp_month|usd }}</td></tr>
+    <tr><td><b>LTV<sub>base</sub></b> = {{ r.base_gp_month|usd }} × {{ '%.1f'|format(r.lifetime) if r.lifetime is not none else '-' }} months</td><td class="num"><b>{{ r.base_ltv|usd }}</b></td></tr>
+    <tr><td><b>LTV / CAC, whole base</b> = {{ r.base_ltv|usd }} ÷ {{ r.cac|usd }}</td><td class="num"><b class="{{ 'neg' if r.base_ltv_cac and r.base_ltv_cac < info.threshold else 'pos' }}">{{ '%.2fx'|format(r.base_ltv_cac) if r.base_ltv_cac else '-' }}</b></td></tr>
+  </tbody>
+</table>
+<p class="muted" style="font-size:12px;margin:8px 0 0"><a href="{{ url_for('month_detail', month=r.month) }}">The {{ r.customers }} active customers at {{ r.month }}</a></p>
+</div>
+{% endblock %}

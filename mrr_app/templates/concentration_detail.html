@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Concentration {{ r.month }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:13px;padding:7px 10px} td.num{white-space:nowrap}</style>
+<p><a href="{{ url_for('conc_page', line=line) }}">← Customer concentration</a></p>
+<h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Largest customers · TTM to {{ r.month }}{% if line != 'All' %} · {{ line }}{% endif %}</h1>
+<p class="sub">{{ r.window[0] }} to {{ r.window[-1] }} · {{ r.groups }} customer groups · total {{ r.total|usd }}</p>
+<div class="card">
+<table>
+  <thead><tr><th>#</th><th>Customer group</th><th class="num">Revenue, 12 months</th><th class="num">Share</th><th class="num">Cumulative</th></tr></thead>
+  <tbody>
+  {% set ns = namespace(c=0) %}
+  {% for g in r.ranking %}{% set ns.c = ns.c + g.share %}
+    <tr {% if loop.index > info.top_n %}style="opacity:.55"{% endif %}><td>{{ loop.index }}</td><td>{{ g.name }}</td><td class="num">{{ g.revenue|usd }}</td>
+      <td class="num">{{ '%.2f%%'|format(g.share) }}</td><td class="num">{{ '%.2f%%'|format(ns.c) }}</td></tr>
+    {% if loop.index == info.top_n %}<tr><td></td><td><b>Top-{{ info.top_n }} share</b></td><td class="num"><b>{{ r.top|usd }}</b></td><td class="num"><b>{{ '%.2f%%'|format(r.share) }}</b></td><td></td></tr>{% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+<p class="muted" style="font-size:12px;margin:8px 0 0">Rows after #{{ info.top_n }} are shown faded for context.</p>
+</div>
+{% endblock %}

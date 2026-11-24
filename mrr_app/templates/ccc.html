@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Cash conversion cycle · Oryon{% endblock %}
+{% block body %}
+<style>.k5 .v{font-size:19px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Cash conversion cycle</h1>
+  <p class="sub">Days to turn working capital into cash · DSO + DIO − DPO · balances at the quarter's last month · AR = {{ info.members.ar|join(' + ') or '-' }} · inventory = {{ info.members.inventory|join(' + ') or 'none' }} · AP = {{ info.members.ap|join(' + ') or '-' }} (<a href="{{ url_for('settings_page') }}#ccc">settings</a>)</p></div>
+  <form class="row" method="get">
+    <select name="view"><option value="quarter" {{ 'selected' if view=='quarter' }}>Quarter end (spec)</option><option value="month" {{ 'selected' if view=='month' }}>Each month (3 months ending)</option></select>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('ccc_csv') }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not info.n %}<div class="card">No Balance Sheet snapshots in <code>{{ info.collection }}</code> yet - run a QuickBooks sync.</div>{% elif not rows %}<div class="card">Not enough months yet - a quarter needs 3 P&amp;L months and a Balance Sheet snapshot at its last month.</div>{% else %}
+{% if info.mode == 'sections' %}<div class="flash err" style="background:#2a2a14;color:#e8d98a">No per-account balances in the snapshots yet, so AR / inventory / AP use Balance Sheet section totals{% if not info.members.inventory %} and days inventory can't be calculated (inventory 1300 is inside OtherCurrentAssets){% endif %}. Resync QuickBooks after the backend update to pick individual accounts in <a href="{{ url_for('settings_page') }}#ccc">Settings</a>.</div>{% endif %}
+{% set L = latest %}
+{% if L and L.ar_negative %}<div class="flash err">Data check: AR is negative ({{ L.ar|usd }} at {{ L.month }}) - QuickBooks has customer payments that aren't applied to invoices, so days sales outstanding comes out negative. Apply the payments to their invoices in QuickBooks and resync.</div>{% endif %}
+
+{% if L %}
+<div class="kpis k5" style="grid-template-columns:repeat(5,1fr)">
+  <div class="kpi"><div class="l">Cash conversion cycle · {{ L.label }} <span class="tag auto">Quarterly</span></div><div class="v">{{ '%.1f days'|format(L.ccc) if L.ccc is not none else '-' }}</div>
+    <div class="muted" style="font-size:12px">{% if year_ago and year_ago.ccc is not none and L.ccc is not none %}{{ '%+.1f'|format(L.ccc - year_ago.ccc) }} days vs {{ year_ago.label }}{% endif %}{% if not L.has_inv %} · without days inventory{% endif %}</div></div>
+  <div class="kpi"><div class="l">Days sales outstanding</div><div class="v {{ 'neg' if L.dso is not none and L.dso < 0 }}">{{ '%.1f'|format(L.dso) if L.dso is not none else '-' }}</div><div class="muted" style="font-size:12px">AR {{ L.ar|usd }}</div></div>
+  <div class="kpi"><div class="l">Days inventory</div><div class="v">{{ '%.1f'|format(L.dio) if L.dio is not none else '-' }}</div><div class="muted" style="font-size:12px">{{ ('inventory ' ~ (L.inventory|usd)) if L.has_inv else 'no inventory account chosen' }}</div></div>
+  <div class="kpi"><div class="l">Days payable</div><div class="v">{{ '%.1f'|format(L.dpo) if L.dpo is not none else '-' }}</div><div class="muted" style="font-size:12px">AP {{ L.ap|usd }}</div></div>
+  <div class="kpi"><div class="l">Working capital (AR + inventory − AP)</div><div class="v {{ 'neg' if L.wc < 0 }}">{{ L.wc|usd }}</div></div>
+</div>
+{% endif %}
+
+<div class="card"><h2 style="margin-top:0">Cash conversion cycle and its parts (days)</h2><canvas id="ccc" height="85"></canvas></div>
+<div class="card"><h2 style="margin-top:0">Working capital: AR + inventory − AP</h2><canvas id="wc" height="60"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'Quarter' if view == 'quarter' else 'Month end' }}</th><th class="num">Days</th><th class="num">Revenue (3 mo)</th><th class="num">COGS (3 mo)</th><th class="num">AR</th><th class="num">Inventory</th><th class="num">AP</th><th class="num">DSO</th><th class="num">DIO</th><th class="num">DPO</th><th class="num">CCC</th><th class="num">Working capital</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr>
+      <td>{{ r.label }}{% if view == 'month' and r.quarter_end %} <span class="tag saved">quarter end</span>{% endif %}</td>
+      <td class="num muted">{{ r.days }}</td>
+      <td class="num">{{ r.revenue|usd }}</td><td class="num">{{ r.cogs|usd }}</td>
+      <td class="num {{ 'neg' if r.ar_negative }}">{{ r.ar|usd }}</td>
+      <td class="num">{{ r.inventory|usd if r.has_inv else '-' }}</td>
+      <td class="num">{{ r.ap|usd }}</td>
+      <td class="num {{ 'neg' if r.dso is not none and r.dso < 0 }}">{{ '%.1f'|format(r.dso) if r.dso is not none else '-' }}</td>
+      <td class="num">{{ '%.1f'|format(r.dio) if r.dio is not none else '-' }}</td>
+      <td class="num">{{ '%.1f'|format(r.dpo) if r.dpo is not none else '-' }}</td>
+      <td class="num"><b>{{ '%.1f'|format(r.ccc) if r.ccc is not none else '-' }}</b></td>
+      <td class="num">{{ r.wc|usd }}</td>
+      <td><a href="{{ url_for('ccc_detail', month=r.month) }}">details</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }};
+const fmt = v => (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString('en-US');
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.label), d = v => v == null ? '-' : v.toFixed(1) + ' days';
+new Chart(document.getElementById('ccc'), {data:{labels, datasets:[
+  {type:'line', label:'Cash conversion cycle', data:rows.map(r => r.ccc), borderColor:'#4f8cff', backgroundColor:'#4f8cff', borderWidth:3, order:1},
+  {type:'line', label:'DSO', data:rows.map(r => r.dso), borderColor:'#2fbf71', backgroundColor:'#2fbf71', order:2},
+  {type:'line', label:'DIO', data:rows.map(r => r.dio), borderColor:'#c792ea', backgroundColor:'#c792ea', order:2},
+  {type:'line', label:'DPO', data:rows.map(r => r.dpo), borderColor:'#f0b429', backgroundColor:'#f0b429', order:2}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${d(c.raw)}`}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + ' d'}, grid}}}});
+new Chart(document.getElementById('wc'), {data:{labels, datasets:[
+  {type:'bar', label:'AR', data:rows.map(r => r.ar), backgroundColor:'#2fbf71'},
+  {type:'bar', label:'Inventory', data:rows.map(r => r.has_inv ? r.inventory : null), backgroundColor:'#c792ea'},
+  {type:'bar', label:'AP (shown negative)', data:rows.map(r => -r.ap), backgroundColor:'#ef5350'},
+  {type:'line', label:'Working capital', data:rows.map(r => r.wc), borderColor:'#4f8cff', backgroundColor:'#4f8cff'}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.raw)}`}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+</script>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How the cash conversion cycle is calculated (spec CB-10)</h2>
+  <ul>
+    <li><b>DSO = AR(e) ÷ Revenue_q × D</b> · <b>DIO = Inventory(e) ÷ COGS_q × D</b> · <b>DPO = AP(e) ÷ COGS_q × D</b> · <b>CCC = DSO + DIO − DPO</b></li>
+    <li>Balances at the quarter's last month e ({{ 'by account' if info.mode == 'accounts' else 'by Balance Sheet section until the resync' }}): AR = {{ info.members.ar|join(', ') or '-' }}; inventory = {{ info.members.inventory|join(', ') or 'none' }}; AP = {{ info.members.ap|join(', ') or '-' }}.</li>
+    <li>Revenue and COGS for the quarter from the EBITDA classification; COGS {{ 'includes' if info.include_da else 'excludes' }} D&amp;A in cost of sales ({{ info.cogs_da_names|join(', ') or 'none' }}). D = calendar days in the quarter (92 for Q3).</li>
+    <li>Quarterly by definition. "Each month" uses the 3 months ending that month and that month-end's balances. $ view: working capital = AR + inventory − AP.</li>
+  </ul>
+</div>
+{% endblock %}

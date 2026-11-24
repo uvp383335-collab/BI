@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}CCC {{ r.label }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:13px;padding:8px 10px} td.num{white-space:nowrap}</style>
+<p><a href="{{ url_for('ccc_page') }}">← Cash conversion cycle</a></p>
+<h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Cash conversion cycle · {{ r.label }}</h1>
+<p class="sub">P&amp;L {{ r.window[0] }} to {{ r.window[-1] }} ({{ r.days }} days) · balances at {{ r.month }}{% if not r.quarter_end %} · <b style="color:var(--warn)">not a quarter end</b>{% endif %}</p>
+<div class="card">
+<table><tbody>
+  <tr><td>Revenue, 3 months</td><td class="num">{{ r.revenue|usd }}</td></tr>
+  <tr><td>COGS, 3 months{% if info.include_da %} (incl. {{ r.cogs_da|usd }} D&amp;A in cost of sales){% else %} (excl. {{ r.cogs_da|usd }} D&amp;A in cost of sales){% endif %}</td><td class="num">{{ r.cogs|usd }}</td></tr>
+  {% for c in ['ar', 'inventory', 'ap'] %}
+    <tr><td><b>{{ cats[c] }}</b> at {{ r.month }}</td><td class="num {{ 'neg' if c == 'ar' and r.ar_negative }}"><b>{{ (r[c]|usd) if (c != 'inventory' or r.has_inv) else '-' }}</b></td></tr>
+    {% for l in lines if l.cat == c %}<tr><td style="padding-left:28px" class="muted">{{ l.name }}</td><td class="num muted">{{ l.amount|usd }}</td></tr>{% endfor %}
+    {% if info.mode == 'sections' %}<tr><td style="padding-left:28px" class="muted">section{{ 's' if info.members[c]|length > 1 }}: {{ info.members[c]|join(', ') or 'none' }}</td><td></td></tr>{% endif %}
+  {% endfor %}
+  <tr><td>DSO = {{ r.ar|usd }} ÷ {{ r.revenue|usd }} × {{ r.days }}</td><td class="num">{{ '%.1f days'|format(r.dso) if r.dso is not none else '-' }}</td></tr>
+  <tr><td>DIO = {% if r.has_inv %}{{ r.inventory|usd }} ÷ {{ r.cogs|usd }} × {{ r.days }}{% else %}no inventory account chosen{% endif %}</td><td class="num">{{ '%.1f days'|format(r.dio) if r.dio is not none else '-' }}</td></tr>
+  <tr><td>DPO = {{ r.ap|usd }} ÷ {{ r.cogs|usd }} × {{ r.days }}</td><td class="num">{{ '%.1f days'|format(r.dpo) if r.dpo is not none else '-' }}</td></tr>
+  <tr><td><b>Cash conversion cycle = DSO + DIO − DPO</b></td><td class="num"><b>{{ '%.1f days'|format(r.ccc) if r.ccc is not none else '-' }}</b></td></tr>
+  <tr><td>Working capital = AR + inventory − AP</td><td class="num">{{ r.wc|usd }}</td></tr>
+</tbody></table>
+{% if r.ar_negative %}<p class="muted" style="font-size:12px;margin:8px 0 0">AR is negative: customer payments recorded in QuickBooks without being applied to invoices. DSO can't be meaningful until they're applied.</p>{% endif %}
+</div>
+{% endblock %}

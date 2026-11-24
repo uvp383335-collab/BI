@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}CAC & payback · Oryon{% endblock %}
+{% block body %}
+<style>.k5 .v{font-size:19px;white-space:nowrap} td.num{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}CAC &amp; payback</h1>
+  <p class="sub">Trailing 12 months · S&amp;M from {{ info.n_selected }} expense account{{ 's' if info.n_selected != 1 }} in <code>plmonthlysnapshots</code> (<a href="{{ url_for('settings_page') }}#cac">change in Settings</a>) · new logos and new-logo ARR from the New logos page · gross margin from the P&amp;L</p></div>
+  <form class="row" method="get">
+    <label>From <input type="text" name="from" value="{{ start }}" size="8"></label>
+    <label>To <input type="text" name="to" value="{{ end }}" size="8"></label>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('cac_csv', **{'from': start, 'to': end}) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not info.accounts_saved %}<div class="flash err">CAC uses the automatically selected sales &amp; marketing accounts ({{ info.n_selected }}). <a href="{{ url_for('settings_page') }}#cac">Review and save them in Settings</a>.</div>{% endif %}
+{% if unsaved %}<div class="flash err">{{ unsaved }} product mapping{{ 's' if unsaved != 1 }} still on the automatic suggestion. <a href="{{ url_for('settings_page') }}">Review in Settings</a>.</div>{% endif %}
+{% if not info.pl_first %}<div class="flash err">No P&amp;L snapshots found in <code>plmonthlysnapshots</code>.</div>{% endif %}
+
+{% if latest %}
+<div class="kpis k5" style="grid-template-columns:repeat(5,1fr)">
+  <div class="kpi"><div class="l">CAC payback · TTM to {{ latest.month }}</div><div class="v {{ 'neg' if latest.payback > info.threshold else 'pos' }}">{{ '%.1f'|format(latest.payback) }} months</div>
+    <div class="muted" style="font-size:12px">threshold {{ info.threshold }} · {% if year_ago and year_ago.payback %}year ago {{ '%.1f'|format(year_ago.payback) }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">CAC (S&amp;M ÷ new logos)</div><div class="v">{{ latest.cac|usd }}</div>
+    <div class="muted" style="font-size:12px">{% if year_ago and year_ago.cac %}year ago {{ year_ago.cac|usd }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">S&amp;M per $1 of new ARR</div><div class="v">{{ '%.2f'|format(latest.sm_per_arr) }}x</div></div>
+  <div class="kpi"><div class="l">S&amp;M spend (12 months)</div><div class="v">{{ latest.sm|usd }}</div></div>
+  <div class="kpi"><div class="l">New logos · avg ARR · GM</div><div class="v">{{ latest.new_logos }} · {{ latest.avg_arr|usd }} · {{ '%.1f'|format(latest.gm * 100) }}%</div></div>
+</div>
+{% endif %}
+
+{% if rows %}
+<div class="card"><h2 style="margin-top:0">CAC payback (months) vs the {{ info.threshold }}-month threshold</h2><canvas id="pb" height="80"></canvas></div>
+<div class="card"><h2 style="margin-top:0">CAC and S&amp;M per $1 of new ARR</h2><canvas id="cac" height="80"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>TTM ending</th><th class="num">S&amp;M (12 mo)</th><th class="num">New logos</th><th class="num">New-logo ARR</th><th class="num">Avg ARR</th>
+    <th class="num">Gross margin</th><th class="num">CAC</th><th class="num">Payback (mo)</th><th class="num">S&amp;M / $1 ARR</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr {% if not r.complete %}style="opacity:.55" title="{{ 'Missing P&L months in the window' if not r.has_pl else 'New logos in this window are incomplete (deals closed after ' ~ info.complete_until ~ ' bill after the last invoice month, or the window starts before ' ~ info.first_valid_close ~ ')' }}"{% endif %}>
+      <td>{{ r.month }}{% if r.month[5:7] in ('03','06','09','12') %} <span class="muted">Q{{ (r.month[5:7]|int) // 3 }}</span>{% endif %}{% if not r.complete %} <span class="tag auto">incomplete</span>{% endif %}</td>
+      <td class="num">{{ r.sm|usd }}</td><td class="num">{{ r.new_logos }}</td><td class="num">{{ r.new_logo_arr|usd }}</td><td class="num">{{ r.avg_arr|usd }}</td>
+      <td class="num">{{ '%.1f%%'|format(r.gm * 100) if r.gm is not none else '-' }}</td>
+      <td class="num"><b>{{ r.cac|usd }}</b></td>
+      <td class="num {{ 'neg' if r.payback and r.payback > info.threshold else 'pos' if r.payback else '' }}"><b>{{ '%.2f'|format(r.payback) if r.payback else '-' }}</b></td>
+      <td class="num">{{ '%.2fx'|format(r.sm_per_arr) if r.sm_per_arr else '-' }}</td>
+      <td><a href="{{ url_for('cac_detail', month=r.month) }}">details</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }}, th = {{ info.threshold }};
+const fmt = v => '$' + Math.round(v).toLocaleString('en-US');
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, labels = rows.map(r => r.month + (r.complete ? '' : ' *'));
+const leg = {labels:{color:'#e6ebf5'}};
+new Chart(document.getElementById('pb'), {type:'line', data:{labels, datasets:[
+    {label:'CAC payback (months)', data:rows.map(r => r.payback == null ? null : +r.payback.toFixed(2)), borderColor:'#4f8cff', backgroundColor:'#4f8cff', tension:.25,
+     segment:{borderDash:c => rows[c.p1DataIndex].complete ? undefined : [5,4]},
+     pointBackgroundColor:rows.map(r => r.payback > th ? '#ef5350' : '#2fbf71')},
+    {label:th + '-month threshold', data:rows.map(() => th), borderColor:'#ef5350', borderDash:[6,4], borderWidth:1.5, pointRadius:0}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${c.raw}`,
+    footer:i => { const r = rows[i[0].dataIndex]; return `CAC ${fmt(r.cac||0)} · ${r.new_logos} logos · GM ${(r.gm*100).toFixed(1)}%` + (r.complete ? '' : ' · incomplete'); }}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:tick, grid, suggestedMin:0}}}});
+new Chart(document.getElementById('cac'), {type:'bar', data:{labels, datasets:[
+    {type:'bar', label:'CAC', data:rows.map(r => r.cac), backgroundColor:rows.map(r => r.complete ? '#4f8cff' : '#4f8cff66'), yAxisID:'y'},
+    {type:'line', label:'S&M per $1 of new ARR', data:rows.map(r => r.sm_per_arr == null ? null : +r.sm_per_arr.toFixed(2)), borderColor:'#f0b429', backgroundColor:'#f0b429', yAxisID:'y1', tension:.25}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => c.dataset.yAxisID == 'y' ? `CAC: ${fmt(c.raw)}` : `S&M per $1 ARR: ${c.raw}x`}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => fmt(v)}, grid},
+            y1:{position:'right', ticks:{...tick, callback:v => v + 'x'}, grid:{drawOnChartArea:false}}}}});
+</script>
+{% else %}
+<div class="card">Not enough data: CAC needs 12 months of P&amp;L snapshots and new logos from {{ info.first_valid_close or '-' }}.</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How CAC and payback are calculated (spec VC-06)</h2>
+  <p>For every month <i>e</i>, over the 12 months ending at <i>e</i>:</p>
+  <ul>
+    <li><b>S&amp;M</b> = sum of the ticked expense accounts in <code>plmonthlysnapshots</code> (<code>expenses[].amounts.Total</code>).</li>
+    <li><b>New logos</b> and <b>new-logo ARR</b> = customers whose MRR goes above $0 for the first time, by close month (first billing month − {{ info.lag }}), ARR = first-month MRR × 12 - the same list as the New logos page.</li>
+    <li><b>Gross margin</b> = (income − COGS) ÷ income, summing the <code>income[]</code> and <code>cogs[]</code> lines.</li>
+    <li><b>CAC</b> = S&amp;M ÷ new logos.</li>
+    <li><b>CAC payback (months)</b> = CAC ÷ ((new-logo ARR ÷ new logos ÷ 12) × gross margin). Lower is better; above {{ info.threshold }} months is a warning.</li>
+    <li><b>S&amp;M per $1 of new ARR</b> = S&amp;M ÷ new-logo ARR.</li>
+  </ul>
+  <p class="muted" style="font-size:12px">A month is "incomplete" when its window has deals that close after {{ info.complete_until }} (they start billing after the last invoice month, {{ info.last_invoice }}), starts before {{ info.first_valid_close }} (customers already paying when the data begins would look new), or is missing P&amp;L months. P&amp;L data: {{ info.pl_first }} → {{ info.pl_last }}.</p>
+</div>
+{% endblock %}

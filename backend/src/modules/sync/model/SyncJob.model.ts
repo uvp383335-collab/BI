@@ -17,6 +17,8 @@ export interface SyncJobDocument extends Document {
     accounts: { status: 'pending' | 'syncing' | 'completed' | 'failed'; total: number; synced: number }
     items: { status: 'pending' | 'syncing' | 'completed' | 'failed'; total: number; synced: number }
     plItemSnapshots: { status: 'pending' | 'syncing' | 'completed' | 'failed'; total: number; synced: number }
+    plMonthlySnapshots: { status: 'pending' | 'syncing' | 'completed' | 'failed'; total: number; synced: number }
+    balanceSheetMonthlySnapshots: { status: 'pending' | 'syncing' | 'completed' | 'failed'; total: number; synced: number }
   }
   error?: string
   startedAt?: Date
@@ -56,7 +58,9 @@ const syncJobSchema = new Schema<SyncJobDocument>(
       cashBalance: { type: entityProgressSchema, default: () => ({ status: 'pending', total: 0, synced: 0 }) },
       accounts: { type: entityProgressSchema, default: () => ({ status: 'pending', total: 0, synced: 0 }) },
       items: { type: entityProgressSchema, default: () => ({ status: 'pending', total: 0, synced: 0 }) },
-      plItemSnapshots: { type: entityProgressSchema, default: () => ({ status: 'pending', total: 0, synced: 0 }) }
+      plItemSnapshots: { type: entityProgressSchema, default: () => ({ status: 'pending', total: 0, synced: 0 }) },
+      plMonthlySnapshots: { type: entityProgressSchema, default: () => ({ status: 'pending', total: 0, synced: 0 }) },
+      balanceSheetMonthlySnapshots: { type: entityProgressSchema, default: () => ({ status: 'pending', total: 0, synced: 0 }) }
     },
     error: { type: String },
     startedAt: { type: Date },

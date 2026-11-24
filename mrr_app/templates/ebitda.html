@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}EBITDA margin · Oryon{% endblock %}
+{% block body %}
+<style>.k4 .v{font-size:20px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}EBITDA margin</h1>
+  <p class="sub">Management EBITDA as a share of revenue, and against plan · <code>plmonthlysnapshots</code> · account classification from <a href="{{ url_for('settings_page') }}#ebitda">Settings</a></p></div>
+  <form class="row" method="get">
+    <select name="grain"><option value="quarter" {{ 'selected' if grain=='quarter' }}>Quarterly</option><option value="month" {{ 'selected' if grain=='month' }}>Monthly</option></select>
+    <select name="window"><option value="period" {{ 'selected' if window=='period' }}>Period</option><option value="ttm" {{ 'selected' if window=='ttm' }}>Trailing 12 months</option></select>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('ebitda_csv', grain=grain, window=window) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not saved %}<div class="flash err">EBITDA uses the automatic account classification. <a href="{{ url_for('settings_page') }}#ebitda">Review and save it in Settings</a>.</div>{% endif %}
+{% if not has_plan %}<div class="flash err" style="background:#2a2a14;color:#e8d98a">No plan loaded, so "vs plan" is blank. <a href="{{ url_for('settings_page') }}#ebitda-plan">Paste the budget's monthly EBITDA and revenue in Settings</a>.</div>{% endif %}
+{% if not rows %}<div class="card">No P&amp;L snapshots found in <code>plmonthlysnapshots</code>.</div>{% else %}
+
+{% if latest %}
+<div class="kpis k4">
+  <div class="kpi"><div class="l">EBITDA margin · {{ latest.label }}</div><div class="v">{{ '%.2f'|format(latest.margin) }}%</div>
+    <div class="muted" style="font-size:12px">{% if prev and prev.margin is not none %}<span class="{{ 'pos' if latest.margin >= prev.margin else 'neg' }}">{{ '%+.2f'|format(latest.margin - prev.margin) }} pts</span> vs {{ prev.label }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">EBITDA</div><div class="v">{{ latest.ebitda|usd }}</div>
+    <div class="muted" style="font-size:12px">{% if prev %}{{ prev.ebitda|usd }} in {{ prev.label }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">Vs plan</div><div class="v {{ 'pos' if latest.vs_plan is not none and latest.vs_plan >= 0 else 'neg' if latest.vs_plan is not none else '' }}">{{ '%+.2f pts'|format(latest.vs_plan) if latest.vs_plan is not none else '-' }}</div>
+    <div class="muted" style="font-size:12px">{% if latest.plan_margin is not none %}plan margin {{ '%.2f'|format(latest.plan_margin) }}%{% else %}no plan for this period{% endif %}</div></div>
+  <div class="kpi"><div class="l">Revenue</div><div class="v">{{ latest.revenue|usd }}</div>
+    <div class="muted" style="font-size:12px">{% if prev %}{{ prev.revenue|usd }} in {{ prev.label }}{% endif %}</div></div>
+</div>
+{% endif %}
+
+<div class="card"><h2 style="margin-top:0">EBITDA margin{{ ' vs plan' if has_plan }}</h2><canvas id="margin" height="75"></canvas></div>
+<div class="card"><h2 style="margin-top:0">EBITDA dollars</h2><canvas id="dollars" height="75"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'Period' if window == 'period' else 'Window' }}</th><th class="num">Revenue</th><th class="num">− COGS</th><th class="num">− Opex</th><th class="num">+ D&amp;A</th>
+    <th class="num">EBITDA</th><th class="num">Margin</th><th class="num">Plan margin</th><th class="num">Vs plan</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr {% if not r.complete %}style="opacity:.55" title="Not every month in this period has a P&L snapshot yet"{% endif %}>
+      <td>{{ r.label }}{% if not r.complete %} <span class="tag auto">incomplete</span>{% endif %}</td>
+      <td class="num">{{ r.revenue|usd }}</td><td class="num">{{ r.cogs|usd }}</td><td class="num">{{ r.opex|usd }}</td><td class="num">{{ r.da|usd }}</td>
+      <td class="num"><b>{{ r.ebitda|usd }}</b></td>
+      <td class="num"><b>{{ '%.2f%%'|format(r.margin) if r.margin is not none else '-' }}</b></td>
+      <td class="num">{{ '%.2f%%'|format(r.plan_margin) if r.plan_margin is not none else '-' }}</td>
+      <td class="num {{ 'pos' if r.vs_plan is not none and r.vs_plan >= 0 else 'neg' if r.vs_plan is not none else '' }}">{{ '%+.2f'|format(r.vs_plan) if r.vs_plan is not none else '-' }}</td>
+      <td><a href="{{ url_for('ebitda_detail', period=r.label) }}">accounts</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }};
+const fmt = v => (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString('en-US'), p2 = v => v == null ? null : +v.toFixed(2);
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.label + (r.complete ? '' : ' *'));
+const ds = [{label:'EBITDA margin', data:rows.map(r => p2(r.margin)), borderColor:'#4f8cff', backgroundColor:'#4f8cff', tension:.25}];
+if (rows.some(r => r.plan_margin != null)) ds.push({label:'Plan margin', data:rows.map(r => p2(r.plan_margin)), borderColor:'#f0b429', backgroundColor:'#f0b429', borderDash:[6,4], tension:0});
+new Chart(document.getElementById('margin'), {type:'line', data:{labels, datasets:ds},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${c.raw}%`,
+    footer:i => { const r = rows[i[0].dataIndex]; return `EBITDA ${fmt(r.ebitda)} · revenue ${fmt(r.revenue)}` + (r.vs_plan != null ? ` · vs plan ${r.vs_plan.toFixed(2)} pts` : ''); }}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid}}}});
+const dd = [{type:'bar', label:'EBITDA', data:rows.map(r => r.ebitda), backgroundColor:rows.map(r => r.complete ? '#2fbf71' : '#2fbf7166')}];
+if (rows.some(r => r.plan_ebitda != null)) dd.push({type:'line', label:'Plan EBITDA', data:rows.map(r => r.plan_ebitda), borderColor:'#f0b429', backgroundColor:'#f0b429', borderDash:[6,4]});
+new Chart(document.getElementById('dollars'), {data:{labels, datasets:dd},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.raw)}`}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+</script>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How EBITDA margin is calculated (spec VC-10)</h2>
+  <ul>
+    <li><b>EBITDA(W) = Revenue − COGS − Opex + D&amp;A</b>; <b>EBITDA margin = 100 × EBITDA ÷ Revenue</b> - for a month, a quarter, or the trailing 12 months.</li>
+    <li><b>COGS</b> includes capitalized-software amortization; <b>Opex</b> = sales, marketing, customer success, R&amp;D, G&amp;A (including one-time deal fees) and D&amp;A.</li>
+    <li><b>D&amp;A added back</b>: {{ da_names|join(', ') or 'none selected' }}. Deal fees are not added back.</li>
+    <li><b>Below EBITDA</b> (not counted): {{ below|join(', ') or 'none' }}.</li>
+    <li><b>Vs plan</b> = margin − plan margin, plan margin = Σ plan EBITDA ÷ Σ plan revenue over the period's months (a month uses that month's plan).</li>
+  </ul>
+  <p class="muted" style="font-size:12px">{% if excluded %}Excluded QuickBooks demo accounts: {{ excluded|join(', ') }}. {% endif %}Compared with the Oryon report, EBITDA runs higher mainly because QuickBooks has no service credits or write-offs, so revenue is higher; COGS matches and opex is within about $20-30k a quarter.</p>
+</div>
+{% endblock %}

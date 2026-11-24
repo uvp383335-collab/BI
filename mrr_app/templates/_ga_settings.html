@@ -1,0 +1,40 @@
+<form method="post" action="{{ url_for('save_ga_accounts') }}" class="card" id="ga">
+  <div class="row" style="justify-content:space-between;margin-bottom:8px">
+    <h2 style="margin:0"><span class="codes"><code>VC-09</code></span>G&amp;A expense accounts</h2>
+    <div class="row"><button class="btn" type="submit">Save G&amp;A accounts</button></div>
+  </div>
+  <p class="muted" style="margin:0 0 10px;font-size:12.5px">Expense accounts from <code>plmonthlysnapshots</code>. The ticked accounts are G&amp;A in G&amp;A % = G&amp;A ÷ revenue (revenue = income accounts not excluded in the COGS % mapping).
+    {% if not ga_saved %}<b style="color:var(--warn)">Auto-selected, not saved yet:</b> 6410–6485 and 6495, plus the unnumbered <b>Insurance</b> account (Ridgeline's prepaid-insurance amortization). 6490 Transaction &amp; Deal Fees (one-time) and 6510 / 6520 D&amp;A are left out (spec VC-09).{% endif %}</p>
+  {% if not ga_accs %}<div class="flash err">No P&amp;L snapshots found in <code>plmonthlysnapshots</code>.</div>{% else %}
+  <div class="row" style="margin-bottom:8px;font-size:12.5px">
+    <span class="muted">Selected: <b id="gaN">0</b> accounts · <b id="gaTot">$0</b> over the last 12 months</span>
+  </div>
+  <div class="scroll" style="max-height:460px">
+  <table>
+    <thead><tr><th style="width:34px"></th><th>Account</th><th>Section</th><th class="num">Last 12 months</th><th class="num">All months</th><th>Used</th><th></th></tr></thead>
+    <tbody>
+    {% for a in ga_accs %}
+      <tr>
+        <td><input type="checkbox" class="gabox" name="ga_{{ a.id }}" data-ttm="{{ a.ttm }}" {{ 'checked' if a.selected }}></td>
+        <td><b>{{ a.name }}</b>{% if a.auto %} <span title="automatic suggestion">★</span>{% endif %}<div class="muted" style="font-size:11.5px">{{ a.reason }}</div></td>
+        <td class="muted">{{ 'Other expense' if a.section == 'otherExpenses' else 'Expense' }}</td>
+        <td class="num">{{ a.ttm|usd }}</td><td class="num">{{ a.total|usd }}</td>
+        <td class="muted" style="font-size:12px">{{ a.first }} – {{ a.last }}</td>
+        <td>{% if ga_saved %}<span class="tag saved">saved</span>{% else %}<span class="tag auto">auto</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <script>
+  (function(){const f=v=>'$'+Math.round(v).toLocaleString('en-US');
+    function upd(){let n=0,t=0;document.querySelectorAll('.gabox').forEach(b=>{if(b.checked){n++;t+=+b.dataset.ttm}});
+      document.getElementById('gaN').textContent=n;document.getElementById('gaTot').textContent=f(t);}
+    document.querySelectorAll('.gabox').forEach(b=>b.addEventListener('change',upd));upd();})();
+  </script>
+  {% endif %}
+  <p class="muted" style="margin:10px 0 0;font-size:12px">★ = automatic suggestion.</p>
+</form>
+<form method="post" action="{{ url_for('reset_ga_accounts') }}" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset G&amp;A accounts to automatic selection</button>
+</form>

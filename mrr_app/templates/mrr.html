@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}MRR · Oryon{% endblock %}
+{% block body %}
+<div class="row" style="justify-content:space-between">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Monthly recurring revenue</h1>
+  <p class="sub">From {{ '{:,}'.format(n_inv) }} QuickBooks invoices · annual lines spread over 12 months · CAD converted at each month's rate ({{ n_cad }} CAD customers) · ARR = MRR × 12</p></div>
+  <form class="row" method="get">
+    <label>From <input type="text" name="from" value="{{ start }}" size="8"></label>
+    <label>To <input type="text" name="to" value="{{ end }}" size="8"></label>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('mrr_csv', **{'from': start, 'to': end}) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if unsaved %}<div class="flash err">{{ unsaved }} product mapping{{ 's' if unsaved != 1 }} {{ 'are' if unsaved != 1 else 'is' }} still on the automatic suggestion. <a href="{{ url_for('settings_page') }}">Review them in Settings</a>.</div>{% endif %}
+
+{% if latest %}
+<div class="kpis">
+  <div class="kpi"><div class="l">MRR · {{ latest.month }}</div><div class="v">{{ latest.total_mrr|usd }}</div></div>
+  <div class="kpi"><div class="l">ARR (MRR × 12)</div><div class="v">{{ latest.arr|usd }}</div></div>
+  <div class="kpi"><div class="l">Active customers</div><div class="v">{{ latest.active_customers }}</div></div>
+  <div class="kpi"><div class="l">ARR per customer</div><div class="v">{{ (latest.arr / latest.active_customers if latest.active_customers else None)|usd }}</div></div>
+</div>
+
+<div class="card"><canvas id="chart" height="110"></canvas></div>
+
+<div class="card">
+<table>
+  <thead><tr><th>Month</th><th class="num">Subscription MRR</th><th class="num">Retainer MRR</th><th class="num">Total MRR</th>
+  <th class="num">MoM</th><th class="num">ARR</th><th class="num">Active customers</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr>
+      <td>{{ r.month }}</td>
+      <td class="num">{{ r.subscription_mrr|usd }}</td>
+      <td class="num">{{ r.retainer_mrr|usd }}</td>
+      <td class="num"><b>{{ r.total_mrr|usd }}</b></td>
+      <td class="num {{ 'pos' if r.mom_pct and r.mom_pct > 0 else 'neg' if r.mom_pct and r.mom_pct < 0 else '' }}">{{ '%+.1f%%'|format(r.mom_pct) if r.mom_pct is not none else '-' }}</td>
+      <td class="num">{{ r.arr|usd }}</td>
+      <td class="num">{{ r.active_customers }}</td>
+      <td><a href="{{ url_for('month_detail', month=r.month) }}">customers</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }};
+const fmt = v => '$' + Math.round(v).toLocaleString('en-US');
+new Chart(document.getElementById('chart'), {
+  data: {
+    labels: rows.map(r => r.month),
+    datasets: [
+      {type:'bar', label:'Subscription MRR', data: rows.map(r => r.subscription_mrr), backgroundColor:'#4f8cff', stack:'m', yAxisID:'y'},
+      {type:'bar', label:'Retainer MRR', data: rows.map(r => r.retainer_mrr), backgroundColor:'#2fbf71', stack:'m', yAxisID:'y'},
+      {type:'line', label:'Active customers', data: rows.map(r => r.active_customers), borderColor:'#f0b429', backgroundColor:'#f0b429', yAxisID:'y1', tension:.25, pointRadius:0}
+    ]
+  },
+  options: {
+    plugins:{legend:{labels:{color:'#e6ebf5'}}, tooltip:{callbacks:{label:c => c.dataset.yAxisID==='y1' ? `${c.dataset.label}: ${c.raw}` : `${c.dataset.label}: ${fmt(c.raw)}`}}},
+    scales:{
+      x:{stacked:true, ticks:{color:'#8f9bb3'}, grid:{color:'#263049'}},
+      y:{stacked:true, ticks:{color:'#8f9bb3', callback:v => fmt(v)}, grid:{color:'#263049'}, title:{display:true,text:'MRR (USD)',color:'#8f9bb3'}},
+      y1:{position:'right', ticks:{color:'#8f9bb3'}, grid:{display:false}, title:{display:true,text:'Customers',color:'#8f9bb3'}}
+    }
+  }
+});
+</script>
+{% else %}
+<div class="card">No MRR in this range. Check the month range, or map products as recurring in <a href="{{ url_for('settings_page') }}">Settings</a>.</div>
+{% endif %}
+{% endblock %}

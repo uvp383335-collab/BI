@@ -71,6 +71,9 @@ export interface SalesforceOpportunity {
   NextStep: string | null;
   Probability: number | null;
   Description: string | null;
+  /** Custom currency fields (`ARR__c`/`ARR_Change__c`) tracking this opportunity's annual recurring revenue and its change — not guaranteed on every org's Opportunity object, so describe()-checked like the other OPTIONAL_STANDARD_FIELDS. */
+  ARR: number | null;
+  ARRChange: number | null;
   /** Org-configured custom fields (Organization.settings.salesforceOpportunityExtraFields — e.g. Order Number, Current Generator(s)), in the order they were configured. Empty when none are configured. */
   ExtraFields: { label: string; value: string | number | boolean | null }[];
 }
@@ -425,7 +428,7 @@ export class SalesforceService {
    * competitor field / extra fields / Campaign / OpportunityCompetitor /
    * OpportunityLineItem access below.
    */
-  private static readonly OPTIONAL_STANDARD_FIELDS = ["ExpectedRevenue", "NextStep", "Probability", "Description"] as const;
+  private static readonly OPTIONAL_STANDARD_FIELDS = ["ExpectedRevenue", "NextStep", "Probability", "Description", "ARR__c", "ARR_Change__c"] as const;
 
   /** `GET .../sobjects/Opportunity/describe` — field metadata, used only to check which OPTIONAL_STANDARD_FIELDS this org's Opportunity object actually has. */
   private static async getAvailableOpportunityFields(accessToken: string, instanceUrl: string): Promise<Set<string>> {
@@ -540,6 +543,8 @@ export class SalesforceService {
         NextStep: (r.NextStep as string) ?? null,
         Probability: (r.Probability as number) ?? null,
         Description: (r.Description as string) ?? null,
+        ARR: (r.ARR__c as number) ?? null,
+        ARRChange: (r.ARR_Change__c as number) ?? null,
         ExtraFields: safeExtraFields.map((f) => ({
           label: f.label,
           value: (r[f.apiName] as string | number | boolean | undefined) ?? null,

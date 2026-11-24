@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Win rate {{ r.month }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:13px;padding:7px 10px} td.num{white-space:nowrap}</style>
+<p><a href="{{ url_for('wr_page', view=view, segment=segment, grain=grain) }}">← Win rate vs tracked competitor</a></p>
+<h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Win rate · {% if grain == 'quarter' and r.quarter_end %}{{ r.label }} · {% endif %}{{ r.window[0] }} to {{ r.window[1] }}</h1>
+<p class="sub">Trailing {{ window }} months{% if segment != 'All' %} · segment {{ segment }}{% endif %} · {{ r.closed }} closed New Business deals, {{ r.logged_n }} with a competitor ({{ '%.1f%%'|format(r.logged) }} logged)</p>
+<div class="card">
+<table>
+  <thead><tr><th>Competitor</th><th class="num">Deals</th><th class="num">No decision (dropped)</th><th class="num">Decided</th><th class="num">Won</th><th class="num">Lost</th><th class="num">Win rate</th></tr></thead>
+  <tbody>
+  {% for c in info.competitors %}{% set x = r.comp[c] %}
+    <tr {% if c == info.headline %}style="font-weight:700"{% endif %}><td>{{ c }}{% if c == info.headline %} <span class="tag saved">headline</span>{% endif %}</td><td class="num">{{ x.deals }}</td>
+      <td class="num muted">{{ x.no_decision }}</td><td class="num">{{ x.decided }}</td><td class="num">{{ x.won }}</td><td class="num">{{ x.decided - x.won }}</td>
+      <td class="num">{{ '%.2f%%'|format(x.rate) if x.rate is not none else '-' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="muted" style="font-size:12px;margin:8px 0 0">Win rate = won ÷ decided. A deal naming several competitors (OpportunityCompetitor mode) counts for each of them.</p>
+</div>
+{% endblock %}

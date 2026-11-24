@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Competitor win rate · Oryon{% endblock %}
+{% block body %}
+<style>.k5 .v{font-size:19px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Win rate vs tracked competitor</h1>
+  <p class="sub">Closed New Business deals naming the competitor ({{ info.std.get(info.comp_field, info.comp_field) }}), trailing {{ window }} months{% if segment != 'All' %} · segment <b>{{ segment }}</b>{% endif %} · won ÷ decided (<a href="{{ url_for('settings_page') }}#win-rate">settings</a>)</p></div>
+  <form class="row" method="get">
+    <select name="view"><option value="period" {{ 'selected' if view=='period' }}>Trailing {{ info.window }} months (spec)</option><option value="ttm" {{ 'selected' if view=='ttm' }}>Trailing 12 months (TTM)</option></select>
+    <select name="grain"><option value="month" {{ 'selected' if grain=='month' }}>Monthly</option><option value="quarter" {{ 'selected' if grain=='quarter' }}>Quarterly (quarter end)</option></select>
+    <select name="segment"><option value="All">All segments</option>{% for s in info.segments %}<option value="{{ s }}" {{ 'selected' if segment==s }}>{{ s }}</option>{% endfor %}</select>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('wr_csv', view=view, segment=segment, grain=grain) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not info.comp_field %}<div class="card">No competitor field found on the deals - pick the custom field holding the competitor in <a href="{{ url_for('settings_page') }}#win-rate">Settings</a>.</div>
+{% elif not rows %}<div class="card">No closed New Business deals with the current settings ({{ info.n_deals }} {{ info.provider }} deals; New Business types: {{ (info.nb_types or [])|join(', ') or 'none' }}).</div>{% else %}
+{% if not info.loss_field or not info.loss_seen %}<div class="flash err" style="background:#2a2a14;color:#e8d98a">No loss-reason field on the deals, so "{{ info.exclude_reasons|join('", "') }}" losses can't be dropped - they count as decided, which makes win rates slightly lower than the spec's. Add Loss_Reason__c to the Salesforce Opportunity extra fields in the backend, resync, and pick it in <a href="{{ url_for('settings_page') }}#win-rate">Settings</a>.</div>{% endif %}
+{% set L = latest %}{% set H = L.comp[info.headline] if info.headline else none %}
+<div class="kpis k5" style="grid-template-columns:repeat({{ [info.competitors|length + 1, 6]|min }},1fr)">
+  {% for c in info.competitors[:5] %}{% set x = L.comp[c] %}
+  <div class="kpi" {% if c == info.headline %}style="border-color:var(--acc)"{% endif %}><div class="l">vs {{ c }}{% if c == info.headline %} · headline{% endif %} · {{ L.label }}{% if grain == 'quarter' %} <span class="tag auto">Quarterly</span>{% endif %}</div><div class="v">{{ '%.2f%%'|format(x.rate) if x.rate is not none else '-' }}</div>
+    <div class="muted" style="font-size:12px">{{ x.won }} won of {{ x.decided }} decided{% if year_ago and year_ago.comp[c].rate is not none and x.rate is not none %} · {{ '%+.1f'|format(x.rate - year_ago.comp[c].rate) }} pts vs {{ year_ago.label }}{% endif %}</div></div>
+  {% endfor %}
+  <div class="kpi"><div class="l">Competitor logged</div><div class="v">{{ '%.2f%%'|format(L.logged) }}</div><div class="muted" style="font-size:12px">{{ L.logged_n }} of {{ L.closed }} closed New Business deals</div></div>
+</div>
+
+<div class="card"><h2 style="margin-top:0">Win rate by competitor (trailing {{ window }} months)</h2><canvas id="wr" height="85"></canvas></div>
+<div class="card"><h2 style="margin-top:0">Competitor logging rate and decided deals vs {{ info.headline }}</h2><canvas id="lg" height="60"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'Quarter' if grain == 'quarter' else 'Window to' }}</th>{% for c in info.competitors %}<th class="num">vs {{ c }}</th>{% endfor %}<th class="num">Logged</th><th class="num">Closed NB</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr><td>{{ r.label }}{% if grain == 'quarter' %} <span class="muted">{{ r.window[0] }} to {{ r.window[1] }}</span>{% endif %}</td>
+      {% for c in info.competitors %}{% set x = r.comp[c] %}<td class="num">{% if x.rate is not none %}<b>{{ '%.1f%%'|format(x.rate) }}</b> <span class="muted">{{ x.won }}/{{ x.decided }}</span>{% else %}-{% endif %}</td>{% endfor %}
+      <td class="num">{{ '%.1f%%'|format(r.logged) }}</td><td class="num">{{ r.closed }}</td>
+      <td><a href="{{ url_for('wr_detail', month=r.month, view=view, segment=segment, grain=grain) }}">details</a></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }}, comps = {{ info.competitors|tojson }}, head = {{ info.headline|tojson }};
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.label), pal = ['#4f8cff', '#2fbf71', '#f0b429', '#c792ea', '#ef5350', '#26c6da', '#ffa726'];
+new Chart(document.getElementById('wr'), {type:'line', data:{labels, datasets:comps.map((c, i) => ({label:'vs ' + c,
+  data:rows.map(r => r.comp[c].rate), borderColor:pal[i % pal.length], backgroundColor:pal[i % pal.length], borderWidth:c === head ? 3 : 1.5, spanGaps:true}))},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => { const x = rows[c.dataIndex].comp[comps[c.datasetIndex]];
+    return `${c.dataset.label}: ${c.raw == null ? '-' : c.raw.toFixed(1) + '%'} (${x.won} of ${x.decided})`; }}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid, min:0}}}});
+new Chart(document.getElementById('lg'), {data:{labels, datasets:[
+  {type:'line', label:'Competitor logged %', data:rows.map(r => r.logged), borderColor:'#f0b429', backgroundColor:'#f0b429', yAxisID:'y'},
+  {type:'bar', label:'Decided deals vs ' + head, data:rows.map(r => head ? r.comp[head].decided : null), backgroundColor:'#4f8cff55', yAxisID:'y1'}]},
+  options:{plugins:{legend:leg}, scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid, position:'left'},
+    y1:{ticks:tick, grid:{drawOnChartArea:false}, position:'right'}}}});
+</script>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How win rate is calculated (spec CM-03)</h2>
+  <ul>
+    <li>Deals: {{ info.provider }} deals of type {{ (info.nb_types or [])|join(' / ') or '-' }} that are closed (won or lost{{ ' - from the pipeline stage definitions' if info.stage_defs else ' - stage Closed Won / Closed Lost' }}) with a close date in the trailing {{ window }} months ending at the month.</li>
+    <li>Competitor: {{ info.std.get(info.comp_field, 'custom field "' ~ info.comp_field ~ '"') }}. Losses with loss reason {{ info.exclude_reasons|join(', ') }} ({{ 'field "' ~ info.loss_field ~ '"' if info.loss_field else 'no loss-reason field set' }}) are not decided.</li>
+    <li><b>Win rate vs c = 100 × won ÷ decided</b>, skipped when nothing was decided. <b>Logged</b> = deals with any competitor ÷ all closed New Business deals in the window.</li>
+    <li>Quarterly shows the quarter-end months only (Mar, Jun, Sep, Dec), each with its trailing {{ window }}-month window - the Oryon report's view. Monthly rolls the same window every month.</li>
+    <li>Segment filter: the Salesforce account's segment. Region isn't synced, so there's no region filter.</li>
+  </ul>
+</div>
+{% endblock %}

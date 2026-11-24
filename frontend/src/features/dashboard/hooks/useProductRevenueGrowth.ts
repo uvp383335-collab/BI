@@ -109,6 +109,19 @@ export function useInvoiceRevenueGrowthByProduct(enabled: boolean, fromYear?: st
 }
 
 /**
+ * "Revenue growth by class," computed entirely from synced Invoice line
+ * items' QuickBooks Class reference — cheap and storage-backed, so this
+ * auto-loads like the dropdowns above.
+ */
+export function useInvoiceRevenueGrowthByClass(enabled: boolean, fromYear?: string) {
+  return useQuery({
+    queryKey: ['metrics', 'quickbooks', 'invoice-revenue-growth-by-class', fromYear],
+    queryFn: () => productRevenueGrowthApi.getInvoiceRevenueGrowthByClassRequest({ fromYear }),
+    enabled
+  })
+}
+
+/**
  * "Revenue growth by location," computed entirely from synced Invoice
  * billing addresses — cheap and storage-backed, so this auto-loads like the
  * dropdowns above. `itemId` narrows to one product's revenue by state.

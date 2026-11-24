@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Revenue growth {{ period }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:12.5px;padding:6px 8px} td.num{white-space:nowrap}</style>
+<p><a href="{{ url_for('growth_page') }}">← Revenue growth</a></p>
+<div class="row" style="justify-content:space-between">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Revenue growth · {{ period }}</h1>
+  <p class="sub">{{ months[0] }} → {{ months[-1] }} vs {{ r.prior[0] }} → {{ r.prior[-1] }} · {{ r.revenue|usd }} ÷ {{ r.prev_revenue|usd }} − 1 = <b>{{ '%+.2f%%'|format(r.growth) if r.growth is not none else '-' }}</b> · added {{ r.added|usd }}</p></div>
+  <a class="btn ghost" href="{{ url_for('growth_detail', period=period, format='csv') }}">Download CSV</a>
+</div>
+<div class="card">
+<table>
+  <thead><tr><th></th><th class="num">This window</th><th class="num">A year earlier</th><th class="num">Change</th><th class="num">YoY</th></tr></thead>
+  <tbody>
+    <tr><td><b>Revenue</b></td><td class="num">{{ r.revenue|usd }}</td><td class="num">{{ r.prev_revenue|usd }}</td><td class="num">{{ r.added|usd }}</td><td class="num"><b>{{ '%+.2f%%'|format(r.growth) if r.growth is not none else '-' }}</b></td></tr>
+    <tr><td>Recurring (MRR)</td><td class="num">{{ r.mrr|usd }}</td><td class="num">{{ r.prev_mrr|usd }}</td><td class="num">{{ (r.mrr - r.prev_mrr)|usd }}</td><td class="num">{{ '%+.2f%%'|format(r.rec_growth) if r.rec_growth is not none else '-' }}</td></tr>
+    <tr><td>Non-recurring (revenue − MRR)</td><td class="num">{{ r.nonrec|usd }}</td><td class="num">{{ r.prev_nonrec|usd }}</td><td class="num">{{ (r.nonrec - r.prev_nonrec)|usd }}</td><td class="num">{{ '%+.2f%%'|format(r.nonrec_growth) if r.nonrec_growth is not none else '-' }}</td></tr>
+    {% if r.plan_revenue %}<tr><td>Plan revenue</td><td class="num">{{ r.plan_revenue|usd }}</td><td></td><td class="num">{{ (r.revenue - r.plan_revenue)|usd }}</td><td class="num">{{ '%+.2f%%'|format(r.vs_plan) }} vs plan</td></tr>{% endif %}
+  </tbody>
+</table>
+</div>
+{% if per_month|length > 1 %}
+<div class="card scroll">
+<h2 style="margin-top:0">By month</h2>
+<table>
+  <thead><tr><th>Month</th><th class="num">Revenue</th><th class="num">Year earlier</th><th class="num">Growth</th><th class="num">Recurring YoY</th><th class="num">Non-recurring YoY</th></tr></thead>
+  <tbody>
+  {% for x in per_month %}
+    <tr><td>{{ x.month }}</td><td class="num">{{ x.revenue|usd }}</td><td class="num">{{ x.prev_revenue|usd }}</td>
+      <td class="num"><b>{{ '%+.2f%%'|format(x.growth) if x.growth is not none else '-' }}</b></td>
+      <td class="num">{{ '%+.2f%%'|format(x.rec_growth) if x.rec_growth is not none else '-' }}</td>
+      <td class="num">{{ '%+.2f%%'|format(x.nonrec_growth) if x.nonrec_growth is not none else '-' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+<div class="card scroll">
+<h2 style="margin-top:0">Revenue by account</h2>
+<table>
+  <thead><tr><th>Account</th><th class="num">This window</th><th class="num">A year earlier</th><th class="num">Change</th><th class="num">YoY</th></tr></thead>
+  <tbody>
+  {% for a in rev_rows %}
+    <tr><td>{{ a.name }}</td><td class="num">{{ a.cur|usd }}</td><td class="num">{{ a.old|usd }}</td><td class="num">{{ (a.cur - a.old)|usd }}</td>
+      <td class="num">{{ '%+.2f%%'|format(100 * (a.cur / a.old - 1)) if a.old else '-' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

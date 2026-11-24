@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Retention {{ r.m0 }} → {{ r.m1 }} · Oryon{% endblock %}
+{% block body %}
+{% set q = {'grain': grain, 'window': window, 'scope': 'subscription' if sub_only else 'all'} %}
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Retention cohort · {{ r.m0 }} → {{ r.m1 }}</h1>
+  <p class="sub">{{ r.cohort }} customers with MRR in {{ r.m0 }} · CAD converted at {{ r.m0 }}'s rate ({{ rate }}) at both ends · GRR <b>{{ '%.2f'|format(r.grr) }}%</b> · NRR <b>{{ '%.2f'|format(r.nrr) }}%</b></p></div>
+  <div class="row">
+    <a class="btn ghost" href="{{ url_for('retention_page', **q) }}">← Back</a>
+    <a class="btn ghost" href="{{ url_for('retention_detail', m1=r.m1, bucket=bucket, format='csv', **q) }}">Download CSV</a>
+  </div>
+</div>
+
+<div class="kpis" style="grid-template-columns:repeat(5,1fr)">
+  <a class="kpi" style="text-decoration:none;color:inherit" href="{{ url_for('retention_detail', m1=r.m1, **q) }}"><div class="l">Starting MRR (S) · all {{ r.cohort }}</div><div class="v">{{ r.S|usd }}</div></a>
+  <a class="kpi" style="text-decoration:none;color:inherit" href="{{ url_for('retention_detail', m1=r.m1, bucket='churn', **q) }}"><div class="l">Churn (C) · {{ r.churn }}</div><div class="v neg">−{{ r.C|usd }}</div></a>
+  <a class="kpi" style="text-decoration:none;color:inherit" href="{{ url_for('retention_detail', m1=r.m1, bucket='downgrade', **q) }}"><div class="l">Downgrades (Dn) · {{ r.downgrade }}</div><div class="v neg">−{{ r.Dn|usd }}</div></a>
+  <a class="kpi" style="text-decoration:none;color:inherit" href="{{ url_for('retention_detail', m1=r.m1, bucket='upgrade', **q) }}"><div class="l">Upgrades (U) · {{ r.upgrade }}</div><div class="v pos">+{{ r.U|usd }}</div></a>
+  <a class="kpi" style="text-decoration:none;color:inherit" href="{{ url_for('retention_detail', m1=r.m1, bucket='flat', **q) }}"><div class="l">Flat · {{ r.flat }}</div><div class="v">{{ (r.S - r.C - r.Dn)|usd }} kept</div></a>
+</div>
+
+<div class="card" style="font-size:15px">
+  GRR = (S − C − Dn) ÷ S = ({{ r.S|usd }} − {{ r.C|usd }} − {{ r.Dn|usd }}) ÷ {{ r.S|usd }} = <b>{{ '%.2f'|format(r.grr) }}%</b><br>
+  NRR = (S − C − Dn + U) ÷ S = ({{ r.K|usd }} + {{ r.U|usd }}) ÷ {{ r.S|usd }} = <b>{{ '%.2f'|format(r.nrr) }}%</b>
+</div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>#</th><th>Customer (customerRecordId)</th><th>Currency</th><th class="num">MRR {{ r.m0 }} (a)</th><th class="num">MRR {{ r.m1 }} (b)</th><th class="num">Change</th><th>Bucket</th></tr></thead>
+  <tbody>
+  {% for c in custs %}
+    <tr><td class="muted">{{ loop.index }}</td><td>{{ c.customer }}</td><td>{{ c.currency }}</td>
+      <td class="num">{{ c.start|usd }}</td><td class="num">{{ c.end|usd }}</td>
+      <td class="num {{ 'neg' if c.change < 0 else 'pos' if c.change > 0 else '' }}">{{ ('+' if c.change > 0 else '') }}{{ c.change|usd }}</td>
+      <td><span class="tag">{{ c.bucket }}</span></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Customer & revenue diversification · Oryon{% endblock %}
+{% block body %}
+<style>.k5 .v{font-size:19px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+{% set thr = cfg.threshold %}{% set thr_on = thr > 0 %}
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Customer &amp; revenue diversification</h1>
+  <p class="sub">Share of trailing-12-month recognized revenue from the {{ cfg.top_n }} largest customer groups{{ ', grouped by parent' if cfg.group_parent else ' (no parent grouping)' }} · lower is better (<a href="{{ url_for('settings_page') }}#diversification">settings</a>)</p></div>
+  <form class="row" method="get"><a class="btn ghost" href="{{ url_for('div_csv') }}">Download CSV</a></form>
+</div>
+
+{% if not rows %}<div class="card">Not enough invoice history yet - the first value needs 12 months of invoices.</div>{% else %}
+{% set L = latest %}
+{% if thr_on and L.share > thr %}<div class="flash err">TTM to {{ L.month }}: the top {{ cfg.top_n }} groups earn {{ '%.2f%%'|format(L.share) }} of revenue - above {{ '%g'|format(thr) }}%.</div>{% endif %}
+<div class="kpis k5" style="grid-template-columns:repeat(4,1fr)">
+  <div class="kpi" style="border-color:var(--acc)"><div class="l">Top-{{ cfg.top_n }} share · TTM {{ L.month }}</div><div class="v {{ 'neg' if thr_on and L.share > thr }}">{{ '%.2f%%'|format(L.share) }}</div>
+    <div class="muted" style="font-size:12px">{% if year_ago %}{{ '%+.2f'|format(L.share - year_ago.share) }} pts vs {{ year_ago.month }}{{ ' (better)' if L.share < year_ago.share else '' }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">Largest group</div><div class="v">{{ '%.2f%%'|format(L.largest) if L.largest is not none else '-' }}</div><div class="muted" style="font-size:12px">{{ L.largest_name }}</div></div>
+  <div class="kpi"><div class="l">Top-{{ cfg.top_n }} revenue</div><div class="v">{{ L.top|usd }}</div><div class="muted" style="font-size:12px">of {{ L.total|usd }}</div></div>
+  <div class="kpi"><div class="l">Customer groups</div><div class="v">{{ L.groups }}</div><div class="muted" style="font-size:12px">with revenue in the 12 months</div></div>
+</div>
+
+<div class="card"><h2 style="margin-top:0">Top-{{ cfg.top_n }} and largest-group share (rolling monthly)</h2><canvas id="share" height="80"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>TTM to</th><th class="num">Top-{{ cfg.top_n }} share</th><th class="num">Change</th><th class="num">Largest</th><th>Largest group</th><th class="num">Top-{{ cfg.top_n }} revenue</th><th class="num">Total revenue</th><th class="num">Groups</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}{% set prev = rows[rows|length - loop.index - 1] if loop.index < rows|length else none %}
+    <tr {% if r.month[5:7] in ('03','06','09','12') %}style="font-weight:600"{% endif %}><td>{{ r.month }}{% if r.month[5:7] in ('03','06','09','12') %} <span class="muted">Q{{ (r.month[5:7]|int) // 3 }}</span>{% endif %}</td>
+      <td class="num {{ 'neg' if thr_on and r.share > thr }}"><b>{{ '%.2f%%'|format(r.share) }}</b></td>
+      <td class="num muted">{{ '%+.2f'|format(r.share - prev.share) if prev else '' }}</td>
+      <td class="num">{{ '%.2f%%'|format(r.largest) if r.largest is not none else '-' }}</td><td class="muted">{{ r.largest_name }}</td>
+      <td class="num">{{ r.top|usd }}</td><td class="num">{{ r.total|usd }}</td><td class="num">{{ r.groups }}</td>
+      <td><a href="{{ url_for('conc_detail', month=r.month, n=cfg.top_n) }}">top groups</a></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }}, thr = {{ thr }};
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.month), pct = v => v == null ? '-' : v.toFixed(2) + '%';
+new Chart(document.getElementById('share'), {type:'line', data:{labels, datasets:[
+  {label:'Top-{{ cfg.top_n }} share', data:rows.map(r => r.share), borderColor:'#4f8cff', backgroundColor:'#4f8cff', borderWidth:3},
+  {label:'Largest group', data:rows.map(r => r.largest), borderColor:'#f0b429', backgroundColor:'#f0b429'},
+  ...(thr > 0 ? [{label:'Threshold', data:rows.map(() => thr), borderColor:'#ef5350', borderDash:[4, 4], pointRadius:0, borderWidth:1}] : [])]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${pct(c.raw)}`}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid, beginAtZero:true}}}});
+</script>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How diversification is calculated (spec ER-05)</h2>
+  <ul>
+    <li><b>Top-{{ cfg.top_n }} share = 100 × Σ the {{ cfg.top_n }} largest customer groups ÷ Σ all groups</b>, recognized revenue over the trailing 12 months, recalculated every month (quarter-end months in bold).</li>
+    <li>Identical to <a href="{{ url_for('conc_page') }}">Customer concentration (CM-02)</a> - same parent groups ({% for k, v in info.hows.items() %}{{ v }} {{ k }}{{ ', ' if not loop.last }}{% endfor %}), same recognized-revenue build from the invoices - with the top {{ cfg.top_n }} instead of the top {{ info.top_n if info.top_n != cfg.top_n else 10 }}.</li>
+    <li>Region / segment filters aren't available yet (as CM-02).</li>
+  </ul>
+</div>
+{% endblock %}

@@ -1,0 +1,38 @@
+<form method="post" action="{{ url_for('save_ebitda_accounts') }}" class="card" id="ebitda">
+  <div class="row" style="justify-content:space-between;margin-bottom:8px">
+    <h2 style="margin:0">EBITDA account classification</h2>
+    <div class="row"><button class="btn" type="submit">Save EBITDA accounts</button></div>
+  </div>
+  <p class="muted" style="margin:0 0 10px;font-size:12.5px">Every P&amp;L account in <code>plmonthlysnapshots</code>. EBITDA = Revenue − COGS − Opex + D&amp;A (ticked <b>Add back</b>). Interest, FX and tax sit below EBITDA.
+    {% if not eb_saved %}<b style="color:var(--warn)">Auto-selected, not saved yet:</b> income → Revenue; COGS → COGS (5040 added back); 6xxx → Opex (6510 / 6520 added back; 6490 deal fees stay in Opex, not added back); 7010 interest and 8010 tax → Below EBITDA; unnumbered QuickBooks demo accounts → Exclude (Insurance stays in Opex).{% endif %}</p>
+  {% if not eb_accs %}<div class="flash err">No P&amp;L snapshots found in <code>plmonthlysnapshots</code>.</div>{% else %}
+  <div class="scroll" style="max-height:460px">
+  <table>
+    <thead><tr><th>Account</th><th>P&amp;L section</th><th class="num">Last 12 months</th><th>EBITDA category</th><th>Add back (D&amp;A)</th><th></th></tr></thead>
+    <tbody>
+    {% for a in eb_accs %}
+      <tr {% if a.cat == 'exclude' %}style="opacity:.6"{% endif %}>
+        <td><b>{{ a.name }}</b><div class="muted" style="font-size:11.5px">{{ a.reason }}</div></td>
+        <td class="muted">{{ {'income':'Income','cogs':'COGS','expenses':'Expense','otherExpenses':'Other expense'}[a.section] }}</td>
+        <td class="num">{{ a.ttm|usd }}</td>
+        <td><select name="cat_{{ a.id }}">{% for k, label in eb_cats.items() %}<option value="{{ k }}" {{ 'selected' if k == a.cat }}>{{ label }}{{ '  ★' if k == a.auto }}</option>{% endfor %}</select></td>
+        <td>{% if a.section in ('cogs', 'expenses') %}<input type="checkbox" name="eda_{{ a.id }}" {{ 'checked' if a.da }}>{% if a.auto_da %} ★{% endif %}{% endif %}</td>
+        <td>{% if eb_saved %}<span class="tag saved">saved</span>{% else %}<span class="tag auto">auto</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  <p class="muted" style="margin:10px 0 0;font-size:12px">★ = automatic suggestion.</p>
+</form>
+<form method="post" action="{{ url_for('reset_ebitda_accounts') }}" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset EBITDA accounts to automatic classification</button>
+</form>
+
+<form method="post" action="{{ url_for('save_ebitda_plan') }}" class="card" id="ebitda-plan">
+  <h2 style="margin-top:0"><span class="codes"><code>VC-10</code></span>Plan (budget) - EBITDA and revenue</h2>
+  <p class="muted" style="margin:0 0 8px;font-size:12.5px">Optional - used for "vs plan" on the EBITDA page (plan EBITDA ÷ plan revenue) and the Revenue growth page (revenue ÷ plan revenue − 1). One line per month: <code>YYYY-MM, plan EBITDA, plan total revenue</code> (paste from the budget sheet). Plan margin for a period = sum of plan EBITDA ÷ sum of plan revenue over its months; vs plan = margin − plan margin. The budget isn't in MongoDB, so this starts empty.</p>
+  <textarea name="plan" placeholder="2026-07, 780000, 2950000&#10;2026-08, 800000, 3000000">{{ plan_text }}</textarea>
+  <div style="margin-top:12px"><button class="btn" type="submit">Save plan</button></div>
+</form>

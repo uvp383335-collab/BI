@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Retention · Oryon{% endblock %}
+{% block body %}
+<style>.k6 .v{font-size:18px;white-space:nowrap} td.num{white-space:nowrap} td{font-size:13px}</style>
+{% set wlabel = 'TTM (vs 12 months earlier)' if window == 'ttm' else ('vs prior quarter end' if grain == 'quarter' else 'vs prior month') %}
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Revenue retention · GRR &amp; NRR</h1>
+  <p class="sub">{{ 'Quarterly' if grain == 'quarter' else 'Monthly' }} points · window {{ wlabel }} · {{ 'subscription MRR only' if sub_only else 'subscription + retainer MRR' }} · constant currency</p></div>
+  <form class="row" method="get">
+    <select name="grain"><option value="quarter" {{ 'selected' if grain=='quarter' }}>Quarterly</option><option value="month" {{ 'selected' if grain=='month' }}>Monthly</option></select>
+    <select name="window"><option value="ttm" {{ 'selected' if window=='ttm' }}>TTM window</option><option value="period" {{ 'selected' if window=='period' }}>Period window</option></select>
+    <select name="scope"><option value="all" {{ 'selected' if not sub_only }}>All recurring</option><option value="subscription" {{ 'selected' if sub_only }}>Subscription only</option></select>
+    <label>From <input type="text" name="from" value="{{ start }}" size="8"></label>
+    <label>To <input type="text" name="to" value="{{ end }}" size="8"></label>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('retention_csv', grain=grain, window=window, scope='subscription' if sub_only else 'all', **{'from': start, 'to': end}) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if unsaved %}<div class="flash err">{{ unsaved }} product mapping{{ 's' if unsaved != 1 }} still on the automatic suggestion. <a href="{{ url_for('settings_page') }}">Review in Settings</a>.</div>{% endif %}
+
+{% if latest %}
+<div class="kpis k6" style="grid-template-columns:repeat(6,1fr)">
+  <div class="kpi"><div class="l">GRR · {{ latest.label }}</div><div class="v {{ 'neg' if latest.grr < 90 and window=='ttm' }}">{{ '%.2f'|format(latest.grr) }}%</div></div>
+  <div class="kpi"><div class="l">NRR · {{ latest.label }}</div><div class="v {{ 'neg' if latest.nrr < 100 and window=='ttm' }}">{{ '%.2f'|format(latest.nrr) }}%</div></div>
+  <div class="kpi"><div class="l">Starting ARR (12 × S)</div><div class="v">{{ (latest.S*12)|usd }}</div></div>
+  <div class="kpi"><div class="l">Churn ARR · {{ latest.churn }} cust.</div><div class="v neg">−{{ (latest.C*12)|usd }}</div></div>
+  <div class="kpi"><div class="l">Downgrade ARR · {{ latest.downgrade }}</div><div class="v neg">−{{ (latest.Dn*12)|usd }}</div></div>
+  <div class="kpi"><div class="l">Upgrade ARR · {{ latest.upgrade }}</div><div class="v pos">+{{ (latest.U*12)|usd }}</div></div>
+</div>
+
+<div class="card"><h2 style="margin-top:0">GRR and NRR</h2><canvas id="pct" height="95"></canvas></div>
+<div class="card"><h2 style="margin-top:0">ARR bridge of the starting cohort</h2>
+  <p class="muted" style="margin-top:-6px">Blue + green = ending ARR (kept + upgrades, the NRR numerator). Blue + yellow + red = starting ARR (kept + downgrades + churn, the GRR denominator).</p>
+  <canvas id="bridge" height="95"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>Period</th><th>Window</th><th class="num">Cohort</th><th class="num">Starting MRR (S)</th>
+    <th class="num">Churn (C)</th><th class="num">Downgrades (Dn)</th><th class="num">Upgrades (U)</th>
+    <th class="num">Kept (K)</th><th class="num">Ending (E)</th><th class="num">GRR</th><th class="num">NRR</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr {% if not r.reliable %}style="opacity:.55" title="Cohort starts before {{ reliable_from }} - starting MRR is understated"{% endif %}>
+      <td>{{ r.label }}{% if not r.reliable %} <span class="tag auto">partial data</span>{% endif %}</td>
+      <td class="muted" style="white-space:nowrap">{{ r.m0 }} → {{ r.m1 }}</td>
+      <td class="num">{{ r.cohort }}</td>
+      <td class="num">{{ r.S|usd }}</td>
+      <td class="num neg">−{{ r.C|usd }} <span class="muted">({{ r.churn }})</span></td>
+      <td class="num neg">−{{ r.Dn|usd }} <span class="muted">({{ r.downgrade }})</span></td>
+      <td class="num pos">+{{ r.U|usd }} <span class="muted">({{ r.upgrade }})</span></td>
+      <td class="num">{{ r.K|usd }}</td>
+      <td class="num">{{ r.E|usd }}</td>
+      <td class="num"><b>{{ '%.2f'|format(r.grr) }}%</b></td>
+      <td class="num"><b>{{ '%.2f'|format(r.nrr) }}%</b></td>
+      <td><a href="{{ url_for('retention_detail', m1=r.m1, grain=grain, window=window, scope='subscription' if sub_only else 'all') }}">customers</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="muted" style="font-size:12px;margin:10px 0 0">MRR figures are USD per month (× 12 for ARR). Numbers in brackets are customer counts.{% if reliable_from %} Rows marked "partial data" start their cohort before {{ reliable_from }}, when annual invoices from before the data began are not yet captured.{% endif %}</p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">How GRR and NRR are calculated</h2>
+  <div style="font-size:15px;margin:6px 0 14px">
+    <b>GRR</b> = (S − C − Dn) ÷ S × 100 &nbsp;&nbsp;·&nbsp;&nbsp; <b>NRR</b> = (S − C − Dn + U) ÷ S × 100
+  </div>
+  <table style="max-width:760px">
+    <tr><td><b>S</b></td><td>Starting MRR - total MRR of the cohort at the start month</td></tr>
+    <tr><td><b>C</b></td><td>Churn - start MRR of cohort customers whose MRR is now $0</td></tr>
+    <tr><td><b>Dn</b></td><td>Downgrades - MRR lost by cohort customers who now pay less</td></tr>
+    <tr><td><b>U</b></td><td>Upgrades - extra MRR from cohort customers who now pay more</td></tr>
+    <tr><td><b>K, E</b></td><td>Kept = S − C − Dn; Ending = K + U</td></tr>
+  </table>
+  <ol style="margin:16px 0 0;padding-left:20px;line-height:1.7">
+    <li><b>Window.</b> TTM: start month = 12 months before the period end. Period window: the prior month (monthly) or the prior quarter end (quarterly).</li>
+    <li><b>Cohort.</b> Every customer with MRR &gt; 0 in the start month. Customers who start later are new business and are excluded.</li>
+    <li><b>Compare.</b> For each cohort customer: <i>a</i> = MRR in the start month, <i>b</i> = MRR in the end month (same MRR as the MRR page: monthly lines, annual ÷ 12, quarterly ÷ 3, retainers).</li>
+    <li><b>Constant currency.</b> CAD customers are converted at the <i>start month's</i> rate at both ends, so FX moves never show as churn or upgrades.</li>
+    <li><b>Classify each customer once.</b> b = 0 → churn (C += a) · 0 &lt; b &lt; a → downgrade (Dn += a − b) · b &gt; a → upgrade (U += b − a) · b = a → flat.</li>
+    <li><b>Ratios.</b> GRR = K ÷ S, NRR = E ÷ S. GRR excludes upgrades so it can never exceed 100%; NRR includes them. Benchmarks: GRR 90% (TTM), NRR 100% (TTM).</li>
+  </ol>
+  <p class="muted" style="margin:12px 0 0">Churn is revenue churn from invoices: a customer is churned when no recurring invoice line covers the end month. "Subscription only" runs the same calculation without retainer MRR.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }};
+const labels = rows.map(r => r.label);
+const ttm = {{ 'true' if window == 'ttm' else 'false' }};
+const fmt = v => '$' + Math.round(v).toLocaleString('en-US');
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'};
+const pt = rows.map(r => r.reliable ? 3 : 2), ptStyle = rows.map(r => r.reliable ? 'circle' : 'crossRot');
+const minPct = Math.floor(Math.min(...rows.map(r => r.grr), ttm ? 90 : 100) / 5) * 5 - 5;
+new Chart(document.getElementById('pct'), {type:'line', data:{labels, datasets:[
+  {label:'NRR', data:rows.map(r => +r.nrr.toFixed(2)), borderColor:'#2fbf71', backgroundColor:'#2fbf71', tension:.25, pointRadius:pt, pointStyle:ptStyle},
+  {label:'GRR', data:rows.map(r => +r.grr.toFixed(2)), borderColor:'#4f8cff', backgroundColor:'#4f8cff', tension:.25, pointRadius:pt, pointStyle:ptStyle},
+  ...(ttm ? [{label:'NRR target 100%', data:rows.map(() => 100), borderColor:'#2fbf71', borderDash:[6,4], borderWidth:1, pointRadius:0},
+             {label:'GRR benchmark 90%', data:rows.map(() => 90), borderColor:'#4f8cff', borderDash:[6,4], borderWidth:1, pointRadius:0}] : [])
+]}, options:{plugins:{legend:{labels:{color:'#e6ebf5'}}, tooltip:{callbacks:{
+    label:c => `${c.dataset.label}: ${c.raw}%`,
+    afterBody:items => { const r = rows[items[0].dataIndex]; return [`Cohort ${r.m0} → ${r.m1}: ${r.cohort} customers`, r.reliable ? '' : 'Partial data: starting MRR understated']; }}}},
+  scales:{x:{ticks:tick, grid}, y:{min:Math.max(minPct, 0), ticks:{...tick, callback:v => v + '%'}, grid}}}});
+new Chart(document.getElementById('bridge'), {type:'bar', data:{labels, datasets:[
+  {label:'Kept ARR', data:rows.map(r => r.K*12), backgroundColor:'#4f8cff', stack:'s'},
+  {label:'Upgrades', data:rows.map(r => r.U*12), backgroundColor:'#2fbf71', stack:'s'},
+  {label:'Downgrades', data:rows.map(r => r.Dn*12), backgroundColor:'#f0b429', stack:'s'},
+  {label:'Churn', data:rows.map(r => r.C*12), backgroundColor:'#ef5350', stack:'s'}
+]}, options:{plugins:{legend:{labels:{color:'#e6ebf5'}}, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.raw)}`}}},
+  scales:{x:{stacked:true, ticks:tick, grid}, y:{stacked:true, ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+</script>
+{% else %}
+<div class="card">No retention data for this range. Check the months, or map products as recurring in <a href="{{ url_for('settings_page') }}">Settings</a>.</div>
+{% endif %}
+{% endblock %}

@@ -140,6 +140,57 @@ export async function getInvoiceRevenueGrowthByProductDetailRequest(productId: s
   return res.data.data
 }
 
+export interface InvoiceRevenueGrowthByClassOptions {
+  fromYear?: string
+}
+
+export interface InvoiceRevenueGrowthByClassResult {
+  /** One series per QuickBooks Class with synced invoice revenue in range. */
+  classes: ProductRevenueGrowthProduct[]
+}
+
+/**
+ * "Revenue growth by class," computed entirely from this org's own synced
+ * QuickBooks invoice line items' Class reference — never calls QuickBooks
+ * live. QuickBooks Class tracking is an opt-in, org-wide setting: an org
+ * that hasn't enabled it (or hasn't run a forced resync since Class capture
+ * was added) sees an empty `classes` list, not an error.
+ */
+export async function getInvoiceRevenueGrowthByClassRequest(options: InvoiceRevenueGrowthByClassOptions): Promise<InvoiceRevenueGrowthByClassResult> {
+  const res = await httpClient.get<ApiEnvelope<InvoiceRevenueGrowthByClassResult>>('/metrics/quickbooks/invoice-revenue-growth-by-class', { params: options })
+  return res.data.data
+}
+
+export interface InvoiceRevenueGrowthByClassDetailLine {
+  providerRecordId: string
+  customerRecordId: string
+  customerName: string | null
+  /** "YYYY-MM-DD" */
+  txnDate: string
+  lineAmount: number
+  invoiceTotalAmount: number
+}
+
+export interface InvoiceRevenueGrowthByClassDetailResult {
+  classId: string
+  className: string
+  months: MonthlyRevenueGrowthPoint[]
+  /** Every synced invoice line behind the months above — sums to months[].revenue exactly. */
+  lines: InvoiceRevenueGrowthByClassDetailLine[]
+}
+
+/** Record-level detail behind one class's series above — every synced invoice line that fed it, for the "export to Excel" verification button. */
+export async function getInvoiceRevenueGrowthByClassDetailRequest(
+  classId: string,
+  className: string,
+  options: InvoiceRevenueGrowthByClassOptions
+): Promise<InvoiceRevenueGrowthByClassDetailResult> {
+  const res = await httpClient.get<ApiEnvelope<InvoiceRevenueGrowthByClassDetailResult>>('/metrics/quickbooks/invoice-revenue-growth-by-class/detail', {
+    params: { classId, className, ...options }
+  })
+  return res.data.data
+}
+
 export interface InvoiceRevenueGrowthByStateOptions {
   fromYear?: string
   /** Narrows to one product's revenue by state instead of every product combined. */

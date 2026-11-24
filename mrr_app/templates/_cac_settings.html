@@ -1,0 +1,40 @@
+<form method="post" action="{{ url_for('save_cac_accounts') }}" class="card" id="cac">
+  <div class="row" style="justify-content:space-between;margin-bottom:8px">
+    <h2 style="margin:0"><span class="codes"><code>VC-06</code></span>CAC expense accounts (sales &amp; marketing)</h2>
+    <div class="row"><button class="btn" type="submit">Save CAC accounts</button></div>
+  </div>
+  <p class="muted" style="margin:0 0 10px;font-size:12.5px">Expense accounts from the P&amp;L snapshots (<code>plmonthlysnapshots</code>). The ticked accounts are the S&amp;M spend in CAC = S&amp;M ÷ new logos.
+    {% if not cac_saved %}<b style="color:var(--warn)">Auto-selected, not saved yet:</b> 6010–6050 Sales, 6110–6115 Marketing payroll, 6120–6160 Marketing programs (spec VC-06). Customer Success 6210–6216 is left out.{% endif %}</p>
+  {% if not cac_accs %}<div class="flash err">No P&amp;L snapshots found in <code>plmonthlysnapshots</code>.</div>{% else %}
+  <div class="row" style="margin-bottom:8px;font-size:12.5px">
+    <span class="muted">Selected: <b id="cacN">0</b> accounts · <b id="cacTot">$0</b> over {{ cac_window[0] }} → {{ cac_window[1] }}</span>
+  </div>
+  <div class="scroll" style="max-height:460px">
+  <table>
+    <thead><tr><th style="width:34px"></th><th>Account</th><th>Section</th><th class="num">Last 12 months</th><th class="num">All months</th><th>Used</th><th></th></tr></thead>
+    <tbody>
+    {% for a in cac_accs %}
+      <tr>
+        <td><input type="checkbox" class="cacbox" name="acc_{{ a.id }}" data-ttm="{{ a.ttm }}" {{ 'checked' if a.selected }}></td>
+        <td><b>{{ a.name }}</b>{% if a.auto %} <span title="automatic suggestion">★</span>{% endif %}<div class="muted" style="font-size:11.5px">{{ a.reason }}</div></td>
+        <td class="muted">{{ 'Other expense' if a.section == 'otherExpenses' else 'Expense' }}</td>
+        <td class="num">{{ a.ttm|usd }}</td><td class="num">{{ a.total|usd }}</td>
+        <td class="muted" style="font-size:12px">{{ a.first }} – {{ a.last }}</td>
+        <td>{% if cac_saved %}<span class="tag saved">saved</span>{% else %}<span class="tag auto">auto</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <script>
+  (function(){const f=v=>'$'+Math.round(v).toLocaleString('en-US');
+    function upd(){let n=0,t=0;document.querySelectorAll('.cacbox').forEach(b=>{if(b.checked){n++;t+=+b.dataset.ttm}});
+      document.getElementById('cacN').textContent=n;document.getElementById('cacTot').textContent=f(t);}
+    document.querySelectorAll('.cacbox').forEach(b=>b.addEventListener('change',upd));upd();})();
+  </script>
+  {% endif %}
+  <p class="muted" style="margin:10px 0 0;font-size:12px">★ = automatic suggestion. Ticked accounts count in full every month; the CAC page shows the per-account breakdown for any month.</p>
+</form>
+<form method="post" action="{{ url_for('reset_cac_accounts') }}" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset CAC accounts to automatic selection</button>
+</form>

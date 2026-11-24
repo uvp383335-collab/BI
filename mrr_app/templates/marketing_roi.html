@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Marketing ROI by channel · Oryon{% endblock %}
+{% block body %}
+<style>.k5 .v{font-size:19px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+{% set thr = cfg.threshold %}
+{% macro x(v) %}{{ '%.2fx'|format(v) if v is not none else '-' }}{% endmacro %}
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Marketing ROI by channel</h1>
+  <p class="sub">New-business pipeline ({{ 'ARR' if cfg.value_field == 'arr' else 'amount' }}) created ÷ marketing spend · {{ 'quarter' if grain == 'quarter' else 'month' }}{{ ' · trailing 12 months' if view == 'ttm' }} · {{ cfg.n_rows }} marketing-sourced {{ cfg.provider }} deals (<a href="{{ url_for('settings_page') }}#marketing-roi">settings</a>)</p></div>
+  <form class="row" method="get">
+    <select name="grain"><option value="quarter" {{ 'selected' if grain=='quarter' }}>Quarterly</option><option value="month" {{ 'selected' if grain=='month' }}>Monthly</option></select>
+    <select name="view"><option value="period" {{ 'selected' if view=='period' }}>Period</option><option value="ttm" {{ 'selected' if view=='ttm' }}>TTM</option></select>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('roi_csv', grain=grain, view=view) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not cfg.n_deals %}<div class="card">No {{ cfg.provider }} deals in <code>deals</code> yet - run a CRM sync.</div>{% elif not rows %}<div class="card">No periods yet.</div>{% else %}
+{% if cfg.value_field == 'arr' and not cfg.has_arr %}<div class="flash err">The synced deals have no ARR - pipeline uses the deal amount (higher than Oryon's ARR basis).</div>{% endif %}
+{% if cfg.missing_spend %}<div class="flash err" style="background:#2a2a14;color:#e8d98a">No P&amp;L spend for: {{ cfg.missing_spend|join(', ') }} - pick its expense accounts in <a href="{{ url_for('settings_page') }}#marketing-roi">Settings</a>.</div>{% endif %}
+{% set L = latest %}
+<div class="kpis k5" style="grid-template-columns:repeat({{ 2 + L.channels|length }},1fr)">
+  <div class="kpi" style="border-color:var(--acc)"><div class="l">Blended ROI · {{ L.label }}</div><div class="v {{ 'neg' if L.blended is not none and L.blended < thr else 'pos' }}">{{ x(L.blended) }}</div>
+    <div class="muted" style="font-size:12px">{{ L.pipeline|usd }} ÷ {{ L.blended_spend|usd }}{% if year_ago and year_ago.blended is not none and L.blended is not none %} · {{ '%+.2f'|format(L.blended - year_ago.blended) }}x vs {{ year_ago.label }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">Programs ROI</div><div class="v {{ 'neg' if L.programs is not none and L.programs < thr }}">{{ x(L.programs) }}</div>
+    <div class="muted" style="font-size:12px">÷ {{ L.programs_spend|usd }}</div></div>
+  {% for c in L.channels %}
+  <div class="kpi"><div class="l">{{ c.name }}</div><div class="v {{ 'neg' if c.roi is not none and c.roi < thr }}">{{ x(c.roi) }}</div>
+    <div class="muted" style="font-size:12px">{{ c.pipeline|usd }} ({{ c.deals }}) ÷ {{ c.spend|usd }}</div></div>
+  {% endfor %}
+</div>
+
+<div class="card"><h2 style="margin-top:0">Blended and programs ROI</h2><canvas id="bp" height="70"></canvas></div>
+<div class="card"><h2 style="margin-top:0">ROI by channel</h2><canvas id="ch" height="70"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'Quarter' if grain == 'quarter' else 'Month' }}</th><th class="num">Pipeline</th><th class="num">Deals</th><th class="num">Marketing spend</th><th class="num">Blended</th><th class="num">Program spend</th><th class="num">Programs</th>
+    {% for c in L.channels %}<th class="num">{{ c.name }}</th>{% endfor %}<th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr><td>{{ r.label }}{% if view == 'ttm' %} <span class="muted">{{ r.window[0] }} to {{ r.window[1] }}</span>{% endif %}</td>
+      <td class="num">{{ r.pipeline|usd }}</td><td class="num">{{ r.deals }}</td><td class="num">{{ r.blended_spend|usd }}</td>
+      <td class="num {{ 'neg' if r.blended is not none and r.blended < thr }}"><b>{{ x(r.blended) }}</b></td>
+      <td class="num">{{ r.programs_spend|usd }}</td><td class="num {{ 'neg' if r.programs is not none and r.programs < thr }}"><b>{{ x(r.programs) }}</b></td>
+      {% for c in r.channels %}<td class="num {{ 'neg' if c.roi is not none and c.roi < thr }}" title="{{ c.pipeline|usd }} from {{ c.deals }} deals ÷ {{ c.spend|usd }}"><b>{{ x(c.roi) }}</b> <span class="muted" style="font-size:11px">{{ c.pipeline|usd }} / {{ c.spend|usd }}</span></td>{% endfor %}
+      <td><a href="{{ url_for('roi_detail', month=r.month, grain=grain, view=view) }}">deals</a></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }}, thr = {{ thr }};
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.label);
+const fmt = v => v == null ? '-' : v.toFixed(2) + 'x';
+const opts = {plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.raw)}`}}},
+  scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + 'x'}, grid, beginAtZero:true}}};
+const thrLine = {label:'Threshold', data:rows.map(() => thr), borderColor:'#ef5350', borderDash:[4, 4], pointRadius:0, borderWidth:1};
+new Chart(document.getElementById('bp'), {type:'line', data:{labels, datasets:[
+  {label:'Blended', data:rows.map(r => r.blended), borderColor:'#4f8cff', backgroundColor:'#4f8cff', tension:.2},
+  {label:'Programs', data:rows.map(r => r.programs), borderColor:'#f0b429', backgroundColor:'#f0b429', tension:.2}, thrLine]}, options:opts});
+const pal = ['#2fbf71', '#b37feb', '#26c6da', '#ff8a65', '#f06292', '#9ccc65'];
+const names = rows.length ? rows[0].channels.map(c => c.name) : [];
+new Chart(document.getElementById('ch'), {type:'line', data:{labels, datasets:[
+  ...names.map((n, i) => ({label:n, data:rows.map(r => r.channels[i].roi), borderColor:pal[i % pal.length], backgroundColor:pal[i % pal.length], tension:.2})), thrLine]}, options:opts});
+</script>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How marketing ROI is calculated (spec CM-07)</h2>
+  <ul>
+    <li><b>ROI = new-business pipeline created ÷ marketing spend</b> for the same period.</li>
+    <li>Pipeline = {{ 'ARR' if cfg.value_field == 'arr' else 'amount' }} of {{ cfg.provider }} deals of type {{ (cfg.nb_types or [])|join(', ') }} created in the period (created date, not close date), whatever their stage, with a marketing lead source: {{ (cfg.mk_sources or [])|join(', ') }}.</li>
+    <li>Blended = ÷ all marketing P&amp;L accounts; Programs = ÷ program spend accounts (Settings).</li>
+    <li>Channels: {% for c in cfg.channels %}<b>{{ c.name }}</b> = {{ c.sources|join(' + ') }} deals ÷ its P&amp;L accounts{{ '; ' if not loop.last }}{% endfor %}. All spend comes from the P&amp;L snapshots in MongoDB.</li>
+    <li>Quarterly view shows complete quarters only; the last month is the latest P&amp;L snapshot ({{ cfg.pl_last }}).</li>
+  </ul>
+</div>
+{% endblock %}

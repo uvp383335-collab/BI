@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Settings · Oryon MRR{% endblock %}
+{% block body %}
+<h1>Settings</h1>
+<p class="sub">Map each QuickBooks product to how it counts in MRR. Every product already has an automatic suggestion selected - review it, change anything that's wrong, and click <b>Save mapping</b>.</p>
+
+{% if unsaved %}
+<div class="flash err">{{ unsaved }} product{{ 's' if unsaved != 1 }} still use the automatic suggestion and {{ 'have' if unsaved != 1 else 'has' }} not been saved yet. The MRR page already uses these suggestions; saving makes them permanent.</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('save_mapping') }}" class="card" id="mapping">
+  <div class="row" style="justify-content:space-between;margin-bottom:12px">
+    <h2 style="margin:0">Product mapping</h2>
+    <div class="row">
+      <button class="btn" type="submit">Save mapping</button>
+    </div>
+  </div>
+  <div class="scroll">
+  <table>
+    <thead><tr>
+      <th>Product</th><th>QuickBooks class</th><th>Oryon category</th><th class="num">Invoice lines</th>
+      <th class="num">Invoiced</th><th>Used</th><th>MRR mapping</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for p in catalog %}
+      <tr>
+        <td><b>{{ p.name }}</b><div class="muted" style="font-size:12px">item {{ p.itemId }}</div></td>
+        <td>{{ p.classes }}</td>
+        <td>{{ p.category }}{% if p.frequency %} · {{ p.frequency }}{% endif %}</td>
+        <td class="num">{{ '{:,}'.format(p.lines) }}</td>
+        <td class="num">{{ p.amount|usd }}</td>
+        <td class="muted" style="font-size:12px">{{ p.first }}{% if p.last and p.last != p.first %} – {{ p.last }}{% endif %}</td>
+        <td>
+          <select name="map_{{ p.itemId }}">
+            {% for k, label in types.items() %}
+              <option value="{{ k }}" {{ 'selected' if k == p.mapping }}>{{ label }}{{ '  ★' if k == p.auto }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          {% if p.saved %}<span class="tag saved">saved</span>
+          {% else %}<span class="tag auto" title="{{ p.reason }}">auto</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted" style="margin:12px 0 0;font-size:12px">★ = automatic suggestion. "Retainer - only when repeated monthly" counts a line as MRR only when the same customer is billed the same amount in the month before or after (use it for Professional Services, which mixes retainers and one-off projects).</p>
+</form>
+<form method="post" action="{{ url_for('reset_mapping') }}" onsubmit="return confirm('Discard all saved mappings and go back to the automatic suggestions?')" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset to automatic suggestions</button>
+</form>
+
+{% include "_recurring_settings.html" %}
+
+{% include "_cac_settings.html" %}
+
+{% include "_ltv_settings.html" %}
+
+{% include "_cogs_settings.html" %}
+
+{% include "_ga_settings.html" %}
+
+{% include "_ebitda_settings.html" %}
+
+{% include "_cash_settings.html" %}
+
+{% include "_fcf_settings.html" %}
+
+{% include "_ccc_settings.html" %}
+
+{% include "_conc_settings.html" %}
+
+{% include "_div_settings.html" %}
+
+{% include "_wr_settings.html" %}
+
+{% include "_fn_settings.html" %}
+
+{% include "_mql_settings.html" %}
+
+{% include "_msp_settings.html" %}
+
+{% include "_roi_settings.html" %}
+
+<form method="post" action="{{ url_for('save_general') }}" class="card">
+  <h2 style="margin-top:0">Calculation settings</h2>
+  <div class="row" style="gap:28px;align-items:flex-start">
+    <label>First month shown<br><input type="text" name="start_month" value="{{ settings.start_month }}" placeholder="YYYY-MM" size="9"></label>
+    <label>Early-invoice day<br><input type="number" name="early_invoice_day" value="{{ settings.early_invoice_day }}" min="1" max="31" style="width:80px">
+      <div class="muted" style="font-size:12px;max-width:260px">Annual/quarterly invoices dated on or after this day start in the next month (renewals are billed up to 15 days early).</div></label>
+    <label>Canadian billing countries<br><input type="text" name="cad_countries" value="{{ settings.cad_countries|join(', ') }}" size="18">
+      <div class="muted" style="font-size:12px">Customers with these billing countries are converted from CAD.</div></label>
+  </div>
+  <div class="row" style="gap:28px;align-items:flex-start;margin-top:16px">
+    <label>New-logo billing lag (months)<br><input type="number" name="newlogo_lag_months" value="{{ settings.newlogo_lag_months }}" min="0" max="6" style="width:80px">
+      <div class="muted" style="font-size:12px;max-width:300px">A new customer is dated to its Salesforce close month = first billing month minus this. Ridgeline bills the month after the deal closes (1).</div></label>
+    <label style="max-width:360px"><input type="checkbox" name="newlogo_group_parent" {{ 'checked' if settings.newlogo_group_parent }}> Count a new subsidiary of a paying parent as expansion, not a new logo
+      <div class="muted" style="font-size:12px">Off matches the Oryon report (VC-03), which counts subsidiaries as new logos.</div></label>
+  </div>
+  <label style="display:block;margin-top:16px">CAD → USD rate by month (USD per 1 CAD, one <code>YYYY-MM, rate</code> per line; missing months use the nearest earlier month)
+    <div class="muted" style="font-size:12px">Manually entered / hardcoded data (e.g. from QuickBooks' ExchangeRate list) - not calculated or AI-derived. Every other number on this page and on the MRR page is computed from the invoices with plain formulas.</div>
+    <textarea name="fx_cad_usd">{{ fx_text }}</textarea></label>
+  <div style="margin-top:12px"><button class="btn" type="submit">Save settings</button></div>
+</form>
+{% endblock %}

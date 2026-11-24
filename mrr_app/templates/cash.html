@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Cash & runway · Oryon{% endblock %}
+{% block body %}
+<style>.k5 .v{font-size:19px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Cash position &amp; runway</h1>
+  <p class="sub">Unrestricted cash at period end and months of runway when cash is falling · <code>{{ info.collection }}</code> · cash = {% if info.mode == 'accounts' %}{{ info.chosen|map(attribute='name')|join(' + ') }}{% else %}{{ info.sections|join(' + ') }}{% if info.adjust %} − {{ info.adjust|usd }} restricted{% endif %}{% endif %} · runway over {{ info.lookback }} months (<a href="{{ url_for('settings_page') }}#cash">settings</a>)</p></div>
+  <form class="row" method="get">
+    <select name="grain"><option value="month" {{ 'selected' if grain=='month' }}>At month end</option><option value="quarter" {{ 'selected' if grain=='quarter' }}>At quarter end</option></select>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('cash_csv') }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not info.n %}<div class="card">No Balance Sheet snapshots in <code>{{ info.collection }}</code> yet - run a QuickBooks sync.</div>{% else %}
+{% if info.mode == 'sections' %}<div class="flash err" style="background:#2a2a14;color:#e8d98a">No per-account balances in the snapshots yet, so cash = {{ info.sections|join(' + ') }} total{% if info.adjust %} − {{ info.adjust|usd }} restricted cash{% endif %}. Resync QuickBooks after the backend update to pick individual accounts in <a href="{{ url_for('settings_page') }}#cash">Settings</a>.</div>{% endif %}
+{% if stale %}<div class="flash err" style="background:#2a2a14;color:#e8d98a">Hidden: {{ stale|join(', ') }} - identical to the month before (nothing synced for it yet).</div>{% endif %}
+{% if latest and latest.ar_negative %}<div class="flash err">Data check: Accounts Receivable is negative ({{ latest.ar|usd }} at {{ latest.month }}) - QuickBooks has more customer payments than invoices, so cash is likely overstated by about that much. Fix the payment import in QuickBooks; the dashed line shows cash without it.</div>{% endif %}
+
+{% if latest %}
+<div class="kpis k5" style="grid-template-columns:repeat(6,1fr)">
+  <div class="kpi"><div class="l">Cash · {{ latest.month }}</div><div class="v">{{ latest.cash|usd }}</div>
+    <div class="muted" style="font-size:12px">{% if year_ago %}{{ '%+.1f'|format((latest.cash / year_ago.cash - 1) * 100) if year_ago.cash else '-' }}% vs {{ year_ago.month }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">Runway</div><div class="v {{ 'pos' if latest.self_funding else 'neg' if latest.runway is not none and latest.runway < 18 else '' }}">{{ 'Self-funding' if latest.self_funding else ('%.1f months'|format(latest.runway) if latest.runway is not none else '-') }}</div>
+    <div class="muted" style="font-size:12px">{{ 'cash did not fall over ' ~ info.lookback ~ ' months' if latest.self_funding else 'cash ÷ average monthly decline' }}</div></div>
+  <div class="kpi"><div class="l">Avg monthly change ({{ info.lookback }} mo)</div><div class="v {{ 'pos' if latest.avg_decline is not none and latest.avg_decline <= 0 else 'neg' }}">{{ (-latest.avg_decline)|usd if latest.avg_decline is not none else '-' }}</div>
+    <div class="muted" style="font-size:12px">per month</div></div>
+  <div class="kpi"><div class="l">Change vs prior month</div><div class="v {{ 'pos' if latest.change and latest.change >= 0 else 'neg' }}">{{ latest.change|usd if latest.change is not none else '-' }}</div></div>
+  <div class="kpi"><div class="l">Restricted cash (not counted)</div><div class="v">{{ latest.restricted|usd }}</div>
+    <div class="muted" style="font-size:12px">{{ info.restricted_accts|map(attribute='name')|join(', ') if info.mode == 'accounts' else 'fixed amount from Settings' }}</div></div>
+  <div class="kpi"><div class="l">Accounts receivable</div><div class="v {{ 'neg' if latest.ar_negative else '' }}">{{ latest.ar|usd if latest.ar is not none else '-' }}</div>
+    <div class="muted" style="font-size:12px">{{ 'negative - see the data check' if latest.ar_negative else 'balance sheet A/R' }}</div></div>
+</div>
+{% endif %}
+
+<div class="card"><h2 style="margin-top:0">Cash at {{ 'month' if grain == 'month' else 'quarter' }} end</h2><canvas id="cash" height="80"></canvas></div>
+<div class="card"><h2 style="margin-top:0">Monthly change in cash</h2><canvas id="chg" height="65"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'Month end' if grain == 'month' else 'Quarter end' }}</th><th class="num">Cash</th><th class="num">vs prior month</th><th class="num">Avg monthly decline ({{ info.lookback }} mo)</th><th class="num">Runway</th><th class="num">Restricted</th><th class="num">A/R</th>{% if info.show_ar %}<th class="num">Cash + negative A/R</th>{% endif %}<th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr {% if not r.closed %}style="opacity:.55" title="After the last month with P&L revenue ({{ info.last_closed }})"{% endif %}>
+      <td>{{ r.label }}{% if grain == 'quarter' %} <span class="muted">{{ r.month }}</span>{% endif %}{% if not r.closed %} <span class="tag auto">not closed</span>{% endif %}</td>
+      <td class="num"><b>{{ r.cash|usd }}</b></td>
+      <td class="num {{ 'pos' if r.change and r.change >= 0 else 'neg' if r.change else '' }}">{{ r.change|usd if r.change is not none else '-' }}</td>
+      <td class="num">{{ r.avg_decline|usd if r.avg_decline is not none else '-' }}</td>
+      <td class="num">{% if r.avg_decline is none %}-{% elif r.self_funding %}<span class="pos">Self-funding</span>{% else %}<b>{{ '%.1f'|format(r.runway) }}</b> mo{% endif %}</td>
+      <td class="num muted">{{ r.restricted|usd if r.restricted else '-' }}</td>
+      <td class="num {{ 'neg' if r.ar_negative }}">{{ r.ar|usd if r.ar is not none else '-' }}</td>
+      {% if info.show_ar %}<td class="num muted">{{ r.cash_ex_excess|usd if r.ar_negative else '' }}</td>{% endif %}
+      <td><a href="{{ url_for('cash_detail', month=r.month) }}">details</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }}, showAr = {{ 'true' if info.show_ar else 'false' }};
+const fmt = v => (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString('en-US');
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.label);
+const ds = [{type:'bar', label:'Cash', data:rows.map(r => r.cash), backgroundColor:rows.map(r => r.closed ? '#4f8cff' : '#4f8cff66'), order:2}];
+if (showAr && rows.some(r => r.ar_negative)) ds.push({type:'line', label:'Cash + negative A/R (data check)', data:rows.map(r => r.cash_ex_excess), borderColor:'#f0b429', backgroundColor:'#f0b429', borderDash:[6,4], order:1});
+new Chart(document.getElementById('cash'), {data:{labels, datasets:ds},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.raw)}`,
+    footer:i => { const r = rows[i[0].dataIndex]; return r.avg_decline == null ? '' : r.self_funding ? 'Runway: self-funding' : `Runway: ${r.runway.toFixed(1)} months`; }}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+new Chart(document.getElementById('chg'), {type:'bar', data:{labels, datasets:[
+  {label:'Change vs prior month', data:rows.map(r => r.change), backgroundColor:rows.map(r => (r.change || 0) >= 0 ? '#2fbf71' : '#ef5350')}]},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => fmt(c.raw)}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+</script>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How cash and runway are calculated (spec CB-05)</h2>
+  <ul>
+    <li><b>Cash(e)</b> = unrestricted cash at the end of month e = {% if info.mode == 'accounts' %}the month-end balances of {{ info.chosen|map(attribute='name')|join(', ') }}{% if info.restricted_accts %}; restricted, not counted: {{ info.restricted_accts|map(attribute='name')|join(', ') }}{% endif %}{% if info.excluded_bank %}; excluded: {{ info.excluded_bank|map(attribute='name')|join(', ') }}{% endif %}{% else %}the {{ info.sections|join(' + ') }} section total{% if info.adjust %} minus {{ info.adjust|usd }} restricted cash{% endif %}{% endif %} - spec: 1010 + 1015 + 1020, restricted cash 1030 excluded.</li>
+    <li><b>Runway = Cash(e) ÷ ((Cash(e − {{ info.lookback }}) − Cash(e)) ÷ {{ info.lookback }})</b> - cash divided by the average monthly decline over the last {{ info.lookback }} months.</li>
+    <li>When cash did not fall over those months, runway is null and shows <b>Self-funding</b>.</li>
+  </ul>
+  <p class="muted" style="font-size:12px">Point in time: "At month end" or "At quarter end". "Not closed" = after the last month with P&amp;L revenue ({{ info.last_closed or '-' }}).</p>
+</div>
+{% endblock %}

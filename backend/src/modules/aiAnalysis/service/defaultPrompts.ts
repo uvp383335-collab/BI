@@ -176,6 +176,12 @@ export const DEFAULT_ANALYSIS_PROMPTS: Record<AnalysisChartKey, DefaultPrompt> =
     `The data covers every product. For each product, months lists the invoiced revenue (USD) for each month and revenueGrowthPct, the month-over-month change (null when the prior month had no revenue).`,
     'Analyze revenue across all products: which products drive revenue, which are growing or shrinking, how concentrated revenue is, and any unusual months.'
   ),
+  'invoice-revenue-growth-by-class': defaultPrompt(
+    'invoice-revenue-growth-by-class',
+    'Revenue growth by class',
+    `The data covers every QuickBooks Class that appears on a synced invoice line. For each class, months lists the invoiced revenue (USD) for each month and revenueGrowthPct, the month-over-month change (null when the prior month had no revenue). An empty list means the company has no QuickBooks Class tracking enabled, or no synced invoice lines have a Class assigned yet.`,
+    'Analyze revenue across all classes: which classes drive revenue, which are growing or shrinking, how concentrated revenue is, and any unusual months.'
+  ),
   'invoice-revenue-growth-by-state': defaultPrompt(
     'invoice-revenue-growth-by-state',
     'Revenue growth by location',

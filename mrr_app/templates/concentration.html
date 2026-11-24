@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Customer concentration · Oryon{% endblock %}
+{% block body %}
+<style>.k5 .v{font-size:19px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Customer concentration</h1>
+  <p class="sub">Share of trailing-12-month revenue from the {{ info.top_n }} largest customers{{ ', grouped by parent' if info.group_parent else ' (no parent grouping)' }}{% if line != 'All' %} · QuickBooks class <b>{{ line }}</b> only{% endif %} (<a href="{{ url_for('settings_page') }}#concentration">settings</a>)</p></div>
+  <form class="row" method="get">
+    <select name="line"><option value="All" {{ 'selected' if line=='All' }}>All classes</option>{% for l in lines %}<option value="{{ l }}" {{ 'selected' if line==l }}>{{ l }}</option>{% endfor %}</select>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('conc_csv') }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not rows %}<div class="card">Not enough invoice history yet - the first value needs 12 months of invoices.</div>{% else %}
+{% if info.group_parent and not (info.hows.get('Salesforce parent') or info.hows.get('Salesforce account') or info.hows.get('QuickBooks parent')) %}<div class="flash err" style="background:#2a2a14;color:#e8d98a">No customer is linked to a parent yet ({{ info.n_qbo }} QuickBooks customers, {{ info.n_sf }} Salesforce accounts), so every customer is ranked on its own. Sync QuickBooks customers (names and parent) and Salesforce accounts to group subsidiaries under their parent.</div>{% endif %}
+{% set L = latest %}
+<div class="kpis k5" style="grid-template-columns:repeat(5,1fr)">
+  <div class="kpi"><div class="l">Top-{{ info.top_n }} share · TTM {{ L.month }}</div><div class="v">{{ '%.2f%%'|format(L.share) }}</div>
+    <div class="muted" style="font-size:12px">{% if year_ago %}{{ '%+.2f'|format(L.share - year_ago.share) }} pts vs {{ year_ago.month }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">Largest customer</div><div class="v">{{ '%.2f%%'|format(L.largest) if L.largest is not none else '-' }}</div><div class="muted" style="font-size:12px">{{ L.largest_name }}</div></div>
+  <div class="kpi"><div class="l">Top-{{ info.top_n }} invoiced basis</div><div class="v">{{ '%.2f%%'|format(L.inv_share) if L.inv_share is not none else '-' }}</div><div class="muted" style="font-size:12px">{{ 'invoice totals by invoice date' if L.inv_share is not none else 'all products only' }}</div></div>
+  <div class="kpi"><div class="l">Top-{{ info.top_n }} revenue</div><div class="v">{{ L.top|usd }}</div><div class="muted" style="font-size:12px">of {{ L.total|usd }}</div></div>
+  <div class="kpi"><div class="l">Customer groups</div><div class="v">{{ L.groups }}</div><div class="muted" style="font-size:12px">with revenue in the 12 months</div></div>
+</div>
+
+<div class="card"><h2 style="margin-top:0">Top-{{ info.top_n }} and largest-customer share{% if line != 'All' %} · {{ line }}{% endif %}</h2><canvas id="share" height="80"></canvas></div>
+{% if by_line %}<div class="card"><h2 style="margin-top:0">Top-{{ info.top_n }} share by QuickBooks class (product line)</h2><canvas id="lines" height="70"></canvas>
+  <p class="muted" style="font-size:12px;margin:6px 0 0">Each class ranks customers on revenue from invoice lines with that class only. Hardware has few buyers, so a handful of customers make up most of it.</p></div>{% endif %}
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>TTM to</th><th class="num">Top-{{ info.top_n }} share</th><th class="num">Largest</th><th>Largest customer</th>{% if line == 'All' %}<th class="num">Invoiced basis</th>{% endif %}<th class="num">Top-{{ info.top_n }} revenue</th><th class="num">Total revenue</th><th class="num">Groups</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr><td>{{ r.month }}</td><td class="num"><b>{{ '%.2f%%'|format(r.share) }}</b></td><td class="num">{{ '%.2f%%'|format(r.largest) if r.largest is not none else '-' }}</td>
+      <td class="muted">{{ r.largest_name }}</td>{% if line == 'All' %}<td class="num">{{ '%.2f%%'|format(r.inv_share) if r.inv_share is not none else '-' }}</td>{% endif %}
+      <td class="num">{{ r.top|usd }}</td><td class="num">{{ r.total|usd }}</td><td class="num">{{ r.groups }}</td>
+      <td><a href="{{ url_for('conc_detail', month=r.month, line=line) }}">top customers</a></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }}, byLine = {{ by_line|tojson }}, isAll = {{ 'true' if line == 'All' else 'false' }};
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.month), pct = v => v == null ? '-' : v.toFixed(2) + '%';
+const ds = [{label:'Top-{{ info.top_n }} share', data:rows.map(r => r.share), borderColor:'#4f8cff', backgroundColor:'#4f8cff', borderWidth:3},
+  {label:'Largest customer', data:rows.map(r => r.largest), borderColor:'#f0b429', backgroundColor:'#f0b429'}];
+if (isAll) ds.push({label:'Top-{{ info.top_n }}, invoiced basis', data:rows.map(r => r.inv_share), borderColor:'#2fbf71', backgroundColor:'#2fbf71', borderDash:[6,4]});
+new Chart(document.getElementById('share'), {type:'line', data:{labels, datasets:ds},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${pct(c.raw)}`}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid}}}});
+if (Object.keys(byLine).length) {
+  const col = {Platform:'#4f8cff', Services:'#2fbf71', Hardware:'#c792ea', 'No class':'#f0b429'}, extra = ['#ef5350', '#26c6da', '#ffa726'];
+  const lds = Object.entries(byLine).map(([l, rs]) => { const m = Object.fromEntries(rs.map(r => [r.month, r.share]));
+    const cl = col[l] || extra[l.length % extra.length]; return {label:l, data:labels.map(x => m[x] ?? null), borderColor:cl, backgroundColor:cl}; });
+  lds.push({label:'All classes', data:rows.map(r => r.share), borderColor:'#8f9bb3', backgroundColor:'#8f9bb3', borderDash:[6,4]});
+  new Chart(document.getElementById('lines'), {type:'line', data:{labels, datasets:lds},
+    options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${pct(c.raw)}`}}},
+      scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid}}}});
+}
+</script>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How customer concentration is calculated (spec CM-02)</h2>
+  <ul>
+    <li><b>Groups</b>: {% if info.group_parent %}Salesforce account (QBO_Customer_Id__c link, else name match) walked up ParentId to the top; else the QuickBooks parent customer; else the customer itself{% else %}every QuickBooks customer on its own (parent grouping off){% endif %}. Now: {% for k, v in info.hows.items() %}{{ v }} {{ k }}{{ ', ' if not loop.last }}{% endfor %}.</li>
+    <li><b>Recognized revenue</b> per group over the 12 months ending at e: annual subscription items ({{ info.annual_items|length }} items mapped "Subscription - annual") spread 1/12 per month from the service start - the invoice month, or the next month when dated on or after the early-invoice day; every other line in its invoice month. Canadian customers converted at the monthly CAD→USD rate.</li>
+    <li><b>Top-{{ info.top_n }} share = 100 × Σ the {{ info.top_n }} largest groups ÷ Σ all groups</b>; largest = the top group's share. Invoiced basis: invoice totals by invoice date over the same 12 months.</li>
+    <li>Product lines = the QuickBooks class on each invoice line: {{ info.classes|join(', ') }}. Lines without a class are in "No class"; every line counts in "All classes".</li>
+  </ul>
+</div>
+{% endblock %}

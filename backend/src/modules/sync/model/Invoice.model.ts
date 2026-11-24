@@ -11,10 +11,18 @@ import { Schema, Document, Types, Connection, Model } from 'mongoose'
  * up that product's category/billingFrequency. Only lines with a resolvable
  * ItemRef are kept (discount/subtotal/description lines have none and are
  * dropped) — every metric that reads `lines` already tolerates `[]`.
+ *
+ * `classId`/`className` carry QuickBooks' optional `ClassRef` off the same
+ * line (SalesItemLineDetail.ClassRef) — Class tracking is an opt-in,
+ * org-wide QuickBooks setting, so both are only present when the org has it
+ * enabled and the line was actually assigned a Class; every metric reading
+ * them must tolerate `undefined` (see getRevenueByClassAndMonth).
  */
 export interface InvoiceLineDocument {
   itemId: string
   amount: number
+  classId?: string
+  className?: string
 }
 
 /** QuickBooks' Invoice.BillAddr — the "Bill to" address shown on the invoice itself. Every field optional since QuickBooks only requires what the customer record itself has filled in. */
@@ -41,7 +49,15 @@ export interface InvoiceDocument extends Document {
   updatedAt: Date
 }
 
-const invoiceLineSchema = new Schema<InvoiceLineDocument>({ itemId: { type: String, required: true }, amount: { type: Number, required: true } }, { _id: false })
+const invoiceLineSchema = new Schema<InvoiceLineDocument>(
+  {
+    itemId: { type: String, required: true },
+    amount: { type: Number, required: true },
+    classId: { type: String, required: false },
+    className: { type: String, required: false }
+  },
+  { _id: false }
+)
 
 const invoiceBillingAddressSchema = new Schema<InvoiceBillingAddressDocument>(
   {

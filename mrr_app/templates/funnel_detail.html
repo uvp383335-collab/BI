@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Funnel {{ r.label }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:13px;padding:7px 10px} td.num{white-space:nowrap}</style>
+<p><a href="{{ url_for('fn_page', grain=grain, view=view) }}">← Funnel conversion</a></p>
+<h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Funnel conversion · {{ r.label }}</h1>
+<p class="sub">Cohort months {{ r.window[0] }} to {{ r.window[1] }}</p>
+<div class="card">
+<table>
+  <thead><tr><th>Step</th><th class="num">Cohort</th><th class="num">Converted</th><th class="num">Conversion</th><th></th></tr></thead>
+  <tbody>
+  {% for k, c in [('l2m', 'lead'), ('m2s', 'mql'), ('s2o', 'sql'), ('o2w', 'opp'), ('s2w', 'sql')] %}
+    <tr {% if k == 'm2s' %}style="font-weight:700"{% endif %}><td>{{ steps[k] }}</td><td class="num">{{ r[c] }}</td><td class="num">{{ r[k] }}</td>
+      <td class="num">{{ '%.2f%%'|format(r[k ~ '_pct']) if r[k ~ '_pct'] is not none else '-' }}</td><td>{% if r.immature[k] %}<span class="tag auto">Immature</span>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<div class="card scroll">
+<h2 style="margin-top:0">By cohort month</h2>
+<table>
+  <thead><tr><th>Month</th><th class="num">MQLs</th><th class="num">→ SQL</th><th class="num">Leads</th><th class="num">→ MQL</th><th class="num">SQLs</th><th class="num">→ opp.</th><th class="num">→ won</th><th class="num">Days since month end</th></tr></thead>
+  <tbody>
+  {% for m in months %}<tr><td>{{ m.month }}</td><td class="num">{{ m.mql }}</td><td class="num">{{ m.m2s }}</td><td class="num">{{ m.lead }}</td><td class="num">{{ m.l2m }}</td><td class="num">{{ m.sql }}</td><td class="num">{{ m.s2o }}</td><td class="num">{{ m.s2w }}</td><td class="num muted">{{ m.age }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

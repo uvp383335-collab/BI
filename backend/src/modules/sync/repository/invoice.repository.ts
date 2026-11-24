@@ -385,6 +385,61 @@ export const invoiceRepository = {
   },
 
   /**
+   * Every individual invoice line billed against one QuickBooks Class
+   * (`classId`), over `[from, to]`, with its customer's display name joined
+   * in — the "Revenue growth by class" chart's nearest local, invoice-level
+   * backing data for its "export to Excel" verification button. Mirrors
+   * getInvoiceLinesForItem exactly, grouping on `lines.classId` instead of
+   * `lines.itemId`.
+   */
+  async getInvoiceLinesForClass(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    from: Date,
+    to: Date,
+    classId: string
+  ): Promise<{ providerRecordId: string; customerRecordId: string; customerName: string | null; txnDate: Date; lineAmount: number; invoiceTotalAmount: number }[]> {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const results = await Model.aggregate<{
+      providerRecordId: string
+      customerRecordId: string
+      customerName: string | null
+      txnDate: Date
+      lineAmount: number
+      invoiceTotalAmount: number
+    }>([
+      { $match: { orgId: orgObjectId, provider, txnDate: { $gte: from, $lte: to }, 'lines.classId': classId } },
+      { $unwind: '$lines' },
+      { $match: { 'lines.classId': classId } },
+      {
+        $lookup: {
+          from: 'quickbookscustomers',
+          let: { customerId: '$customerRecordId' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$orgId', orgObjectId] }, { $eq: ['$provider', provider] }, { $eq: ['$providerRecordId', '$$customerId'] }] } } }
+          ],
+          as: 'customer'
+        }
+      },
+      { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
+      { $sort: { txnDate: 1 } },
+      {
+        $project: {
+          _id: 0,
+          providerRecordId: 1,
+          customerRecordId: 1,
+          customerName: { $ifNull: ['$customer.displayName', null] },
+          txnDate: 1,
+          lineAmount: '$lines.amount',
+          invoiceTotalAmount: '$totalAmount'
+        }
+      }
+    ])
+    return results
+  },
+
+  /**
    * Total invoiced revenue per calendar month, over `[from, to]`, grouped by
    * line item (`itemId`) — every product's monthly revenue in one query,
    * read entirely from this org's own synced `Invoice` line items. Backs the
@@ -413,6 +468,43 @@ export const invoiceRepository = {
       }
     ])
     return results.map((r) => ({ itemId: r._id.itemId, month: r._id.month, revenue: r.revenue }))
+  },
+
+  /**
+   * Total invoiced revenue per calendar month, over `[from, to]`, grouped by
+   * each line's QuickBooks Class (`lines.classId`/`lines.className`, synced
+   * from `SalesItemLineDetail.ClassRef` — see Invoice.model.ts) — every
+   * class's monthly revenue in one query, read entirely from this org's own
+   * synced `Invoice` line items. Backs "Revenue growth by class"
+   * (productRevenueGrowth.service.ts's getInvoiceRevenueGrowthByClass).
+   * Unlike getRevenueByItemAndMonth, there's no synced Class catalog to join
+   * against — `className` is carried straight off the line itself, so the
+   * group key doubles as the display name. Lines with no `classId` (Class
+   * tracking disabled for the org, or synced before this field existed and
+   * not yet backfilled by a forced resync) are excluded entirely rather than
+   * bucketed under a fake "No class" — same convention
+   * getRevenueByStateAndMonth uses for missing `billingAddress.state`.
+   */
+  async getRevenueByClassAndMonth(
+    orgId: string | Types.ObjectId,
+    provider: string,
+    from: Date,
+    to: Date
+  ): Promise<{ classId: string; className: string; month: string; revenue: number }[]> {
+    const Model = await modelForOrg(orgId)
+    const orgObjectId = new Types.ObjectId(orgId)
+    const results = await Model.aggregate<{ _id: { classId: string; className: string | null; month: string }; revenue: number }>([
+      { $match: { orgId: orgObjectId, provider, txnDate: { $gte: from, $lte: to }, 'lines.classId': { $exists: true, $ne: null } } },
+      { $unwind: '$lines' },
+      { $match: { 'lines.classId': { $exists: true, $ne: null } } },
+      {
+        $group: {
+          _id: { classId: '$lines.classId', className: '$lines.className', month: { $dateToString: { format: '%Y-%m', date: '$txnDate' } } },
+          revenue: { $sum: '$lines.amount' }
+        }
+      }
+    ])
+    return results.map((r) => ({ classId: r._id.classId, className: r._id.className ?? r._id.classId, month: r._id.month, revenue: r.revenue }))
   },
 
   /**

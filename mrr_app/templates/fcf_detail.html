@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}FCF {{ r.month }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:12.5px;padding:7px 8px} td.num{white-space:nowrap}</style>
+<p><a href="{{ url_for('fcf_page') }}">← FCF conversion</a></p>
+<h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}FCF conversion · TTM to {{ r.month }}</h1>
+<p class="sub">{{ r.window[0] }} to {{ r.window[-1] }}{% if not r.ttm_ok %} · <b style="color:var(--warn)">incomplete - not all 12 months are available</b>{% endif %}</p>
+
+{% if r.ttm_ok %}
+<div class="card">
+<table><tbody>
+  <tr><td>Net income</td><td class="num">{{ r.t_ni|usd }}</td></tr>
+  <tr><td>+ D&amp;A ({{ info.da_names|join(', ') }})</td><td class="num">{{ r.t_da|usd }}</td></tr>
+  <tr><td>− ΔWC = [({{ info.wc_assets }}) − ({{ info.wc_liabs }})] at {{ r.month }} minus the same 12 months earlier (cash effect)</td><td class="num">{{ (-r.t_dwc)|usd }}</td></tr>
+  {% for c, v in r.t_dwc_parts.items() %}{% if v or info.wc_members[c] %}<tr><td style="padding-left:28px" class="muted">{{ info.wc_cats[c] }}{% if info.wc_members[c] %}: {{ info.wc_members[c]|join(', ') }}{% endif %} - balance change {{ v|usd }}</td><td class="num muted">{{ ((-v) if c in ['ar', 'prepaid', 'inventory'] else v)|usd }}</td></tr>{% endif %}{% endfor %}
+  <tr><td><b>= Operating cash flow</b></td><td class="num"><b>{{ r.t_ocf|usd }}</b></td></tr>
+  <tr><td>− Capex</td><td class="num">{{ r.t_capex|usd }}</td></tr>
+  {% for name, v in capex_by_acct %}<tr><td style="padding-left:28px" class="muted">{{ name }}</td><td class="num muted">{{ v|usd }}</td></tr>{% endfor %}
+  {% if info.mode == 'sections' %}<tr><td style="padding-left:28px" class="muted">change in {{ info.sections|join(' + ') }} + {{ info.fa_da_names|join(' + ') }}</td><td></td></tr>{% endif %}
+  <tr><td><b>= Free cash flow</b></td><td class="num"><b>{{ r.t_fcf|usd }}</b></td></tr>
+  <tr><td>÷ EBITDA</td><td class="num">{{ r.t_ebitda|usd }}</td></tr>
+  <tr><td><b>FCF conversion</b></td><td class="num"><b>{{ '%.1f%%'|format(r.fcf_pct) if r.fcf_pct is not none else '-' }}</b></td></tr>
+  {% if info.show_ar %}<tr><td class="muted">Data check: without the A/R swing, OCF = {{ r.t_ocf_x_ar|usd }}</td><td class="num muted">{{ '%.1f%%'|format(r.fcf_pct_x_ar) if r.fcf_pct_x_ar is not none else '-' }}</td></tr>{% endif %}
+</tbody></table>
+</div>
+{% endif %}
+
+<div class="card scroll">
+<h2 style="margin-top:0">Month by month</h2>
+<table>
+  <thead><tr><th>Month</th><th class="num">Net income</th><th class="num">D&amp;A</th><th class="num">− Δ WC</th><th class="num">of which A/R</th><th class="num">OCF</th><th class="num">Capex</th><th class="num">FCF</th><th class="num">EBITDA</th><th class="num">FCF %</th></tr></thead>
+  <tbody>
+  {% for x in win %}
+    <tr><td>{{ x.month }}</td><td class="num">{{ x.ni|usd }}</td><td class="num">{{ x.da|usd }}</td><td class="num">{{ (-x.dwc)|usd }}</td>
+      <td class="num muted">{{ (-x.dar)|usd }}</td><td class="num"><b>{{ x.ocf|usd }}</b></td><td class="num">{{ x.capex|usd }}</td>
+      <td class="num {{ 'neg' if x.fcf < 0 }}">{{ x.fcf|usd }}</td><td class="num">{{ x.ebitda|usd }}</td>
+      <td class="num">{{ '%.1f%%'|format(x.m_fcf_pct) if x.m_fcf_pct is not none else '-' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

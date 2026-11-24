@@ -1,6 +1,6 @@
 import { CHART_DATA_REGISTRY, AnalysisWindow, describeCoverage } from './chartDataRegistry'
 import { DEFAULT_ANALYSIS_PROMPTS } from './defaultPrompts'
-import { getInvoiceRevenueGrowthByState } from '../../metrics/service/productRevenueGrowth.service'
+import { getInvoiceRevenueGrowthByState, getInvoiceRevenueGrowthByClass } from '../../metrics/service/productRevenueGrowth.service'
 import { getCustomerRevenueConcentration } from '../../metrics/service/customerRevenueConcentration.service'
 import { getCampaignWonOpportunities } from '../../metrics/service/campaignWonOpportunities.service'
 import { funnelService } from '../../sync/service/funnel.service'
@@ -38,6 +38,20 @@ describe('CHART_DATA_REGISTRY', () => {
 
     expect(getInvoiceRevenueGrowthByState).toHaveBeenCalledWith(ORG_ID, { fromYear: '2024' })
     expect(data).toEqual({ states: [{ state: 'TX', months: [{ month: '2024-11', revenue: 10, revenueGrowthPct: 100 }] }] })
+  })
+
+  it('loads revenue by class and trims months to the window, dropping classes with no revenue in it', async () => {
+    ;(getInvoiceRevenueGrowthByClass as jest.Mock).mockResolvedValue({
+      classes: [
+        { id: 'class-1', name: 'Platform', months: [{ month: '2024-10', revenue: 5, revenueGrowthPct: null }, { month: '2024-11', revenue: 10, revenueGrowthPct: 100 }] },
+        { id: 'class-2', name: 'Services', months: [{ month: '2024-11', revenue: 0, revenueGrowthPct: null }] }
+      ]
+    })
+
+    const data = await CHART_DATA_REGISTRY['invoice-revenue-growth-by-class'].load({ orgId: ORG_ID, window })
+
+    expect(getInvoiceRevenueGrowthByClass).toHaveBeenCalledWith(ORG_ID, { fromYear: '2024' })
+    expect(data).toEqual({ classes: [{ name: 'Platform', months: [{ month: '2024-11', revenue: 10, revenueGrowthPct: 100 }] }] })
   })
 
   it('never sends customer names for customer concentration', async () => {

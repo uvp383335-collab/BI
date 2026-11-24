@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}COGS % · Oryon{% endblock %}
+{% block body %}
+<style>.k6 .v{font-size:19px;white-space:nowrap} td.num,td:first-child{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}COGS % and mix</h1>
+  <p class="sub">Cost of revenue as a share of revenue, total and by product line · <code>plmonthlysnapshots</code> income and COGS lines · product lines and capitalized software from <a href="{{ url_for('settings_page') }}#cogs">Settings</a></p></div>
+  <form class="row" method="get">
+    <select name="grain"><option value="month" {{ 'selected' if grain=='month' }}>Monthly</option><option value="quarter" {{ 'selected' if grain=='quarter' }}>Quarterly</option></select>
+    <select name="window"><option value="period" {{ 'selected' if window=='period' }}>Period</option><option value="ttm" {{ 'selected' if window=='ttm' }}>Trailing 12 months</option></select>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('cogs_csv', grain=grain, window=window) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if not saved %}<div class="flash err">COGS % uses the automatic account → product-line mapping. <a href="{{ url_for('settings_page') }}#cogs">Review and save it in Settings</a>.</div>{% endif %}
+{% if not rows %}<div class="card">No P&amp;L snapshots found in <code>plmonthlysnapshots</code>.</div>{% else %}
+
+{% if latest %}
+<div class="kpis k6" style="grid-template-columns:repeat(6,1fr)">
+  {% macro kpi(label, v, pv, unit='%') %}
+  <div class="kpi"><div class="l">{{ label }}</div><div class="v">{{ '%.2f'|format(v) if v is not none else '-' }}{{ unit }}</div>
+    <div class="muted" style="font-size:12px">{% if pv is not none and v is not none %}<span class="{{ 'pos' if v <= pv else 'neg' }}">{{ '%+.2f'|format(v - pv) }} pts</span> vs {{ prev.label }}{% endif %}</div></div>
+  {% endmacro %}
+  {{ kpi('COGS % · ' ~ latest.label, latest.pct, prev.pct if prev else none) }}
+  {{ kpi('Excl. capitalized software', latest.pct_ex_da, prev.pct_ex_da if prev else none) }}
+  {{ kpi('Platform COGS %', latest.lines.Platform.pct, prev.lines.Platform.pct if prev else none) }}
+  {{ kpi('Services COGS %', latest.lines.Services.pct, prev.lines.Services.pct if prev else none) }}
+  {{ kpi('Hardware COGS %', latest.lines.Hardware.pct, prev.lines.Hardware.pct if prev else none) }}
+  <div class="kpi"><div class="l">Platform share of revenue</div><div class="v">{{ '%.2f'|format(latest.lines.Platform.share or 0) }}%</div>
+    <div class="muted" style="font-size:12px">{% if prev %}{{ '%+.2f'|format((latest.lines.Platform.share or 0) - (prev.lines.Platform.share or 0)) }} pts vs {{ prev.label }}{% endif %}</div></div>
+</div>
+{% endif %}
+
+<div class="card"><h2 style="margin-top:0">COGS % of revenue</h2><canvas id="tot" height="75"></canvas></div>
+<div class="card"><h2 style="margin-top:0">COGS % by product line</h2><canvas id="lines" height="75"></canvas></div>
+<div class="card"><h2 style="margin-top:0">COGS dollars by product line</h2><canvas id="dollars" height="75"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'Period' if window == 'period' else 'Window' }}</th><th class="num">Revenue</th><th class="num">COGS</th><th class="num">COGS %</th><th class="num">Excl. cap. software</th>
+    {% for p in lines %}<th class="num">{{ p }} COGS %</th>{% endfor %}<th class="num">Platform share</th><th class="num">Company-only COGS</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr {% if not r.complete %}style="opacity:.55" title="Not every month in this period has a P&L snapshot yet"{% endif %}>
+      <td>{{ r.label }}{% if not r.complete %} <span class="tag auto">incomplete</span>{% endif %}</td>
+      <td class="num">{{ r.revenue|usd }}</td><td class="num">{{ r.cogs|usd }}</td>
+      <td class="num"><b>{{ '%.2f%%'|format(r.pct) if r.pct is not none else '-' }}</b></td>
+      <td class="num">{{ '%.2f%%'|format(r.pct_ex_da) if r.pct_ex_da is not none else '-' }}</td>
+      {% for p in lines %}<td class="num">{{ '%.2f%%'|format(r.lines[p].pct) if r.lines[p].pct is not none else '-' }}</td>{% endfor %}
+      <td class="num">{{ '%.2f%%'|format(r.lines.Platform.share) if r.lines.Platform.share is not none else '-' }}</td>
+      <td class="num">{{ r.lines.Unassigned.cogs|usd if r.lines.Unassigned.cogs else '-' }}</td>
+      <td><a href="{{ url_for('cogs_detail', period=r.label) }}">accounts</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }}, lines = {{ lines|tojson }};
+const col = {Platform:'#4f8cff', Services:'#2fbf71', Hardware:'#f0b429', Unassigned:'#8f9bb3'};
+const fmt = v => '$' + Math.round(v).toLocaleString('en-US'), p2 = v => v == null ? null : +v.toFixed(2);
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, leg = {labels:{color:'#e6ebf5'}};
+const labels = rows.map(r => r.label + (r.complete ? '' : ' *'));
+const pctOpts = {plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${c.raw}%`}}},
+  scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid}}};
+new Chart(document.getElementById('tot'), {type:'line', data:{labels, datasets:[
+  {label:'COGS %', data:rows.map(r => p2(r.pct)), borderColor:'#4f8cff', backgroundColor:'#4f8cff', tension:.25},
+  {label:'Excl. capitalized software', data:rows.map(r => p2(r.pct_ex_da)), borderColor:'#b07cff', backgroundColor:'#b07cff', borderDash:[5,4], tension:.25}]},
+  options:pctOpts});
+new Chart(document.getElementById('lines'), {type:'line', data:{labels, datasets:lines.map(p => ({
+  label:p, data:rows.map(r => p2(r.lines[p].pct)), borderColor:col[p], backgroundColor:col[p], tension:.25}))}, options:pctOpts});
+new Chart(document.getElementById('dollars'), {type:'bar', data:{labels, datasets:[...lines, 'Unassigned'].filter(p => rows.some(r => r.lines[p].cogs)).map(p => ({
+  label:p == 'Unassigned' ? 'Company only' : p, data:rows.map(r => r.lines[p].cogs), backgroundColor:col[p], stack:'a'}))},
+  options:{plugins:{legend:leg, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.raw)}`}}},
+    scales:{x:{stacked:true, ticks:tick, grid}, y:{stacked:true, ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+</script>
+{% endif %}
+
+{% if excluded or unassigned %}
+<p class="muted" style="font-size:12px">{% if excluded %}Excluded accounts: {{ excluded|map(attribute='name')|join(', ') }}. {% endif %}{% if unassigned %}Company-only accounts (in total COGS %, no product line): {{ unassigned|map(attribute='name')|join(', ') }}.{% endif %}</p>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How COGS % is calculated (spec VC-04)</h2>
+  <p>For each window W (a month, a quarter, or the trailing 12 months):</p>
+  <ul>
+    <li><b>COGS %</b> = 100 × COGS(W) ÷ Revenue(W). COGS = every COGS line including capitalized-software amortization ({{ da_names|join(', ') or 'none selected' }}); revenue = every income line. Accounts set to "Exclude" in Settings are left out.</li>
+    <li><b>Excl. capitalized software</b> = 100 × (COGS − amortization) ÷ Revenue.</li>
+    <li><b>Platform / Services / Hardware COGS %</b> = 100 × that product line's COGS ÷ that product line's revenue.</li>
+    <li><b>Platform share of revenue</b> = 100 × Platform revenue ÷ total revenue.</li>
+  </ul>
+  <p class="muted" style="font-size:12px">Product lines come from the account mapping in Settings, because the monthly P&amp;L snapshot has no QuickBooks Class. The Oryon report splits by Class and leaves COGS posted without a class "unallocated" (about $8k a month for Ridgeline); here those costs land on the product line of their account, so Services and Platform COGS % run slightly higher than the report. Lower is better.</p>
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Marketing ROI {{ r.label }} · Oryon{% endblock %}
+{% block body %}
+<style>td,th{font-size:12.5px;padding:6px 8px} td.num{white-space:nowrap}</style>
+<p><a href="{{ url_for('roi_page', grain=grain, view=view) }}">← Marketing ROI by channel</a></p>
+<h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}Marketing ROI · {{ r.label }}</h1>
+<p class="sub">Deals created {{ r.window[0] }} to {{ r.window[1] }} · pipeline {{ r.pipeline|usd }} from {{ r.deals }} deals</p>
+<div class="row" style="gap:16px;align-items:flex-start;flex-wrap:wrap">
+<div class="card" style="flex:1;min-width:320px">
+<table>
+  <thead><tr><th></th><th class="num">Pipeline</th><th class="num">Deals</th><th class="num">Spend</th><th class="num">ROI</th></tr></thead>
+  <tbody>
+    <tr style="font-weight:700"><td>Blended</td><td class="num">{{ r.pipeline|usd }}</td><td class="num">{{ r.deals }}</td><td class="num">{{ r.blended_spend|usd }}</td><td class="num">{{ '%.2fx'|format(r.blended) if r.blended is not none else '-' }}</td></tr>
+    <tr><td>Programs</td><td class="num">{{ r.pipeline|usd }}</td><td class="num">{{ r.deals }}</td><td class="num">{{ r.programs_spend|usd }}</td><td class="num">{{ '%.2fx'|format(r.programs) if r.programs is not none else '-' }}</td></tr>
+    {% for c in r.channels %}<tr><td>{{ c.name }}</td><td class="num">{{ c.pipeline|usd }}</td><td class="num">{{ c.deals }}</td><td class="num">{{ c.spend|usd }}</td><td class="num">{{ '%.2fx'|format(c.roi) if c.roi is not none else '-' }}</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+<div class="card" style="flex:1;min-width:280px">
+<table><thead><tr><th>Lead source</th><th class="num">Deals</th><th class="num">Pipeline</th></tr></thead><tbody>
+{% for s, v in by_src %}<tr><td>{{ s }}</td><td class="num">{{ v[0] }}</td><td class="num">{{ v[1]|usd }}</td></tr>{% endfor %}
+</tbody></table></div>
+</div>
+<div class="card scroll">
+<table>
+  <thead><tr><th>Created</th><th>Deal</th><th>Lead source</th><th>Campaign</th><th>Channel</th><th>Stage</th><th class="num">{{ 'ARR' if cfg.value_field == 'arr' else 'Amount' }}</th></tr></thead>
+  <tbody>
+  {% for d in deals %}<tr><td class="num">{{ d.date }}</td><td>{{ d.name }}</td><td>{{ d.source }}</td><td class="muted">{{ d.campaign }}</td><td>{{ d.channels|join(', ') or '-' }}</td><td>{{ d.stage }}</td><td class="num">{{ d.value|usd }}{% if not d.has_value_field %} <span class="tag auto" title="no {{ cfg.value_field }} on this deal - amount used">amt</span>{% endif %}</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

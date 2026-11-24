@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}New logos · Oryon{% endblock %}
+{% block body %}
+<style>.k5 .v{font-size:19px;white-space:nowrap} td.num{white-space:nowrap} td,th{font-size:12.5px;padding:7px 6px}</style>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div><h1>{% if page_codes %}<span class="codes">{% for c in page_codes %}<code>{{ c }}</code>{% endfor %}</span>{% endif %}New-logo revenue</h1>
+  <p class="sub">QuickBooks invoices + Salesforce accounts · dated to the deal's close month (first billing month − {{ info.lag }}) · new-logo ARR = first-month MRR × 12 · subsidiaries {{ 'counted as expansion' if info.group_parent else 'counted as new logos' }}</p></div>
+  <form class="row" method="get">
+    <select name="grain"><option value="quarter" {{ 'selected' if grain=='quarter' }}>Quarterly</option><option value="month" {{ 'selected' if grain=='month' }}>Monthly</option></select>
+    <label>From <input type="text" name="from" value="{{ start }}" size="8"></label>
+    <label>To <input type="text" name="to" value="{{ end }}" size="8"></label>
+    <button class="btn ghost" type="submit">Apply</button>
+    <a class="btn ghost" href="{{ url_for('newlogo_csv', grain=grain, **{'from': start, 'to': end}) }}">Download CSV</a>
+  </form>
+</div>
+
+{% if unsaved %}<div class="flash err">{{ unsaved }} product mapping{{ 's' if unsaved != 1 }} still on the automatic suggestion. <a href="{{ url_for('settings_page') }}">Review in Settings</a>.</div>{% endif %}
+{% if info.n_sf == 0 %}<div class="flash err">No Salesforce accounts found in <code>salesforceaccounts</code> - every new logo shows as "Unlinked" (no segment).</div>{% endif %}
+{% if info.n_qbo == 0 %}<div class="flash err">No QuickBooks customers found in <code>quickbookscustomers</code> - customers can't be matched to Salesforce by name.</div>{% endif %}
+
+{% if ttm %}
+<div class="kpis k5" style="grid-template-columns:repeat(5,1fr)">
+  <div class="kpi"><div class="l">New-logo ARR · {{ ttm.lo }} → {{ ttm.hi }}</div><div class="v">{{ ttm.arr|usd }}</div></div>
+  <div class="kpi"><div class="l">Prior 12 months · {{ prev.lo }} → {{ prev.hi }}</div><div class="v">{{ prev.arr|usd }}</div></div>
+  <div class="kpi"><div class="l">Growth (12 months)</div><div class="v {{ 'pos' if prev.arr and ttm.arr >= prev.arr else 'neg' }}">{{ '%+.1f%%'|format((ttm.arr - prev.arr) / prev.arr * 100) if prev.arr and prev.full else '-' }}</div></div>
+  <div class="kpi"><div class="l">New logos (now / before)</div><div class="v">{{ ttm.n }} / {{ prev.n }}</div></div>
+  <div class="kpi"><div class="l">Avg ARR per new logo</div><div class="v">{{ (ttm.arr / ttm.n if ttm.n else None)|usd }}</div></div>
+</div>
+{% if not prev.full %}<div class="flash err">The prior 12-month window starts before {{ info.first_valid_close }}, so growth isn't shown.</div>{% endif %}
+
+<div class="card">
+<h2 style="margin-top:0">By Salesforce segment · last 12 complete months vs the 12 before</h2>
+<table>
+  <thead><tr><th>Segment</th><th class="num">New-logo ARR {{ ttm.lo }} → {{ ttm.hi }}</th><th class="num">Prior 12 months</th><th class="num">Growth</th><th class="num">New logos (now / before)</th></tr></thead>
+  <tbody>
+  {% for s in segments if ttm.seg[s].n or prev.seg[s].n %}
+    {% set a, b = ttm.seg[s].arr, prev.seg[s].arr %}
+    <tr><td>{{ s }}</td><td class="num">{{ a|usd }}</td><td class="num">{{ b|usd }}</td>
+      <td class="num {{ 'pos' if b and a >= b else 'neg' if b else '' }}">{{ '%+.1f%%'|format((a - b) / b * 100) if b else '-' }}</td>
+      <td class="num">{{ ttm.seg[s].n }} / {{ prev.seg[s].n }}</td></tr>
+  {% endfor %}
+  <tr><td><b>Total</b></td><td class="num"><b>{{ ttm.arr|usd }}</b></td><td class="num"><b>{{ prev.arr|usd }}</b></td>
+    <td class="num"><b>{{ '%+.1f%%'|format((ttm.arr - prev.arr) / prev.arr * 100) if prev.arr else '-' }}</b></td><td class="num"><b>{{ ttm.n }} / {{ prev.n }}</b></td></tr>
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{% if rows %}
+<div class="card"><h2 style="margin-top:0">New-logo ARR by {{ 'quarter' if grain == 'quarter' else 'month' }} and segment</h2><canvas id="bars" height="95"></canvas></div>
+<div class="card"><h2 style="margin-top:0">Growth vs the same {{ 'quarter' if grain == 'quarter' else 'month' }} last year</h2><canvas id="growth" height="70"></canvas></div>
+
+<div class="card scroll">
+<table>
+  <thead><tr><th>{{ 'Quarter' if grain == 'quarter' else 'Close month' }}</th><th class="num">New logos</th><th class="num">New-logo ARR</th>
+    {% for s in segments[:-1] %}<th class="num">{{ s }}</th>{% endfor %}<th class="num">Unlinked</th>
+    <th class="num">vs prior {{ 'qtr' if grain == 'quarter' else 'month' }}</th><th class="num">vs year ago</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows|reverse %}
+    <tr {% if not r.complete %}style="opacity:.55" title="Deals closed here start billing after the last invoice month ({{ info.last_invoice }}) - not complete yet"{% endif %}>
+      <td>{{ r.period }}{% if not r.complete %} <span class="tag auto">incomplete</span>{% endif %}</td>
+      <td class="num">{{ r.n }}</td><td class="num"><b>{{ r.arr|usd }}</b></td>
+      {% for s in segments %}<td class="num">{{ r[s]|usd if r[s] else '-' }}</td>{% endfor %}
+      <td class="num {{ 'pos' if r.pop_pct and r.pop_pct > 0 else 'neg' if r.pop_pct and r.pop_pct < 0 else '' }}">{{ '%+.1f%%'|format(r.pop_pct) if r.pop_pct is not none else '-' }}</td>
+      <td class="num {{ 'pos' if r.yoy_pct and r.yoy_pct > 0 else 'neg' if r.yoy_pct and r.yoy_pct < 0 else '' }}">{{ '%+.1f%%'|format(r.yoy_pct) if r.yoy_pct is not none else '-' }}</td>
+      <td><a href="{{ url_for('newlogo_detail', period=r.period) }}">customers</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="muted" style="font-size:12px;margin:10px 0 0">{{ info.linked }} of {{ info.customers }} paying QuickBooks customers are linked to a Salesforce account ({{ info.n_sf }} accounts, {{ info.n_qbo }} QuickBooks customers). Rows marked "incomplete" contain deals that start billing after {{ info.last_invoice }}; take the latest quarter from Salesforce Opportunities instead.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }}, segs = {{ segments|tojson }};
+const colors = {'SMB':'#4f8cff','Mid-Market':'#2fbf71','Upper Mid-Market':'#f0b429','Enterprise':'#b07cff','Unlinked':'#8f9bb3'};
+const fmt = v => '$' + Math.round(v).toLocaleString('en-US');
+const grid = {color:'#263049'}, tick = {color:'#8f9bb3'}, labels = rows.map(r => r.period + (r.complete ? '' : ' *'));
+new Chart(document.getElementById('bars'), {type:'bar', data:{labels, datasets: segs.filter(s => rows.some(r => r[s])).map(s => ({
+    label:s, data:rows.map(r => r[s]), backgroundColor:colors[s], stack:'a'}))},
+  options:{plugins:{legend:{labels:{color:'#e6ebf5'}}, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${fmt(c.raw)}`,
+    footer:items => { const r = rows[items[0].dataIndex]; return `Total ${fmt(r.arr)} · ${r.n} new logos` + (r.complete ? '' : ' · incomplete'); }}}},
+    scales:{x:{stacked:true, ticks:tick, grid}, y:{stacked:true, ticks:{...tick, callback:v => fmt(v)}, grid}}}});
+new Chart(document.getElementById('growth'), {type:'line', data:{labels, datasets:[
+    {label:'vs same period last year', data:rows.map(r => r.yoy_pct == null ? null : +r.yoy_pct.toFixed(1)), borderColor:'#4f8cff', backgroundColor:'#4f8cff', tension:.25, spanGaps:false},
+    {label:'0%', data:rows.map(() => 0), borderColor:'#8f9bb3', borderDash:[4,4], borderWidth:1, pointRadius:0}]},
+  options:{plugins:{legend:{labels:{color:'#e6ebf5'}}, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${c.raw}%`}}},
+    scales:{x:{ticks:tick, grid}, y:{ticks:{...tick, callback:v => v + '%'}, grid}}}});
+</script>
+{% else %}
+<div class="card">No new logos in this range.</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0">How new-logo revenue is calculated</h2>
+  <div style="font-size:15px;margin:6px 0 14px"><b>New-logo ARR</b>(period) = Σ over new customers whose close month is in the period of (first-month MRR × 12)
+    &nbsp;·&nbsp; <b>Growth</b> = (this period − same period last year) ÷ same period last year × 100</div>
+  <ol style="margin:0;padding-left:20px;line-height:1.7">
+    <li><b>Customer MRR</b> for every month, exactly as on the MRR page (monthly lines, annual ÷ 12, quarterly ÷ 3, retainers; CAD at the month's rate).</li>
+    <li><b>New logo</b> = a QuickBooks customer whose MRR is above $0 for the first time. Customers who had MRR before, dropped to $0 and came back are win-backs, not new logos.</li>
+    <li><b>Date</b> = the Salesforce close month = first billing month − {{ info.lag }} (Settings → New-logo billing lag). Deals closed in the last {{ info.lag }} month{{ 's' if info.lag != 1 }} before {{ info.last_invoice }} haven't billed yet, so those periods are marked incomplete.</li>
+    <li><b>New-logo ARR</b> = the first month's MRR × 12. For an annual deal that is the first-year contract value (annual line ÷ 12 × 12).</li>
+    <li><b>Salesforce account</b>: joined on <code>qboCustomerId</code> (QBO_Customer_Id__c) when it's set, otherwise QuickBooks <code>displayName</code> = Account <code>name</code> after normalizing (case, punctuation, Inc/LLC/Corp/Co, and the parent part of "Parent:Child"). The account gives the <b>segment</b>; unmatched customers are "Unlinked".</li>
+    <li><b>Subsidiaries</b>: {{ 'a new customer whose Salesforce parent group already had MRR is expansion and is left out.' if info.group_parent else 'a new customer under an existing Salesforce parent still counts as a new logo (same as the Oryon report, VC-03). Change this in Settings.' }}</li>
+    <li><b>Data start</b>: customers already paying when the invoice data begins only appear at their first renewal, up to 12 months later, so new logos are counted from {{ info.first_valid_close }}.</li>
+  </ol>
+</div>
+{% endblock %}

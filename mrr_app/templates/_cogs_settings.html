@@ -1,0 +1,33 @@
+<form method="post" action="{{ url_for('save_cogs_accounts') }}" class="card" id="cogs">
+  <div class="row" style="justify-content:space-between;margin-bottom:8px">
+    <h2 style="margin:0"><span class="codes"><code>VC-04</code></span>COGS % accounts (product line &amp; capitalized software)</h2>
+    <div class="row"><button class="btn" type="submit">Save COGS % accounts</button></div>
+  </div>
+  <p class="muted" style="margin:0 0 10px;font-size:12.5px">Income and COGS accounts from <code>plmonthlysnapshots</code>. Each one is assigned to a product line for the COGS % page; tick <b>Cap. software</b> on the amortization account(s) for "COGS % excl. capitalized software".
+    {% if not cogs_saved %}<b style="color:var(--warn)">Auto-selected, not saved yet:</b> 40xx / 50xx → Platform, 41xx / 51xx → Services, 42xx / 52xx → Hardware, 5040 = capitalized software; unnumbered QuickBooks demo accounts are excluded.{% endif %}</p>
+  {% if not cogs_accs %}<div class="flash err">No P&amp;L snapshots found in <code>plmonthlysnapshots</code>.</div>{% else %}
+  <div class="scroll" style="max-height:460px">
+  <table>
+    <thead><tr><th>Account</th><th>Section</th><th class="num">Last 12 months</th><th class="num">All months</th><th>Product line</th><th>Cap. software</th><th></th></tr></thead>
+    <tbody>
+    {% for a in cogs_accs %}
+      <tr {% if a.line == 'Exclude' %}style="opacity:.6"{% endif %}>
+        <td><b>{{ a.name }}</b><div class="muted" style="font-size:11.5px">{{ a.reason }}</div></td>
+        <td class="muted">{{ 'Income' if a.section == 'income' else 'COGS' }}</td>
+        <td class="num">{{ a.ttm|usd }}</td><td class="num">{{ a.total|usd }}</td>
+        <td><select name="line_{{ a.id }}">
+          {% for k, label in cogs_choices.items() %}<option value="{{ k }}" {{ 'selected' if k == a.line }}>{{ label }}{{ '  ★' if k == a.auto }}</option>{% endfor %}
+        </select></td>
+        <td>{% if a.section == 'cogs' %}<input type="checkbox" name="da_{{ a.id }}" {{ 'checked' if a.da }}>{% if a.auto_da %} ★{% endif %}{% endif %}</td>
+        <td>{% if cogs_saved %}<span class="tag saved">saved</span>{% else %}<span class="tag auto">auto</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  <p class="muted" style="margin:10px 0 0;font-size:12px">★ = automatic suggestion. "Company only" accounts count in total COGS % but in no product line (like the report's unallocated COGS); "Exclude" leaves them out completely.</p>
+</form>
+<form method="post" action="{{ url_for('reset_cogs_accounts') }}" style="margin:-6px 0 22px">
+  <button class="btn ghost" type="submit">Reset COGS % accounts to automatic mapping</button>
+</form>

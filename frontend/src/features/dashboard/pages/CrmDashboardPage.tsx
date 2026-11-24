@@ -63,6 +63,7 @@ import { CustomerRevenueConcentrationByMonthChart } from '../components/Customer
 import { StageConversionTrendChart } from '../components/StageConversionTrendChart'
 import { ProductRevenueGrowthCard } from '../components/ProductRevenueGrowthCard'
 import { InvoiceRevenueGrowthByProductCard } from '../components/InvoiceRevenueGrowthByProductCard'
+import { InvoiceRevenueGrowthByClassCard } from '../components/InvoiceRevenueGrowthByClassCard'
 import { InvoiceRevenueGrowthByStateCard } from '../components/InvoiceRevenueGrowthByStateCard'
 import { NewCustomersTrendChart } from '../components/NewCustomersTrendChart'
 import { CACTrendChart } from '../components/CACTrendChart'
@@ -84,6 +85,7 @@ import {
   useGAndAExpenseTrend,
   useProductRevenueGrowth,
   useInvoiceRevenueGrowthByProduct,
+  useInvoiceRevenueGrowthByClass,
   useInvoiceRevenueGrowthByState,
   useNewCustomersTrend,
   useCACTrend,
@@ -308,6 +310,7 @@ export const CrmDashboardPage: React.FC = () => {
   const [customerRetentionAdjustedProductFilter, setCustomerRetentionAdjustedProductFilter] = useState('')
   const [productRevenueGrowthViewMode, setProductRevenueGrowthViewMode] = useState<'percentage' | 'absolute'>('absolute')
   const [invoiceRevenueGrowthViewMode, setInvoiceRevenueGrowthViewMode] = useState<'percentage' | 'absolute'>('absolute')
+  const [invoiceRevenueGrowthByClassViewMode, setInvoiceRevenueGrowthByClassViewMode] = useState<'percentage' | 'absolute'>('absolute')
   const [invoiceRevenueGrowthByStateViewMode, setInvoiceRevenueGrowthByStateViewMode] = useState<'percentage' | 'absolute'>('absolute')
   const [campaignWonOpportunitiesViewMode, setCampaignWonOpportunitiesViewMode] = useState<'count' | 'amount'>('count')
   const [campaignWonOpportunitiesTopN, setCampaignWonOpportunitiesTopN] = useState<CampaignWonOpportunitiesTopN>(10)
@@ -446,6 +449,10 @@ export const CrmDashboardPage: React.FC = () => {
   }
   const productRevenueGrowth = useProductRevenueGrowth(quickbooksMetricsEnabled && SHOW_LIVE_PRODUCT_REVENUE_GROWTH, productRevenueGrowthOptions)
   const { data: invoiceRevenueGrowthByProduct, isLoading: isInvoiceRevenueGrowthByProductLoading } = useInvoiceRevenueGrowthByProduct(
+    quickbooksMetricsEnabled,
+    quickbooksFromYearParam
+  )
+  const { data: invoiceRevenueGrowthByClass, isLoading: isInvoiceRevenueGrowthByClassLoading } = useInvoiceRevenueGrowthByClass(
     quickbooksMetricsEnabled,
     quickbooksFromYearParam
   )
@@ -970,6 +977,13 @@ export const CrmDashboardPage: React.FC = () => {
                     isLoading={isInvoiceRevenueGrowthByProductLoading}
                     viewMode={invoiceRevenueGrowthViewMode}
                     onViewModeChange={setInvoiceRevenueGrowthViewMode}
+                    fromYear={quickbooksFromYearParam}
+                  />
+                  <InvoiceRevenueGrowthByClassCard
+                    data={invoiceRevenueGrowthByClass}
+                    isLoading={isInvoiceRevenueGrowthByClassLoading}
+                    viewMode={invoiceRevenueGrowthByClassViewMode}
+                    onViewModeChange={setInvoiceRevenueGrowthByClassViewMode}
                     fromYear={quickbooksFromYearParam}
                   />
                   <InvoiceRevenueGrowthByStateCard
