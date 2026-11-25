@@ -160,7 +160,8 @@ export async function getMeta(orgId: string) {
     // What the backend can serve today; the UI disables the matching controls.
     capabilities: {
       ttm: false, region: false, segment: false, setup: false, splits: false, breakdown: false,
-      product: ctx.products.length > 0,
+      // only when some metric can be filtered by a QuickBooks item (the Oryon calculations are company-wide)
+      product: ctx.products.length > 0 && METRICS.some((m) => m.filters === 'P'),
       productMulti: false
     }
   }
@@ -262,7 +263,8 @@ export async function getOverview(orgId: string, q: DashboardQuery) {
   )
   const g = (id: string, p: string): Point => grid.get(`${id}|${p}`) as Point
   const gf = (id: string, p: string): Point => grid.get(`${id}|${p}|f`) ?? g(id, p)
-  const cash = await at('CB-05', v.asOf)
+  const cashSeries = await Promise.all(ps.map((p) => at('CB-05', p)))
+  const cash = cashSeries[cashSeries.length - 1]
 
   const arr = (p: string) => {
     const x = g('VC-14', p)
@@ -303,7 +305,7 @@ export async function getOverview(orgId: string, q: DashboardQuery) {
     {
       key: 'cash', label: 'Unrestricted cash', unit: 'USD', dir: 'up', metricId: 'CB-05', value: cash.value, prev: null, delta: null,
       sub: cash.value == null ? null : runway == null ? 'Self-funding' : `${runway.toFixed(0)} months runway`,
-      series: ps.map((p) => ({ period: p, value: p === v.asOf ? cash.value : null }))
+      series: ps.map((p, i) => ({ period: p, value: cashSeries[i].value }))
     }
   ]
 

@@ -2,18 +2,14 @@ import { completedQuarterAt, trailingPeriods, prevPeriod, yearAgo, periodRange }
 import { evalMonth, clearMetricCache } from './service/metricEvaluator'
 import { METRIC_BY_ID } from './service/metricRegistry'
 import { getFamily, getOverview, getAlerts, getMetric, getMeta } from './service/dashboard.service'
-import * as metricsService from '../metrics/service/metrics.service'
-import * as plMetrics from '../metrics/service/plMetrics.service'
-import * as cbMetrics from '../metrics/service/cbMetrics.service'
+import * as oryon from '../metrics/oryon/oryonMetrics.service'
 import * as cmMetrics from '../metrics/service/cmMetrics.service'
 import { organizationsRepository } from '../organizations/repository/organizations.repository'
 import { integrationsRepository } from '../integrations/repository/integrations.repository'
 import { productRepository } from '../sync/repository/product.repository'
 import { dashboardMetricResultRepository } from './repository/dashboardMetricResult.repository'
 
-jest.mock('../metrics/service/metrics.service')
-jest.mock('../metrics/service/plMetrics.service')
-jest.mock('../metrics/service/cbMetrics.service')
+jest.mock('../metrics/oryon/oryonMetrics.service')
 jest.mock('../metrics/service/cmMetrics.service')
 jest.mock('../organizations/repository/organizations.repository')
 jest.mock('../integrations/repository/integrations.repository')
@@ -25,8 +21,8 @@ const result = (id: string, value: number | null, data: Record<string, unknown> 
   id, period: '2026-09', computable: value !== null, value, unit: 'percent', data, flag, asOf: '2026-11-01T00:00:00.000Z'
 })
 
-const allComputes = [metricsService, plMetrics, cbMetrics, cmMetrics].flatMap((mod) =>
-  Object.entries(mod).filter(([k]) => k.startsWith('compute')).map(([, fn]) => fn as jest.Mock)
+const allComputes = [oryon, cmMetrics].flatMap((mod) =>
+  Object.entries(mod).filter(([k]) => k.startsWith('compute') || k.startsWith('oryon')).map(([, fn]) => fn as jest.Mock)
 )
 
 beforeEach(() => {
@@ -74,16 +70,17 @@ describe('dashboard service', () => {
     expect(meta.products).toEqual(['Platform', 'Services'])
     expect(meta.sources).toEqual(['QuickBooks Online', 'HubSpot'])
     expect(meta.capabilities.ttm).toBe(false)
-    expect(meta.capabilities.product).toBe(true)
+    // the Oryon calculations are company-wide: no metric takes the QuickBooks item filter
+    expect(meta.capabilities.product).toBe(false)
     expect(meta.capabilities.region).toBe(false)
   })
 
   it('family cards carry a series, prior-period delta and the mapped alert flag', async () => {
-    ;(plMetrics.computeVC10 as jest.Mock).mockImplementation(async (_o: string, month: string) =>
+    ;(oryon.oryonVC10 as jest.Mock).mockImplementation(async (_o: string, month: string) =>
       result('VC-10', month === '2026-09' ? 12 : 10, { ebitda: 5 }, month === '2026-09' ? { level: 'act_now', reason: 'Margin fell.' } : null)
     )
     const fam = await getFamily('org1', 'VC', { asOf: '2026-Q3', span: '4' })
-    expect(fam.metrics).toHaveLength(9)
+    expect(fam.metrics).toHaveLength(11)
     const vc10 = fam.metrics.find((m) => m.id === 'VC-10')!
     expect((vc10.series as unknown[]).length).toBe(4)
     expect(vc10.value).toBe(12)
@@ -98,23 +95,22 @@ describe('dashboard service', () => {
   })
 
   it('a failing metric shows as a gap instead of failing the screen', async () => {
-    ;(plMetrics.computeVC13 as jest.Mock).mockRejectedValue(new Error('boom'))
+    ;(oryon.oryonVC13 as jest.Mock).mockRejectedValue(new Error('boom'))
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
     const fam = await getFamily('org1', 'VC', { asOf: '2026-Q3', span: '4' })
     expect(fam.metrics.find((m) => m.id === 'VC-13')!.value).toBeNull()
     warn.mockRestore()
   })
 
-  it('CB-05 has no history: only the latest period carries a value', async () => {
-    ;(cbMetrics.computeCB05 as jest.Mock).mockResolvedValue({ ...result('CB-05', null, { unrestrictedCash: 500, selfFunding: true }), computable: true })
+  it('CB-05 has month-end history: every period is computed', async () => {
+    ;(oryon.oryonCB05 as jest.Mock).mockImplementation(async (_o: string, month: string) => result('CB-05', month === '2026-09' ? 500 : 400))
     const m = await getMetric('org1', 'CB-05', { asOf: '2026-Q3', span: '4' })
     const series = m.series as Array<{ value: number | null }>
-    expect(series.map((s) => s.value)).toEqual([null, null, null, 500])
-    expect(cbMetrics.computeCB05).toHaveBeenCalledTimes(1)
+    expect(series.map((s) => s.value)).toEqual([400, 400, 400, 500])
   })
 
   it('overview derives gross margin and product comparison from VC-04', async () => {
-    ;(plMetrics.computeVC04 as jest.Mock).mockResolvedValue(
+    ;(oryon.oryonVC04 as jest.Mock).mockResolvedValue(
       result('VC-04', 40, { revenue: 100, cogsTotal: 40, mix: [{ class: 'Platform', revenue: 80, mixPct: 80, cogsPct: 25 }, { class: 'Services', revenue: 20, mixPct: 20, cogsPct: 100 }] })
     )
     const o = await getOverview('org1', { asOf: '2026-Q3', span: '4' })
@@ -128,7 +124,7 @@ describe('dashboard service', () => {
   })
 
   it('alerts lists flags per quarter, act-now first in the read', async () => {
-    ;(cmMetrics.computeCM08 as jest.Mock).mockResolvedValue(result('CM-08', 3, {}, { level: 'watch', reason: 'MQLs down.' }))
+    ;(oryon.oryonCM08 as jest.Mock).mockResolvedValue(result('CM-08', 3, {}, { level: 'watch', reason: 'MQLs down.' }))
     const a = await getAlerts('org1', { asOf: '2026-Q3', n: '2' })
     expect(a.quarters).toEqual(['2026-Q2', '2026-Q3'])
     expect(a.alerts.filter((x) => x.id === 'CM-08')).toHaveLength(2)
@@ -140,28 +136,27 @@ describe('dashboard service', () => {
     )
     const m = await getMetric('org1', 'VC-10', { asOf: '2026-Q3', span: '4' })
     expect(m.value).toBe(42)
-    expect(plMetrics.computeVC10).not.toHaveBeenCalledWith('org1', '2026-09')
+    expect(oryon.oryonVC10).not.toHaveBeenCalledWith('org1', '2026-09')
     expect(dashboardMetricResultRepository.save).toHaveBeenCalled()
   })
 
-  it('CM-07 skips the CM-05 work when no marketing-spend accounts are configured', async () => {
-    const m = await getMetric('org1', 'CM-07', { asOf: '2026-Q3', span: '4' })
-    expect(m.value).toBeNull()
-    expect(cmMetrics.computeCM07).not.toHaveBeenCalled()
+  it('retention reads the Oryon calculation at the quarter-end month', async () => {
+    ;(oryon.oryonVC01 as jest.Mock).mockResolvedValue(result('VC-01', 83.3))
+    const m = await getMetric('org1', 'VC-01', { asOf: '2026-Q3', span: '4' })
+    expect(m.value).toBe(83.3)
+    expect(oryon.oryonVC01).toHaveBeenCalledWith('org1', '2026-09')
   })
 
-  it('product filter applies the QuickBooks item to VC-04/10/13 only and tags the rest company-wide', async () => {
+  it('a product filter leaves every metric company-wide', async () => {
     const fam = await getFamily('org1', 'VC', { asOf: '2026-Q3', span: '4', product: 'Services' })
-    expect(plMetrics.computeVC10).toHaveBeenCalledWith('org1', '2026-09', '7')
-    expect(plMetrics.computeVC13).toHaveBeenCalledWith('org1', '2026-09', '7')
-    expect(fam.metrics.find((m) => m.id === 'VC-10')!.scope).toBe('filtered')
-    expect(fam.metrics.find((m) => m.id === 'VC-01')!.scope).toBe('company')
+    expect(oryon.oryonVC10).toHaveBeenCalledWith('org1', '2026-09')
+    expect(fam.metrics.every((m) => m.scope === 'company')).toBe(true)
     expect(fam.view.filters.product).toEqual(['Services'])
   })
 
   it('ignores an unknown product label', async () => {
     const fam = await getFamily('org1', 'VC', { asOf: '2026-Q3', span: '4', product: 'Nope' })
     expect(fam.view.filters.product).toBe('All')
-    expect(plMetrics.computeVC10).toHaveBeenCalledWith('org1', '2026-09', undefined)
+    expect(oryon.oryonVC10).toHaveBeenCalledWith('org1', '2026-09')
   })
 })

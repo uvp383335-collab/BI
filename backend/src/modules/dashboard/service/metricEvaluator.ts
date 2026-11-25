@@ -16,6 +16,8 @@ import { dashboardMetricResultRepository } from '../repository/dashboardMetricRe
  */
 
 const TTL_MS = 6 * 60 * 60 * 1000
+/** Bumped when metric math changes, so results cached (in memory and in the tenant DB) by an older version are never served. */
+const CALC_VERSION = 'oryon-py-1'
 const MAX_ENTRIES = 20000
 const MAX_CONCURRENT = 12
 /** Background warm-up never holds more than this many slots, so screens keep DB headroom. */
@@ -94,7 +96,7 @@ export function evalMonth(def: MetricDef, period: string): string {
 }
 
 function fetchResult(def: MetricDef, ctx: EvalContext, month: string, priority: Priority, item?: string): Promise<MetricResult | null> {
-  const key = `${ctx.orgId}|${ctx.dataVersion}|${def.id}|${def.latestOnly ? 'latest' : month}|${ctx.provider}|${item ?? '-'}`
+  const key = `${ctx.orgId}|${ctx.dataVersion}|${CALC_VERSION}|${def.id}|${def.latestOnly ? 'latest' : month}|${ctx.provider}|${item ?? '-'}`
   const hit = cache.get(key)
   if (hit && Date.now() - hit.at < TTL_MS) return hit.promise
   const promise = (async (): Promise<MetricResult | null> => {

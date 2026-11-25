@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import * as metricsController from '../controller/metrics.controller'
+import * as oryonController from '../oryon/oryon.controller'
 import { requireAuth, requireOrgContext } from '../../../middleware/auth'
 import { validateQuery } from '../../../middleware/validate'
 import {
@@ -46,6 +47,9 @@ const opportunitiesByLeadSourceByMonthGuards = [requireAuth, requireOrgContext, 
 const customerRevenueConcentrationGuards = [requireAuth, requireOrgContext, validateQuery(getCustomerRevenueConcentrationQuerySchema)] as const
 const customerRevenueConcentrationByMonthGuards = [requireAuth, requireOrgContext, validateQuery(getCustomerRevenueConcentrationByMonthQuerySchema)] as const
 
+// Oryon metrics: port of the reference Python app (mrr_app/), parity-checked by src/scripts/oryonParity
+metricsRouter.get('/oryon/pages/:page', requireAuth, requireOrgContext, oryonController.getOryonPage)
+metricsRouter.get('/oryon/metrics/:id', requireAuth, requireOrgContext, oryonController.getOryonMetric)
 metricsRouter.get('/trend/:id', ...guards, metricsController.getMetricTrend)
 metricsRouter.get('/qualified-pipeline-trend', ...qualifiedPipelineTrendGuards, metricsController.getQualifiedPipelineTrendHandler)
 metricsRouter.get('/salesforce/campaign-won-opportunities', requireAuth, requireOrgContext, metricsController.getCampaignWonOpportunitiesHandler)
