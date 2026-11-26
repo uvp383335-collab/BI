@@ -53,6 +53,7 @@ async function main() {
       const page = await PAGES[name](data, q)
       const kept: Record<string, unknown> = { query: q }
       for (const k of KEEP) if (k in page) kept[k] = clean(page[k])
+      if (name === 'win_rate') kept.headline = page.info.headline // compared with the Python page's headline competitor
       out[name].push(kept)
     }
     console.error(name, 'ok')

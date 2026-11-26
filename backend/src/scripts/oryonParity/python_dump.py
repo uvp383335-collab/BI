@@ -81,7 +81,10 @@ def main():
         for q in views:
             with A.app.test_request_context("/", query_string=q):
                 kw = getattr(A, fn)()
-            out[name].append({"query": q, **{k: clean(kw[k]) for k in KEEP if k in kw}})
+            entry = {"query": q, **{k: clean(kw[k]) for k in KEEP if k in kw}}
+            if name == "win_rate":
+                entry["headline"] = kw["info"]["headline"]   # the dashboard's CM-03 value is this competitor's rate
+            out[name].append(entry)
         print(name, "ok", file=sys.stderr)
     with open(sys.argv[1], "w") as f:
         json.dump(out, f)

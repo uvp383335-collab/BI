@@ -1,5 +1,57 @@
 # Oryon metrics: Python (mrr_app) vs Node parity report
 
+## Run 2: real synced data (2026-11-26)
+
+Org "ABC logistics" (`tenant_6b071a4c0b4235082c7d5e64`), freshly synced from all three sources:
+HubSpot (54,843 contacts, imported history on), Salesforce (7,538 deals, 2,572 accounts) and the
+QuickBooks sandbox (419 invoices Aug 2024 - Sep 2026, 38 customers, 36 monthly P&L / Balance Sheet
+snapshots Nov 2023 - Oct 2026). No mrr_app settings saved, so both apps use the automatic defaults.
+
+| Check | Values | Mismatches |
+|---|---|---|
+| Every mrr_app page / view vs Node `oryonPages` | 23,210 (all bit-identical) | **0** |
+| oryon-web dashboard API series vs the Python page values (21 metrics) | 385 points | **0** |
+
+Cross-check against the Oryon report numbers quoted in mrr_app/README.md: marketing-sourced pipeline
+Q3-2026 = 45.13% and won new-logo ARR = 54.17% in both apps, exactly the report's figures.
+
+Blank in both apps (data, not code):
+- CM-03 win rate: the synced Salesforce deals carry no competitor (no competitor field / OpportunityCompetitor data).
+- CM-07 marketing ROI: the QuickBooks sandbox expense accounts are unnumbered ("Sales & Marketing - Advertising"), and the
+  automatic marketing-account pick skips names containing "sales", so spend is 0. Pick the accounts in the
+  mrr_app settings (roi_blended_accounts / roi_programs_accounts) to fill it.
+- VC-03 12-month new-logo growth: invoices start Aug 2024, so a full prior 12-month window of reliable new logos doesn't exist yet.
+
+### Dashboard (what oryon-web shows) vs Python
+
+| Metric | Periods checked | Mismatches | Latest period | Python | Node API |
+|---|---|---|---|---|---|
+| VC-01 | 24 | 0 | 2026-Q3 | 86.6636 | 86.6636 |
+| VC-02 | 24 | 0 | 2026-Q3 | 90.1013 | 90.1013 |
+| VC-03 | 1 | 0 | 2026-08 | - | - |
+| VC-04 | 16 | 0 | 2026-Q3 | 3.0849 | 3.0849 |
+| VC-06 | 16 | 0 | 2026-Q3 | 11.2922 | 11.2922 |
+| VC-07 | 16 | 0 | 2026-Q3 | 7.4387 | 7.4387 |
+| VC-09 | 16 | 0 | 2026-Q3 | 2.4907 | 2.4907 |
+| VC-10 | 16 | 0 | 2026-Q3 | 59.9118 | 59.9118 |
+| VC-12 | 16 | 0 | 2026-Q3 | 98.0202 | 98.0202 |
+| VC-13 | 16 | 0 | 2026-Q3 | 48.9297 | 48.9297 |
+| VC-14 | 16 | 0 | 2026-Q3 | 14.4528 | 14.4528 |
+| CB-05 | 24 | 0 | 2026-Q3 | 920,848.1000 | 920,848.1000 |
+| CB-07 | 24 | 0 | 2026-Q3 | 78.8530 | 78.8530 |
+| CB-10 | 16 | 0 | 2026-Q3 | -40.9008 | -40.9008 |
+| CM-02 | 24 | 0 | 2026-Q3 | 64.0306 | 64.0306 |
+| ER-05 | 24 | 0 | 2026-Q3 | 48.1708 | 48.1708 |
+| CM-03 | 24 | 0 | 2026-Q3 | - | - |
+| CM-05 | 16 | 0 | 2026-Q3 | 45.1265 | 45.1265 |
+| CM-06 | 16 | 0 | 2026-Q3 | 17.8862 | 17.8862 |
+| CM-07 | 16 | 0 | 2026-Q3 | - | - |
+| CM-08 | 24 | 0 | 2026-Q3 | 126.0000 | 126.0000 |
+
+385 dashboard series points checked, mismatches: 0
+
+## Run 1: Ridgeline dataset test tenant (2026-11-25)
+
 Run 2026-11-25 on the local test tenant `tenant_oryon_parity` (org "Oryon Parity Test",
 id 6b1a00000000000000000001): Ridgeline QuickBooks dataset (14,275 invoices, 748 customers,
 48 monthly P&L and Balance Sheet snapshots, 2022-10 .. 2026-09) loaded through the backend's own

@@ -45,7 +45,8 @@ fcf = by(view("fcf", view="ttm")["rows"])
 ccc = by(view("ccc", view="month")["rows"])
 conc = by(view("concentration")["rows"])
 div = by(view("diversification")["rows"])
-wr = by(view("win_rate", view="period", grain="month")["rows"])
+wr_view = view("win_rate", view="period", grain="month")
+wr, wr_head = by(wr_view["rows"]), wr_view.get("headline")
 msp = by(view("msp", grain="quarter", view="period")["rows"])
 fn = by(view("funnel", grain="quarter", view="period")["rows"])
 roi = by(view("roi", grain="quarter", view="period")["rows"])
@@ -73,7 +74,7 @@ EXPECT = {
     "VC-14": lambda m: g(ltv, m, "base_ltv_cac"),
     "CB-05": lambda m: g(cash, m, "cash"), "CB-07": lambda m: g(fcf, m, "fcf_pct"), "CB-10": lambda m: g(ccc, m, "ccc"),
     "CM-02": lambda m: g(conc, m, "share"), "ER-05": lambda m: g(div, m, "share"),
-    "CM-03": lambda m: (wr[m]["comp"].get("Verdance FSM") or {}).get("rate") if m in wr else None,
+    "CM-03": lambda m: (wr[m]["comp"].get(wr_head) or {}).get("rate") if m in wr and wr_head else None,
     "CM-05": lambda m: g(msp, m, "pct"), "CM-06": lambda m: g(fn, m, "m2s_pct"), "CM-07": lambda m: g(roi, m, "blended"),
     "CM-08": lambda m: g(mql, m, "mqls"),
 }
