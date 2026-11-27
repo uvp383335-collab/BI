@@ -16,7 +16,9 @@ import { oryonDataFor, OryonData } from './oryonData'
 import * as P from './oryonPages'
 import { Dict, truthy } from './pyCompat'
 
-type Compute = (orgId: string, month: string) => Promise<MetricResult>
+/** `item`: a QuickBooks item id — only the invoice-based metrics (VC-01/02/03, CM-02, ER-05) take it. */
+type Compute = (orgId: string, month: string, item?: string) => Promise<MetricResult>
+const itemsOf = (item?: string) => (item ? [item] : null)
 
 const result = (id: string, period: string, unit: MetricUnit, value: number | null | undefined, data: Dict, flag: MetricFlag | null = null): MetricResult => {
   const v = typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -38,8 +40,8 @@ const at = (rows: Dict[], month: string, key = 'month') => rows.find((r) => r[ke
 const quarterRow = (rows: Dict[], month: string) => rows.find((r) => r.end === month && r.months.length === 3 && r.complete) ?? null
 
 // --------------------------------------------------------------------------- VC-01 / VC-02
-const retentionAt = async (orgId: string, month: string) => {
-  const d = await oryonDataFor(orgId)
+const retentionAt = async (orgId: string, month: string, item?: string) => {
+  const d = await oryonDataFor(orgId, itemsOf(item))
   const { native, isCad, settings, reliableFrom } = d.retentionInputs()
   const m0 = E.addMonths(month, -12)
   // the reference page only shows cohorts that start once 12 months of MRR data exist (earlier ones understate S)
@@ -49,18 +51,18 @@ const retentionAt = async (orgId: string, month: string) => {
   return r
 }
 
-export const oryonVC01: Compute = async (orgId, month) => {
-  const r = await retentionAt(orgId, month)
+export const oryonVC01: Compute = async (orgId, month, item) => {
+  const r = await retentionAt(orgId, month, item)
   return result('VC-01', month, 'percent', r?.grr, r ?? {}, r ? watch(r.grr < 90, `GRR ${fmt(r.grr)}% is below the 90% benchmark`) : null)
 }
-export const oryonVC02: Compute = async (orgId, month) => {
-  const r = await retentionAt(orgId, month)
+export const oryonVC02: Compute = async (orgId, month, item) => {
+  const r = await retentionAt(orgId, month, item)
   return result('VC-02', month, 'percent', r?.nrr, r ?? {}, r ? watch(r.nrr < 100, `NRR ${fmt(r.nrr)}% is below 100%`) : null)
 }
 
 // --------------------------------------------------------------------------- VC-03 new-logo ARR growth (12 months vs the 12 before)
-export const oryonVC03: Compute = async (orgId, month) => {
-  const d = await oryonDataFor(orgId)
+export const oryonVC03: Compute = async (orgId, month, item) => {
+  const d = await oryonDataFor(orgId, itemsOf(item))
   const [logos, info] = d.newlogoInputs()
   const ttm = P.newlogoWindow(logos, info, E.addMonths(month, -11), month)
   const prev = P.newlogoWindow(logos, info, E.addMonths(month, -23), E.addMonths(month, -12))
@@ -152,14 +154,14 @@ export const oryonCB10: Compute = async (orgId, month) => {
 }
 
 // --------------------------------------------------------------------------- CM-02 concentration, ER-05 diversification
-export const oryonCM02: Compute = async (orgId, month) => {
-  const d = await oryonDataFor(orgId)
+export const oryonCM02: Compute = async (orgId, month, item) => {
+  const d = await oryonDataFor(orgId, itemsOf(item))
   const r = at(d.concInputs(null), month)
   const top5 = r ? r.ranking.slice(0, 5).reduce((s: number, g: Dict) => s + g.share, 0) : null
   return result('CM-02', month, 'percent', r?.share, r ? { ...r, ranking: r.ranking.slice(0, 10), top5Share: top5 } : {})
 }
-export const oryonER05: Compute = async (orgId, month) => {
-  const d = await oryonDataFor(orgId)
+export const oryonER05: Compute = async (orgId, month, item) => {
+  const d = await oryonDataFor(orgId, itemsOf(item))
   const cfg = d.divSettings()
   const r = at(d.concInputs(null, cfg.top_n), month)
   const flag = r && cfg.threshold > 0 ? watch(r.share > cfg.threshold, `Top-${cfg.top_n} share ${fmt(r.share, 2)}% is above ${cfg.threshold}%`) : null

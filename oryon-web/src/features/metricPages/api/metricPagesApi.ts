@@ -14,6 +14,20 @@ export async function getMetricPageRequest(page: string, query: Record<string, s
   return res.data.data
 }
 
+export interface ProductOption {
+  id: string
+  name: string
+  lines: number
+  amount: number
+  mapping: string
+}
+
+/** QuickBooks products for the product filter, and the pages it applies to. */
+export async function getProductsRequest(): Promise<{ products: ProductOption[]; pages: string[] }> {
+  const res = await httpClient.get<ApiEnvelope<{ products: ProductOption[]; pages: string[] }>>('/metrics/oryon/products')
+  return res.data.data
+}
+
 /** The drill-down behind one row (customers, accounts, deals …). */
 export async function getMetricDetailRequest(page: string, query: Record<string, string>): Promise<PagePayload> {
   const res = await httpClient.get<ApiEnvelope<PagePayload>>(`/metrics/oryon/details/${page}`, { params: query })

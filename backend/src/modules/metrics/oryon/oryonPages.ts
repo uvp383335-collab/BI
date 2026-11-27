@@ -403,6 +403,12 @@ export async function mspPage(d: OryonData, q: Query = {}): Promise<Dict> {
   return { rows, latest, year_ago: yearAgoOf(rows, latest), cfg }
 }
 
+/**
+ * Pages built only from invoice lines, so they can be limited to some QuickBooks products (`items`). Every other
+ * page mixes in the P&L, Balance Sheet or CRM, which have no product breakdown.
+ */
+export const PRODUCT_PAGES = new Set(['mrr', 'retention', 'new_logos', 'concentration', 'diversification'])
+
 export const PAGES: Record<string, (d: OryonData, q: Query) => Dict | Promise<Dict>> = {
   mrr: mrrPage,
   retention: retentionPage,

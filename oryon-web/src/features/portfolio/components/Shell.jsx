@@ -35,7 +35,7 @@ export function TopBar({ meta, view, set, title }) {
           <Select id="f-region" label="Region" options={[['All', 'All regions'], ...meta.regions.map((r) => [r, r])]} value={view.region} onChange={(region) => set({ region })} disabled={cap.region === false} title={cap.region === false ? off : undefined} />
           <Select id="f-segment" label="Segment" options={[['All', 'All segments'], ...meta.segments.map((r) => [r, r])]} value={view.segment} onChange={(segment) => set({ segment })} disabled={cap.segment === false} title={cap.segment === false ? off : undefined} />
           <ProductPicker products={meta.products} value={view.product} onChange={(product) => set({ product })} disabled={cap.product === false} title={cap.product === false ? 'Connect QuickBooks to filter by product' : undefined}
-            single={cap.productMulti === false} hint={cap.productMulti === false ? 'One QuickBooks product at a time. Filters COGS % (VC-04), EBITDA margin (VC-10) and revenue growth (VC-13); other cards stay company-wide.' : undefined} />
+            single={cap.productMulti === false} hint={cap.productMulti === false ? 'One QuickBooks product at a time. Filters the invoice-based metrics (GRR / NRR, new logos, concentration, diversification); other cards stay company-wide. Each metric drawer has its own product filter too.' : undefined} />
           {(chips.length > 0) && <button type="button" className="reset" onClick={() => set({ region: 'All', segment: 'All', product: 'All' })}>Reset filters</button>}
         </div>
         <div className="chips">

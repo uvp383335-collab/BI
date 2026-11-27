@@ -52,6 +52,7 @@ const customerRevenueConcentrationByMonthGuards = [requireAuth, requireOrgContex
 metricsRouter.get('/oryon/pages/:page', requireAuth, requireOrgContext, oryonController.getOryonPage)
 metricsRouter.get('/oryon/details/:page', requireAuth, requireOrgContext, oryonController.getOryonDetailHandler)
 metricsRouter.get('/oryon/metrics/:id', requireAuth, requireOrgContext, oryonController.getOryonMetric)
+metricsRouter.get('/oryon/products', requireAuth, requireOrgContext, oryonController.getOryonProductsHandler)
 metricsRouter.get('/oryon/settings', requireAuth, requireOrgContext, oryonController.getOryonSettingsHandler)
 metricsRouter.put('/oryon/settings/:section', requireAuth, requireOrgContext, requireRole('owner', 'admin'), oryonController.saveOryonSettingsHandler)
 metricsRouter.delete('/oryon/settings/:section', requireAuth, requireOrgContext, requireRole('owner', 'admin'), oryonController.resetOryonSettingsHandler)

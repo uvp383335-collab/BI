@@ -17,9 +17,14 @@ vi.mock('../../widgets/AppShell', () => ({
 
 const getPage = vi.fn()
 const getDetail = vi.fn()
+const PRODUCTS = [
+  { id: '3', name: 'Ridgeline Core - Monthly', lines: 10, amount: 100, mapping: 'subscription_monthly' },
+  { id: '4', name: 'Ridgeline Core - Annual', lines: 5, amount: 500, mapping: 'subscription_yearly' }
+]
 vi.mock('./api/metricPagesApi', () => ({
   getMetricPageRequest: (...a: unknown[]) => getPage(...a),
-  getMetricDetailRequest: (...a: unknown[]) => getDetail(...a)
+  getMetricDetailRequest: (...a: unknown[]) => getDetail(...a),
+  getProductsRequest: async () => ({ products: PRODUCTS, pages: ['mrr', 'retention', 'new_logos', 'concentration', 'diversification'] })
 }))
 
 // recharts needs a sized container; jsdom has none
@@ -163,5 +168,41 @@ describe('metric view inside the portfolio drawer', () => {
     await screen.findByText('GRR · Q3-2026')
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Window' }), 'period')
     expect(getPage).toHaveBeenLastCalledWith('retention', { grain: 'quarter', window: 'period', scope: 'all' })
+  })
+})
+
+describe('product filter inside a metric', () => {
+  it('a product-aware metric offers the product filter and refetches with the chosen products', async () => {
+    getPage.mockResolvedValue({ ...RETENTION, latest: RETENTION.rows[1] })
+    renderAt('/metrics/retention')
+    await screen.findByText('GRR · Q3-2026')
+    await userEvent.click(screen.getByRole('button', { name: /All products/ }))
+    await userEvent.click(await screen.findByRole('checkbox', { name: /Ridgeline Core - Monthly/ }))
+    expect(getPage).toHaveBeenLastCalledWith('retention', { grain: 'quarter', window: 'ttm', scope: 'all', items: '3' })
+    expect(await screen.findByText(/Filtered to 1 product/)).toBeInTheDocument()
+  })
+
+  it('a P&L metric says the product filter does not apply', async () => {
+    getPage.mockResolvedValue({ rows: [], latest: null })
+    renderAt('/metrics/cogs')
+    expect(await screen.findByText(/Product filter: not available for this metric/)).toBeInTheDocument()
+    expect(getPage).toHaveBeenLastCalledWith('cogs', { grain: 'month', window: 'period' })
+  })
+
+  it('the drawer starts on the global product filter, matched by name', async () => {
+    const { DrawerMetric, productIdsFor } = await import('./components/DrawerMetric')
+    expect(productIdsFor(['Ridgeline Core - Annual (#4)', 'Ridgeline Core - Monthly'], PRODUCTS)).toEqual(['3', '4'])
+    expect(productIdsFor('All', PRODUCTS)).toEqual([])
+    getPage.mockResolvedValue({ ...RETENTION, latest: RETENTION.rows[1] })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <DrawerMetric page="retention" highlight="2026-Q3" globalProducts={['Ridgeline Core - Monthly']} />
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+    await screen.findByText('GRR · Q3-2026')
+    expect(getPage).toHaveBeenCalledWith('retention', { grain: 'quarter', window: 'ttm', scope: 'all', items: '3' })
   })
 })

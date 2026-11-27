@@ -68,19 +68,22 @@ export const METRICS: MetricDef[] = [
   {
     id: 'VC-01', family: 'VC', name: 'Gross revenue retention', source: 'QuickBooks', unit: '%', dir: 'up', threshold: 90, grain: 'MQ',
     definition: 'Trailing 12 months: MRR kept from the customers paying 12 months ago, before expansion (GRR = (S - churn - downgrades) / S, constant currency).',
-    compute: (o, m) => O.oryonVC01(o, m),
+    filters: 'P',
+    compute: (o, m, _p, item) => O.oryonVC01(o, m, item),
     subs: (d) => [sub(d, 'S', 'Starting MRR', 'USD'), sub(d, 'C', 'Churned MRR', 'USD'), sub(d, 'Dn', 'Downgrades', 'USD'), sub(d, 'cohort', 'Cohort customers', 'count')]
   },
   {
     id: 'VC-02', family: 'VC', name: 'Net revenue retention', source: 'QuickBooks', unit: '%', dir: 'up', threshold: 100, grain: 'MQ',
     definition: 'Trailing 12 months: MRR from the customers paying 12 months ago, including expansion (NRR = (S - churn - downgrades + upgrades) / S).',
-    compute: (o, m) => O.oryonVC02(o, m),
+    filters: 'P',
+    compute: (o, m, _p, item) => O.oryonVC02(o, m, item),
     subs: (d) => [sub(d, 'U', 'Upgrades', 'USD'), sub(d, 'C', 'Churned MRR', 'USD'), sub(d, 'Dn', 'Downgrades', 'USD'), sub(d, 'E', 'Ending MRR', 'USD')]
   },
   {
     id: 'VC-03', family: 'VC', name: 'New-logo revenue growth', source: 'QuickBooks; Salesforce', unit: '%', dir: 'up', threshold: null, grain: 'MQ',
     definition: 'New-logo ARR (first-month MRR x 12, by Salesforce close month) in the trailing 12 months against the 12 months before. Win-backs excluded.',
-    compute: (o, m) => O.oryonVC03(o, m),
+    filters: 'P',
+    compute: (o, m, _p, item) => O.oryonVC03(o, m, item),
     subs: (d) => [sub(d, 'newLogoArr', 'New-logo ARR (12 mo)', 'USD'), sub(d, 'newLogos', 'New logos', 'count'), sub(d, 'priorNewLogoArr', 'Prior 12 months', 'USD'), sub(d, 'avgArrPerLogo', 'Avg ARR per logo', 'USD')],
     abs: (d) => ({ label: 'New-logo ARR', unit: 'USD', value: num(d.newLogoArr) })
   },
@@ -157,13 +160,15 @@ export const METRICS: MetricDef[] = [
   {
     id: 'CM-02', family: 'CM', name: 'Customer concentration', source: 'QuickBooks; Salesforce', unit: '%', dir: 'down', threshold: null, grain: 'MQ',
     definition: 'Share of trailing-twelve-month recognized revenue from the ten largest customer groups (top Salesforce parent, else QuickBooks parent).',
-    compute: (o, m) => O.oryonCM02(o, m),
+    filters: 'P',
+    compute: (o, m, _p, item) => O.oryonCM02(o, m, item),
     subs: (d) => [sub(d, 'top5Share', 'Top 5 share', '%'), sub(d, 'largest', 'Largest customer', '%'), sub(d, 'groups', 'Customer groups', 'count'), sub(d, 'total', 'TTM revenue', 'USD')]
   },
   {
     id: 'ER-05', family: 'CM', name: 'Customer & revenue diversification', source: 'QuickBooks; Salesforce', unit: '%', dir: 'down', threshold: null, grain: 'MQ',
     definition: 'Share of trailing-twelve-month recognized revenue from the five largest customer groups (CM-02 with N = 5).',
-    compute: (o, m) => O.oryonER05(o, m),
+    filters: 'P',
+    compute: (o, m, _p, item) => O.oryonER05(o, m, item),
     subs: (d) => [sub(d, 'largest', 'Largest group', '%'), sub(d, 'top', 'Top-5 revenue', 'USD'), sub(d, 'groups', 'Customer groups', 'count')]
   },
   {

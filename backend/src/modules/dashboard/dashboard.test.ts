@@ -70,8 +70,8 @@ describe('dashboard service', () => {
     expect(meta.products).toEqual(['Platform', 'Services'])
     expect(meta.sources).toEqual(['QuickBooks Online', 'HubSpot'])
     expect(meta.capabilities.ttm).toBe(false)
-    // the Oryon calculations are company-wide: no metric takes the QuickBooks item filter
-    expect(meta.capabilities.product).toBe(false)
+    // the invoice-based Oryon metrics (VC-01/02/03, CM-02, ER-05) take the QuickBooks item filter
+    expect(meta.capabilities.product).toBe(true)
     expect(meta.capabilities.region).toBe(false)
   })
 
@@ -144,13 +144,17 @@ describe('dashboard service', () => {
     ;(oryon.oryonVC01 as jest.Mock).mockResolvedValue(result('VC-01', 83.3))
     const m = await getMetric('org1', 'VC-01', { asOf: '2026-Q3', span: '4' })
     expect(m.value).toBe(83.3)
-    expect(oryon.oryonVC01).toHaveBeenCalledWith('org1', '2026-09')
+    // no product filter: called without an item
+    expect(oryon.oryonVC01).toHaveBeenCalledWith('org1', '2026-09', undefined)
   })
 
-  it('a product filter leaves every metric company-wide', async () => {
+  it('the product filter applies the QuickBooks item to the invoice-based metrics and tags the rest company-wide', async () => {
     const fam = await getFamily('org1', 'VC', { asOf: '2026-Q3', span: '4', product: 'Services' })
+    expect(oryon.oryonVC01).toHaveBeenCalledWith('org1', '2026-09', '7')
+    expect(oryon.oryonVC03).toHaveBeenCalledWith('org1', '2026-09', '7')
     expect(oryon.oryonVC10).toHaveBeenCalledWith('org1', '2026-09')
-    expect(fam.metrics.every((m) => m.scope === 'company')).toBe(true)
+    expect(fam.metrics.find((m) => m.id === 'VC-01')!.scope).toBe('filtered')
+    expect(fam.metrics.find((m) => m.id === 'VC-10')!.scope).toBe('company')
     expect(fam.view.filters.product).toEqual(['Services'])
   })
 

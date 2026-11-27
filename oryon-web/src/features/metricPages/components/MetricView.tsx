@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getMetricDetailRequest, getMetricPageRequest } from '../api/metricPagesApi'
+import { getMetricDetailRequest, getMetricPageRequest, getProductsRequest } from '../api/metricPagesApi'
+import { MultiSelectDropdown } from '../../dashboard/components/MultiSelectDropdown'
+import { SERIES } from './format'
 import { PageCfg } from '../config'
 import { DataTable, KpiRow, MetricChart, Row } from './Blocks'
 
@@ -19,6 +21,36 @@ function periodKeys(p?: string | null): Set<string> {
 }
 const rowMatches = (r: Row, keys: Set<string>) =>
   keys.size > 0 && [r.month, r.m1, r.end, r.label, r.period].some((v) => typeof v === 'string' && keys.has(v))
+
+/** The QuickBooks products, for the product filter (shared query: loaded once per session). */
+export function useProducts() {
+  return useQuery({ queryKey: ['oryon-products'], queryFn: getProductsRequest, staleTime: 5 * 60 * 1000 })
+}
+
+/** Product filter of one metric: pick QuickBooks products; none picked = all products. */
+const ProductFilter: React.FC<{ value: string[]; onChange: (ids: string[]) => void }> = ({ value, onChange }) => {
+  const { data } = useProducts()
+  const products = (data?.products ?? []).filter((p) => p.lines > 0 || value.includes(p.id))
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm text-ink-2">
+      Products
+      <div className="min-w-[220px]">
+        <MultiSelectDropdown
+          options={products.map((p, i) => ({ id: p.id, label: p.name, color: SERIES[i % SERIES.length] }))}
+          selectedIds={value}
+          onToggle={(id) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id])}
+          placeholder={products.length ? 'All products' : 'No QuickBooks products'}
+          itemNounPlural="products"
+        />
+      </div>
+      {value.length > 0 && (
+        <button type="button" className="text-xs text-brand hover:underline" onClick={() => onChange([])}>
+          All products
+        </button>
+      )}
+    </div>
+  )
+}
 
 /** The drill-down behind one row: summary cards and its tables (each with CSV). */
 export const DetailBody: React.FC<{ cfg: PageCfg; period: string; query: Record<string, string> }> = ({ cfg, period, query }) => {
@@ -90,10 +122,18 @@ export const MetricView: React.FC<{
   const note = data && cfg.note ? cfg.note(data) : null
   const openDetail = onOpenDetail ?? setInlinePeriod
 
+  const items = query.items ? query.items.split(',').filter(Boolean) : []
   return (
     <div className="flex flex-col gap-4">
-      {cfg.controls.length > 0 && (
+      {(cfg.controls.length > 0 || cfg.productFilter !== undefined) && (
         <div className="flex flex-wrap items-center gap-3">
+          {cfg.productFilter ? (
+            <ProductFilter value={items} onChange={(ids) => onQuery('items', ids.join(','))} />
+          ) : (
+            <span className="text-xs text-ink-3" title="This metric comes from the P&L, the Balance Sheet or the CRM, which have no product breakdown.">
+              Product filter: not available for this metric (company-wide)
+            </span>
+          )}
           {cfg.controls.map((c) => {
             const opts = typeof c.options === 'function' ? (data ? c.options(data) : [[c.default, c.default] as [string, string]]) : c.options
             return (
@@ -112,6 +152,11 @@ export const MetricView: React.FC<{
       {data && (
         <>
           {note && <div className="card border-l-4 p-4 text-sm text-ink-2" style={{ borderLeftColor: 'var(--watch)' }}>{note}</div>}
+          {items.length > 0 && (
+            <div className="card border-l-4 p-3 text-sm text-ink-2" style={{ borderLeftColor: 'var(--gold)' }}>
+              Filtered to {items.length} product{items.length > 1 ? 's' : ''}: only those products&apos; invoice lines are counted (MRR, customers, cohorts and rankings are for those products only).
+            </div>
+          )}
           <KpiRow kpis={cfg.kpis(data, query)} />
           <div className={`grid gap-4 ${compact ? 'lg:grid-cols-2' : 'xl:grid-cols-2'}`}>
             {cfg.charts.map((c) => <MetricChart key={c.title} cfg={c} payload={data} rows={rows} />)}
@@ -145,5 +190,6 @@ export const MetricView: React.FC<{
 export function viewQuery(cfg: PageCfg, get: (key: string) => string | null | undefined): Record<string, string> {
   const q: Record<string, string> = {}
   for (const c of cfg.controls) q[c.key] = get(c.key) ?? c.default
+  if (cfg.productFilter && get('items')) q.items = get('items')!
   return q
 }

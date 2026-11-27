@@ -44,7 +44,7 @@ export default function Drawer({ companyId, meta, view, metricId, onClose }) {
         <div className="dr-v"><b>{fmt(s.v, s.u)}</b><span className={tone(ch, data.dir)}>{ch == null ? '' : `${dfmt(ch, s.u)} vs ${pLabel(data.prev.period)}`}</span>{useAbs && <span className="note">{s.label} · {fmt(data.value, data.unit)}</span>}</div>
         {data.alert && <div className="card" style={{ padding: '12px 14px' }}><b>{data.alert.flag}:</b> {data.alert.why}.</div>}
         {data.quarterlyInMonthlyView && <div className="card" style={{ padding: '10px 14px', color: 'var(--muted)' }}>This metric reports by quarter, so the monthly view shows the latest completed quarter ({pLabel(data.period)}).</div>}
-        {page ? <DrawerMetric key={page} page={page} highlight={data.period} /> : (<>
+        {page ? <DrawerMetric key={page} page={page} highlight={data.period} globalProducts={view.product} /> : (<>
         <div className="card">
           <div className="card-h"><div><h3>Trend</h3><p>{data.series.length} {data.period.includes('Q') ? 'quarters' : 'months'} to {pLabel(data.period)}</p></div></div>
           <Chart x={x} tl={tl} h={240} sel={x.length - 1} label={`${data.name} trend`}

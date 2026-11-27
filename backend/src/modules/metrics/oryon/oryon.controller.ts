@@ -3,7 +3,7 @@ import { asyncHandler } from '../../../shared/utils/asyncHandler'
 import { sendSuccess } from '../../../shared/utils/apiResponse'
 import { AppError } from '../../../shared/utils/AppError'
 import { oryonDataFor } from './oryonData'
-import { PAGES, Query } from './oryonPages'
+import { PAGES, PRODUCT_PAGES, Query } from './oryonPages'
 import * as O from './oryonMetrics.service'
 import { getOryonSettings, saveOryonSettings, resetOryonSettings } from './oryonSettings.service'
 import { getOryonDetail } from './oryonDetails'
@@ -20,6 +20,17 @@ const METRIC_COMPUTES: Record<string, (orgId: string, month: string) => Promise<
 const ALLOWED_QUERY = ['grain', 'window', 'scope', 'view', 'from', 'to', 'line', 'segment', 'period', 'bucket', 'n']
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 
+/** `items=id1,id2` -> the QuickBooks item ids to keep (product-aware pages only); 400 on anything else. */
+function itemsParam(req: Request, page: string): string[] | null {
+  const raw = req.query.items
+  if (raw === undefined || raw === '') return null
+  if (typeof raw !== 'string' || raw.length > 4000) throw AppError.badRequest('items must be a comma-separated list of product ids', 'INVALID_ITEMS')
+  const ids = raw.split(',').map((x) => x.trim()).filter(Boolean)
+  if (ids.length > 200 || ids.some((x) => !/^[A-Za-z0-9_.:-]{1,64}$/.test(x))) throw AppError.badRequest('items must be a comma-separated list of product ids', 'INVALID_ITEMS')
+  if (!PRODUCT_PAGES.has(page)) throw AppError.badRequest(`${page} can't be filtered by product`, 'PRODUCT_FILTER_NOT_SUPPORTED')
+  return ids
+}
+
 /** GET /metrics/oryon/pages/:page — the full series a reference-app page shows (rows, latest, ...). */
 export const getOryonPage = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const page = PAGES[String(req.params.page)]
@@ -30,7 +41,7 @@ export const getOryonPage = asyncHandler(async (req: Request, res: Response): Pr
     if (typeof v === 'string' && v.length <= 64) q[k] = v
   }
   for (const k of ['from', 'to']) if (q[k] && !MONTH.test(q[k]!)) throw AppError.badRequest(`${k} must be YYYY-MM`, 'INVALID_MONTH')
-  const data = await oryonDataFor(req.auth!.orgId!)
+  const data = await oryonDataFor(req.auth!.orgId!, itemsParam(req, String(req.params.page)))
   sendSuccess(res, await page(data, q))
 })
 
@@ -67,6 +78,13 @@ export const getOryonDetailHandler = asyncHandler(async (req: Request, res: Resp
     const v = req.query[k]
     if (typeof v === 'string' && v.length <= 64) q[k] = v
   }
-  const data = await oryonDataFor(req.auth!.orgId!)
+  const data = await oryonDataFor(req.auth!.orgId!, itemsParam(req, String(req.params.page)))
   sendSuccess(res, await getOryonDetail(data, String(req.params.page), q))
+})
+
+/** GET /metrics/oryon/products — the QuickBooks products for the product filter, and which pages it applies to. */
+export const getOryonProductsHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const data = await oryonDataFor(req.auth!.orgId!)
+  const products = data.catalog().map((p) => ({ id: p.itemId, name: p.name, lines: p.lines, amount: p.amount, mapping: p.mapping }))
+  sendSuccess(res, { products, pages: Array.from(PRODUCT_PAGES) })
 })

@@ -39,6 +39,8 @@ export interface PageCfg {
   detail?: DetailSection[]
   method: string[]
   note?: (p: Row) => string | null
+  /** built only from invoice lines, so it can be limited to some QuickBooks products */
+  productFilter?: boolean
 }
 
 const GRAIN = (d = 'quarter'): Control => ({ key: 'grain', label: 'Grain', options: [['month', 'Monthly'], ['quarter', 'Quarterly']], default: d })
@@ -50,7 +52,7 @@ const ACCT: Column = { label: 'Account', value: (r) => r.name }
 // ------------------------------------------------------------------------------------------------ pages
 
 const mrr: PageCfg = {
-  page: 'mrr', codes: ['MRR'], title: 'MRR / ARR', subtitle: 'Monthly recurring revenue from the invoices and the product mapping, ARR = MRR × 12.',
+  page: 'mrr', codes: ['MRR'], productFilter: true, title: 'MRR / ARR', subtitle: 'Monthly recurring revenue from the invoices and the product mapping, ARR = MRR × 12.',
   controls: [],
   kpis: (p) => {
     const l = p.latest ?? {}
@@ -96,7 +98,7 @@ const mrr: PageCfg = {
 }
 
 const retention: PageCfg = {
-  page: 'retention', codes: ['VC-01', 'VC-02'], title: 'Retention (GRR, NRR)', subtitle: 'Revenue kept from the customers paying at the start of the window, before (GRR) and after (NRR) expansion.',
+  page: 'retention', codes: ['VC-01', 'VC-02'], productFilter: true, title: 'Retention (GRR, NRR)', subtitle: 'Revenue kept from the customers paying at the start of the window, before (GRR) and after (NRR) expansion.',
   controls: [GRAIN(), { key: 'window', label: 'Window', options: [['ttm', 'TTM (vs 12 months earlier)'], ['period', 'Period (vs prior period end)']], default: 'ttm' },
     { key: 'scope', label: 'Scope', options: [['all', 'All recurring'], ['subscription', 'Subscription only']], default: 'all' }],
   kpis: (p, q) => {
@@ -161,7 +163,7 @@ const retention: PageCfg = {
 
 const SEG = ['SMB', 'Mid-Market', 'Upper Mid-Market', 'Enterprise', 'Unlinked']
 const newLogos: PageCfg = {
-  page: 'new_logos', codes: ['VC-03'], title: 'New logos', subtitle: 'New-logo ARR (first-month MRR × 12) by Salesforce close month and segment.',
+  page: 'new_logos', codes: ['VC-03'], productFilter: true, title: 'New logos', subtitle: 'New-logo ARR (first-month MRR × 12) by Salesforce close month and segment.',
   controls: [GRAIN()],
   kpis: (p) => {
     const t = p.ttm ?? {}
@@ -586,7 +588,7 @@ const rankingDetail: DetailSection = {
 const withRank = (d: Row) => ({ ...d, r: d.r ? { ...d.r, ranking: (d.r.ranking ?? []).map((x: Row, i: number) => ({ ...x, rank: i + 1 })) } : d.r })
 
 const concentration: PageCfg = {
-  page: 'concentration', codes: ['CM-02'], title: 'Customer concentration', subtitle: 'Share of trailing-12-month revenue from the largest customer groups.',
+  page: 'concentration', codes: ['CM-02'], productFilter: true, title: 'Customer concentration', subtitle: 'Share of trailing-12-month revenue from the largest customer groups.',
   controls: [{ key: 'line', label: 'Product line', options: (p) => [['All', 'All classes'], ...Object.keys(p.by_line ?? {}).map((k): [string, string] => [k, k])], default: 'All' }],
   kpis: (p) => {
     const l = p.latest ?? {}
@@ -624,7 +626,7 @@ const concentration: PageCfg = {
 }
 
 const diversification: PageCfg = {
-  page: 'diversification', codes: ['ER-05'], title: 'Customer & revenue diversification', subtitle: 'Share of trailing-12-month revenue from the 5 largest customer groups.',
+  page: 'diversification', codes: ['ER-05'], productFilter: true, title: 'Customer & revenue diversification', subtitle: 'Share of trailing-12-month revenue from the 5 largest customer groups.',
   controls: [],
   kpis: (p) => {
     const l = p.latest ?? {}

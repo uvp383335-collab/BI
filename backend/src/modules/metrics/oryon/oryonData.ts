@@ -39,10 +39,14 @@ const utcDate = (d = new Date()) => d.toISOString().slice(0, 10)
  */
 export class OryonData {
   private memo = new Map<string, any>()
-  constructor(private readonly conn: Connection) {}
+  /**
+   * `items`: QuickBooks item ids to keep. Only those items' invoice lines are read, so every invoice-based figure
+   * (MRR, retention, new logos, concentration) covers just those products. Not used by P&L / Balance Sheet / CRM figures.
+   */
+  constructor(private readonly conn: Connection, private readonly items: string[] | null = null) {}
 
-  static async forOrg(orgId: string): Promise<OryonData> {
-    return new OryonData(await getTenantConnection(orgId))
+  static async forOrg(orgId: string, items: string[] | null = null): Promise<OryonData> {
+    return new OryonData(await getTenantConnection(orgId), items && items.length ? items : null)
   }
 
   private once<T>(key: string, fn: () => T): T {
@@ -67,7 +71,12 @@ export class OryonData {
         this.col('plmonthlysnapshots').find({}, { projection: proj('month', 'income', 'cogs', 'expenses', 'otherExpenses') }).toArray(),
         this.col('balancesheetmonthlysnapshots').find({ provider: PROVIDER }, { projection: proj('month', 'asOfDate', 'sectionTotals', 'accounts') }).toArray()
       ])
-      Object.assign(this.raw, { invoices, settingsDoc: settingsDoc ?? {}, products, savedMapping, qbo, sf, pl, bs })
+      // product filter: keep only the chosen items' lines; the invoice total becomes the sum of those lines
+      const keep = this.items ? new Set(this.items) : null
+      const filtered = keep
+        ? invoices.map((inv) => ({ ...inv, totalAmount: undefined, lines: ((inv.lines ?? []) as Dict[]).filter((l) => keep.has(String(l.itemId ?? ''))) }))
+        : invoices
+      Object.assign(this.raw, { invoices: filtered, settingsDoc: settingsDoc ?? {}, products, savedMapping, qbo, sf, pl, bs })
     })
   }
 
@@ -789,23 +798,29 @@ const MSP_FIELDS = ['dealname', 'dealstage', 'pipeline', 'type', 'accountId', 'a
 // ---------------------------------------------------------------------------- per-org cache
 const TTL_MS = 2 * 60 * 1000
 const instances = new Map<string, { at: number; data: Promise<OryonData> }>()
+const MAX_INSTANCES = 50
 
-/** A loaded OryonData for the org, shared for TTL_MS so one screen's many metric calls read the data once. */
-export function oryonDataFor(orgId: string): Promise<OryonData> {
-  const hit = instances.get(orgId)
+/**
+ * A loaded OryonData for the org (optionally limited to some QuickBooks items), shared for TTL_MS so one screen's
+ * many metric calls read the data once.
+ */
+export function oryonDataFor(orgId: string, items: string[] | null = null): Promise<OryonData> {
+  const key = `${orgId}|${items && items.length ? [...items].sort().join(',') : '*'}`
+  const hit = instances.get(key)
   if (hit && Date.now() - hit.at < TTL_MS) return hit.data
   const data = (async () => {
-    const d = await OryonData.forOrg(orgId)
+    const d = await OryonData.forOrg(orgId, items)
     await d.load()
     return d
   })()
-  data.catch(() => instances.delete(orgId))
-  instances.set(orgId, { at: Date.now(), data })
+  data.catch(() => instances.delete(key))
+  if (instances.size >= MAX_INSTANCES) instances.delete(instances.keys().next().value as string)
+  instances.set(key, { at: Date.now(), data })
   return data
 }
 
 /** Drop the cached data (tests; after a settings change). */
 export function clearOryonData(orgId?: string): void {
-  if (orgId) instances.delete(orgId)
-  else instances.clear()
+  if (!orgId) return instances.clear()
+  for (const k of Array.from(instances.keys())) if (k.startsWith(`${orgId}|`)) instances.delete(k)
 }
