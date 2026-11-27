@@ -560,6 +560,9 @@ export class OryonData {
     const autoTypes = E.suggestNewBusinessTypes(typeList)
     return {
       provider, n_deals: deals.length,
+      providers: sortedStr(await this.distinctProviders('deals')),
+      labels: labelList, types: typeList, has_std: hasStd, has_multi: hasMulti,
+      comp_auto: autoComp, loss_auto: autoLoss, nb_auto: autoTypes,
       comp_field: or(st.wr_competitor_field, autoComp),
       loss_field: or(st.wr_loss_reason_field !== null && st.wr_loss_reason_field !== undefined ? st.wr_loss_reason_field : autoLoss, null),
       exclude_reasons: or(st.wr_exclude_loss_reasons, []),
@@ -591,9 +594,11 @@ export class OryonData {
     const provider = or(st.fn_provider, 'hubspot')
     const contacts = await this.contacts(provider)
     const sources = new Map<string, number>()
+    const stages = new Map<string, number>()
     for (const c of contacts) {
       const s = String(or(c.analyticsSource, ''))
       sources.set(s, (sources.get(s) ?? 0) + 1)
+      for (const h of (or(c.lifecycleStageHistory, []) as Dict[])) if (truthy(h.value)) stages.set(h.value, (stages.get(h.value) ?? 0) + 1)
     }
     const srcList = sortedBy(Array.from(sources.keys()).filter((x) => x), (x) => [-sources.get(x)!, x])
     const autoMkt = E.suggestMarketingSources(srcList)
@@ -602,6 +607,9 @@ export class OryonData {
     const md = [...md0, ...defaults.slice(md0.length)].slice(0, 5)
     return {
       provider, n: contacts.length,
+      providers: sortedStr(await this.distinctProviders('contacts')),
+      stages: sortedBy(stages.keys(), (x) => [-stages.get(x)!, x]), sources: srcList,
+      source_counts: Object.fromEntries(sources), mkt_auto: autoMkt,
       lead_stage: or(st.fn_lead_stage, 'lead'), mql_stage: or(st.fn_mql_stage, 'marketingqualifiedlead'),
       sql_stage: or(st.fn_sql_stage, 'salesqualifiedlead'), opp_stage: or(st.fn_opp_stage, 'opportunity'),
       sql_via_mql: truthy(st.fn_sql_via_mql ?? true),
@@ -690,6 +698,8 @@ export class OryonData {
     const nn = (k: string, auto: unknown) => (st[k] !== null && st[k] !== undefined ? st[k] : auto)
     return {
       provider, value_field: valueField === 'arr' || valueField === 'amount' ? valueField : 'arr',
+      providers: sortedStr(await this.distinctProviders('deals')), sources, types, accounts,
+      mk_auto: autoSrc, nb_auto: autoTypes, bl_auto: autoBl, pr_auto: autoPr,
       mk_sources: nn('roi_marketing_sources', autoSrc), nb_types: nn('roi_new_business_types', autoTypes),
       blended_ids: nn('roi_blended_accounts', autoBl), programs_ids: nn('roi_programs_accounts', autoPr), channels,
       threshold: Number(st.roi_threshold !== null && st.roi_threshold !== undefined ? st.roi_threshold : 1.0)
@@ -734,6 +744,7 @@ export class OryonData {
     const nn = (k: string, auto: unknown) => (st[k] !== null && st[k] !== undefined ? st[k] : auto)
     return {
       provider, value_field: vf === 'arr' || vf === 'amount' ? vf : 'arr',
+      providers: sortedStr(await this.distinctProviders('deals')), sources, types, mk_auto: autoSrc, nb_auto: autoTypes,
       mk_sources: nn('msp_marketing_sources', autoSrc), nb_types: nn('msp_new_business_types', autoTypes),
       exclude_dups: truthy(st.msp_exclude_duplicates ?? true), true_new: truthy(st.msp_true_new_logos ?? true),
       threshold: Number(or(st.msp_threshold, 0)), duplicates: E.duplicateAccounts(deals)
@@ -757,6 +768,12 @@ export class OryonData {
     const months = E.monthRange(E.addMonths(start, -11), last)
     const rows = E.mspSeries(created, won, months, grain, view, cfg.exclude_dups).filter((r) => r.month >= start)
     return [rows, { ...cfg, duplicates: undefined, start }]
+  }
+
+  /** The latest Balance Sheet snapshot's section totals (settings screens show them next to the section pickers). */
+  bsLastSectionTotals(): Dict {
+    const last = sortedBy(this.bsSnapshots, (d) => [d.month]).slice(-1)[0]
+    return (last?.sectionTotals ?? {}) as Dict
   }
 
   /** Bank / balance-sheet sections used by the settings screens (kept for parity with the Python app). */

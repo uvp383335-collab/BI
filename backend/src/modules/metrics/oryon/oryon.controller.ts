@@ -5,6 +5,7 @@ import { AppError } from '../../../shared/utils/AppError'
 import { oryonDataFor } from './oryonData'
 import { PAGES, Query } from './oryonPages'
 import * as O from './oryonMetrics.service'
+import { getOryonSettings, saveOryonSettings, resetOryonSettings } from './oryonSettings.service'
 
 /** Oryon metric id -> MetricResult at one month (same values the dashboard shows). */
 const METRIC_COMPUTES: Record<string, (orgId: string, month: string) => Promise<unknown>> = {
@@ -39,4 +40,21 @@ export const getOryonMetric = asyncHandler(async (req: Request, res: Response): 
   const month = typeof req.query.month === 'string' ? req.query.month : ''
   if (!MONTH.test(month)) throw AppError.badRequest('month must be YYYY-MM', 'INVALID_MONTH')
   sendSuccess(res, await compute(req.auth!.orgId!, month))
+})
+
+/** GET /metrics/oryon/settings — every Oryon settings section with current values, automatic suggestions and choices. */
+export const getOryonSettingsHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  sendSuccess(res, await getOryonSettings(req.auth!.orgId!))
+})
+
+/** PUT /metrics/oryon/settings/:section — save one section (owner/admin). */
+export const saveOryonSettingsHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  await saveOryonSettings(req.auth!.orgId!, String(req.params.section), req.body)
+  sendSuccess(res, { saved: true })
+})
+
+/** DELETE /metrics/oryon/settings/:section — back to the automatic choices (owner/admin). */
+export const resetOryonSettingsHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  await resetOryonSettings(req.auth!.orgId!, String(req.params.section))
+  sendSuccess(res, { reset: true })
 })

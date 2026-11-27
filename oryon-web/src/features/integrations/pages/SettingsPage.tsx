@@ -28,6 +28,7 @@ import { IntegrationProvider, ProviderStatus } from '../api/integrationsApi'
 import { AppShell } from '../../../widgets/AppShell'
 import { Banner } from '../../../shared/components/Banner'
 import { formatDateTime } from '../../../shared/utils/formatDate'
+import { OryonMetricSettings } from '../../oryonSettings/components/OryonSettings'
 
 const PROVIDERS: IntegrationProvider[] = ['hubspot', 'salesforce', 'quickbooks']
 const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
@@ -1347,16 +1348,35 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       {status?.hubspot?.connected && <HubSpotHistorySourceSettings canManage={canManage} onError={setError} />}
-      {(status?.hubspot?.connected || status?.salesforce?.connected) && <Cm04TargetSettings canManage={canManage} onError={setError} />}
-      {status?.hubspot?.connected && <Cm08MqlTargetSettings canManage={canManage} onError={setError} />}
-      {status?.hubspot?.connected && <LeadVolumeTargetSettings canManage={canManage} onError={setError} />}
-      {status?.salesforce?.connected && <CompetitorFieldSettings canManage={canManage} onError={setError} />}
-      {status?.salesforce?.connected && <OpportunityExtraFieldsSettings canManage={canManage} onError={setError} />}
-      {status?.quickbooks?.connected && <CashMetricsAccountSettings canManage={canManage} onError={setError} />}
-      {status?.quickbooks?.connected && <GAndAAccountSettings canManage={canManage} onError={setError} />}
-      {status?.quickbooks?.connected && <CACAccountSettings canManage={canManage} onError={setError} />}
-      {status?.quickbooks?.connected && <MarketingSpendAccountSettings canManage={canManage} onError={setError} />}
       {status?.quickbooks?.connected && <ProductCategorySettings canManage={canManage} onError={setError} />}
+
+      {(status?.quickbooks?.connected || status?.salesforce?.connected || status?.hubspot?.connected) && (
+        <OryonMetricSettings canManage={canManage} onError={setError} />
+      )}
+
+      {(status?.hubspot?.connected || status?.salesforce?.connected) && <Cm04TargetSettings canManage={canManage} onError={setError} />}
+      {status?.salesforce?.connected && <OpportunityExtraFieldsSettings canManage={canManage} onError={setError} />}
+
+      {/* Kept for the older Analytics page charts only; the portfolio metrics use "Metric settings (Oryon)" above. */}
+      {(status?.quickbooks?.connected || status?.salesforce?.connected || status?.hubspot?.connected) && (
+        <details className="card p-6">
+          <summary className="cursor-pointer list-none">
+            <h2 className="text-lg font-semibold text-ink">Legacy Analytics-page settings</h2>
+            <p className="mt-1 text-sm text-ink-2">
+              Used only by the older charts on the Analytics page. They do not change the portfolio metrics — use Metric settings (Oryon) for those.
+            </p>
+          </summary>
+          <div className="mt-4 flex flex-col gap-4">
+            {status?.hubspot?.connected && <Cm08MqlTargetSettings canManage={canManage} onError={setError} />}
+            {status?.hubspot?.connected && <LeadVolumeTargetSettings canManage={canManage} onError={setError} />}
+            {status?.salesforce?.connected && <CompetitorFieldSettings canManage={canManage} onError={setError} />}
+            {status?.quickbooks?.connected && <CashMetricsAccountSettings canManage={canManage} onError={setError} />}
+            {status?.quickbooks?.connected && <GAndAAccountSettings canManage={canManage} onError={setError} />}
+            {status?.quickbooks?.connected && <CACAccountSettings canManage={canManage} onError={setError} />}
+            {status?.quickbooks?.connected && <MarketingSpendAccountSettings canManage={canManage} onError={setError} />}
+          </div>
+        </details>
+      )}
     </AppShell>
   )
 }
