@@ -71,3 +71,15 @@ describe('Oryon engine', () => {
     expect(suggestMapping('SMS Messages - Overage')[0]).toBe('not_mrr')
   })
 })
+
+describe('Oryon drill-down periods', () => {
+  // imported here so the engine tests above stay independent of the data layer
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { periodMonths } = require('./oryonDetails') as typeof import('./oryonDetails')
+  it('maps page period labels to their months like the reference app', () => {
+    expect(periodMonths('2026-09')).toEqual(['2026-09'])
+    expect(periodMonths('Q3-2026')).toEqual(['2026-07', '2026-08', '2026-09'])
+    expect(periodMonths('2026-Q1')).toEqual(['2026-01', '2026-02', '2026-03'])
+    expect(periodMonths('TTM 2026-03')).toEqual(['2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'])
+  })
+})

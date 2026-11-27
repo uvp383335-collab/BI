@@ -6,6 +6,7 @@ import { oryonDataFor } from './oryonData'
 import { PAGES, Query } from './oryonPages'
 import * as O from './oryonMetrics.service'
 import { getOryonSettings, saveOryonSettings, resetOryonSettings } from './oryonSettings.service'
+import { getOryonDetail } from './oryonDetails'
 
 /** Oryon metric id -> MetricResult at one month (same values the dashboard shows). */
 const METRIC_COMPUTES: Record<string, (orgId: string, month: string) => Promise<unknown>> = {
@@ -16,7 +17,7 @@ const METRIC_COMPUTES: Record<string, (orgId: string, month: string) => Promise<
   'ER-05': O.oryonER05
 }
 
-const ALLOWED_QUERY = ['grain', 'window', 'scope', 'view', 'from', 'to', 'line', 'segment']
+const ALLOWED_QUERY = ['grain', 'window', 'scope', 'view', 'from', 'to', 'line', 'segment', 'period', 'bucket', 'n']
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 
 /** GET /metrics/oryon/pages/:page — the full series a reference-app page shows (rows, latest, ...). */
@@ -57,4 +58,15 @@ export const saveOryonSettingsHandler = asyncHandler(async (req: Request, res: R
 export const resetOryonSettingsHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   await resetOryonSettings(req.auth!.orgId!, String(req.params.section))
   sendSuccess(res, { reset: true })
+})
+
+/** GET /metrics/oryon/details/:page?period=… — the drill-down behind one row of a page (customers, accounts, deals …). */
+export const getOryonDetailHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const q: Query = {}
+  for (const k of ALLOWED_QUERY) {
+    const v = req.query[k]
+    if (typeof v === 'string' && v.length <= 64) q[k] = v
+  }
+  const data = await oryonDataFor(req.auth!.orgId!)
+  sendSuccess(res, await getOryonDetail(data, String(req.params.page), q))
 })

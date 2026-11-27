@@ -120,7 +120,7 @@ export function newlogoPage(d: OryonData, q: Query = {}): Dict {
 export function cacPage(d: OryonData, q: Query = {}): Dict {
   const rows = d.cacRows(q.from || null, q.to || null)
   const latest = findLast(rows, (r) => r.complete && truthy(r.cac))
-  return { rows, q_rows: rows.filter((r) => Number(r.month.slice(5, 7)) % 3 === 0), latest, year_ago: yearAgoOf(rows, latest) }
+  return { rows, q_rows: rows.filter((r) => Number(r.month.slice(5, 7)) % 3 === 0), latest, year_ago: yearAgoOf(rows, latest), info: { threshold: 18 } }
 }
 
 // --------------------------------------------------------------------------- VC-04 COGS %
@@ -202,7 +202,8 @@ export function ltvPage(d: OryonData, q: Query = {}): Dict {
   for (const r of shown) r.label = grain === 'quarter' ? qLabel(r.month) : r.month
   const latest = findLast(shown, (r) => r.complete && truthy(r.ltv_cac))
   const prev = latest ? shown.find((r) => r.month === E.addMonths(latest.month, -12)) ?? null : null
-  return { rows: shown, latest, prev }
+  const st = d.settings()
+  return { rows: shown, latest, prev, info: { cap: Number(st.ltv_cap_months ?? 84), threshold: Number(st.ltv_threshold ?? 3) } }
 }
 
 // --------------------------------------------------------------------------- VC-12 recurring %

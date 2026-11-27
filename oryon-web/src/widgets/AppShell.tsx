@@ -31,7 +31,8 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: '/portfolio/VC', label: 'Value creation', countKey: 'VC' },
       { to: '/portfolio/CB', label: 'Capital & balance sheet', countKey: 'CB' },
       { to: '/portfolio/CM', label: 'Customer & market', countKey: 'CM' },
-      { to: '/portfolio/alerts', label: 'Alerts', countKey: 'alerts' }
+      { to: '/portfolio/alerts', label: 'Alerts', countKey: 'alerts' },
+      { to: '/metrics', label: 'All metrics' }
     ]
   },
   {

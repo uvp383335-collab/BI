@@ -5,6 +5,8 @@ import { portfolioApi as api } from '../api/portfolioApi';
 import { useAsync } from '../lib/useView.js';
 import { fmt, dfmt, tone, pLabel, pShort, seriesColors } from '../lib/format.js';
 import { shown } from '../pages/Family.jsx';
+import { Link } from 'react-router-dom';
+import { PAGE_FOR_METRIC } from '../../metricPages/config';
 
 const FAMILY_NAMES = { VC: 'Value creation', CB: 'Capital & balance sheet', CM: 'Customer & market', ER: 'Exit readiness' };
 
@@ -76,6 +78,7 @@ export default function Drawer({ companyId, meta, view, metricId, onClose }) {
           <div>
             <div className="crumb">{metricId} · {FAMILY_NAMES[meta.metrics.find((m) => m.id === metricId)?.family]}</div>
             <h2 id="dr-t">{data?.label || meta.metrics.find((m) => m.id === metricId)?.name}</h2>
+            {PAGE_FOR_METRIC[metricId] && <Link to={`/metrics/${PAGE_FOR_METRIC[metricId]}`} className="note" style={{ color: 'var(--gold)', display: 'inline-block', marginBottom: 6 }}>Open full page — charts, table, drill-downs, CSV →</Link>}
             {data && <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Pill flag={data.alert?.flag} noData={data.value == null} /><Scope scope={data.scope} quarterly={data.quarterlyInMonthlyView} quarterLabel={pLabel(data.period)} /><span className="note">{pLabel(data.period)} · {data.win}</span></div>}
           </div>
           <button type="button" className="x" onClick={onClose} aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.6" fill="none" /></svg></button>

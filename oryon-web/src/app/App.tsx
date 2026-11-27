@@ -15,6 +15,8 @@ import { InvitationsPage } from '../features/auth/pages/InvitationsPage'
 import { CrmDashboardPage } from '../features/dashboard/pages/CrmDashboardPage'
 import { SettingsPage } from '../features/integrations/pages/SettingsPage'
 import PortfolioPage from '../features/portfolio/pages/PortfolioPage.jsx'
+import { MetricPage } from '../features/metricPages/pages/MetricPage'
+import { MetricIndexPage } from '../features/metricPages/pages/MetricIndexPage'
 
 const App: React.FC = () => {
   return (
@@ -39,6 +41,22 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               <PortfolioPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/metrics"
+          element={
+            <ProtectedRoute>
+              <MetricIndexPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/metrics/:page"
+          element={
+            <ProtectedRoute>
+              <MetricPage />
             </ProtectedRoute>
           }
         />
