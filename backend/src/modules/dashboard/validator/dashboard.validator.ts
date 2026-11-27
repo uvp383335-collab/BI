@@ -20,4 +20,4 @@ export const dashboardQuerySchema = z.object({
 export type DashboardQueryInput = z.infer<typeof dashboardQuerySchema>
 
 export const familyParamsSchema = z.object({ family: z.enum(['VC', 'CB', 'CM']) })
-export const metricParamsSchema = z.object({ metricId: z.string().regex(/^(VC|CB|CM)-\d{2}$/) })
+export const metricParamsSchema = z.object({ metricId: z.string().regex(/^(VC|CB|CM|ER)-\d{2}$/) })

@@ -127,3 +127,41 @@ describe('CSV download', () => {
     click.mockRestore()
   })
 })
+
+describe('metric view inside the portfolio drawer', () => {
+  const renderDrawer = async (highlight: string) => {
+    const { DrawerMetric } = await import('./components/DrawerMetric')
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <DrawerMetric page="retention" highlight={highlight} />
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+  }
+
+  it('highlights the dashboard period, opens the drill-down in place and goes back', async () => {
+    getPage.mockResolvedValue({ ...RETENTION, latest: RETENTION.rows[1] })
+    getDetail.mockResolvedValue({ grr: 90, nrr: 100, m0: '2025-09', rate: 0.72, customers: [{ customer: '7', name: 'Acme Freight', currency: 'USD', start: 50, end: 0, change: -50, bucket: 'churn' }] })
+    await renderDrawer('2026-Q3')
+    await screen.findByText('GRR · Q3-2026')
+    const rows = screen.getAllByRole('row')
+    expect(rows[2].className).toContain('bg-surface-3') // Q3-2026 = the dashboard quarter
+    expect(rows[1].className).not.toContain('bg-surface-3')
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'details' })[1])
+    expect(await screen.findByText('Acme Freight')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull() // in place, not a second drawer
+    await userEvent.click(screen.getByRole('button', { name: '← Back' }))
+    expect(await screen.findByText('GRR · Q3-2026')).toBeInTheDocument()
+  })
+
+  it('keeps its view switches in local state', async () => {
+    getPage.mockResolvedValue({ ...RETENTION, latest: RETENTION.rows[1] })
+    await renderDrawer('2026-09')
+    await screen.findByText('GRR · Q3-2026')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Window' }), 'period')
+    expect(getPage).toHaveBeenLastCalledWith('retention', { grain: 'quarter', window: 'period', scope: 'all' })
+  })
+})

@@ -160,3 +160,12 @@ describe('dashboard service', () => {
     expect(oryon.oryonVC10).toHaveBeenCalledWith('org1', '2026-09')
   })
 })
+
+describe('dashboard metric id validation', () => {
+  it('accepts every registry metric id, including ER-05 (regression: its drawer showed "Unknown metric")', async () => {
+    const { metricParamsSchema } = await import('./validator/dashboard.validator')
+    const { METRICS } = await import('./service/metricRegistry')
+    for (const m of METRICS) expect(metricParamsSchema.safeParse({ metricId: m.id }).success).toBe(true)
+    expect(metricParamsSchema.safeParse({ metricId: 'XX-01' }).success).toBe(false)
+  })
+})

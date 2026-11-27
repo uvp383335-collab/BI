@@ -75,10 +75,10 @@ export const MetricChart: React.FC<{ cfg: ChartCfg; payload: Row; rows: Row[] }>
               ))}
               {series.map((s, i) => {
                 const color = s.color ?? SERIES[i % SERIES.length]
-                const common = { key: i, dataKey: `s${i}`, name: s.label, yAxisId: s.axis ?? 'left', isAnimationActive: false }
-                if (s.type === 'bar') return <Bar {...common} fill={color} stackId={s.stack} maxBarSize={36} />
-                if (s.type === 'area') return <Area {...common} type="monotone" stroke={color} fill={color} fillOpacity={0.25} stackId={s.stack} connectNulls />
-                return <Line {...common} type="monotone" stroke={color} strokeWidth={2} strokeDasharray={s.dashed ? '5 4' : undefined} dot={points.length < 20} connectNulls />
+                const common = { dataKey: `s${i}`, name: s.label, yAxisId: s.axis ?? 'left', isAnimationActive: false }
+                if (s.type === 'bar') return <Bar key={i} {...common} fill={color} stackId={s.stack} maxBarSize={36} />
+                if (s.type === 'area') return <Area key={i} {...common} type="monotone" stroke={color} fill={color} fillOpacity={0.25} stackId={s.stack} connectNulls />
+                return <Line key={i} {...common} type="monotone" stroke={color} strokeWidth={2} strokeDasharray={s.dashed ? '5 4' : undefined} dot={points.length < 20} connectNulls />
               })}
             </ComposedChart>
           </ResponsiveContainer>
