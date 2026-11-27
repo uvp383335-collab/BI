@@ -182,7 +182,7 @@ const SECTIONS: Record<string, { schema: z.ZodType; set: (b: any) => Dict; reset
       capex_map: z.record(id, z.enum(['capex', 'accum', 'exclude'])).optional(),
       capex_sections: z.array(z.string().max(100)).max(50).optional(), fa_da_ids: ids.optional(),
       wc_map: z.record(id, z.enum(['ar', 'prepaid', 'inventory', 'ap', 'credit_card', 'accrued', 'deferred_revenue', 'exclude'])).optional(),
-      wc_section_map: z.record(z.enum(['AR', 'OtherCurrentAssets', 'AP', 'CreditCards', 'OtherCurrentLiabilities']),
+      wc_section_map: z.partialRecord(z.enum(['AR', 'OtherCurrentAssets', 'AP', 'CreditCards', 'OtherCurrentLiabilities']),
         z.enum(['ar', 'prepaid', 'inventory', 'ap', 'credit_card', 'accrued', 'deferred_revenue', 'exclude'])).optional(),
       show_ar_check: yesNo
     }),
@@ -203,7 +203,7 @@ const SECTIONS: Record<string, { schema: z.ZodType; set: (b: any) => Dict; reset
   ccc: {
     schema: z.object({
       account_map: z.record(id, z.enum(['ar', 'inventory', 'ap', 'exclude'])).optional(),
-      section_map: z.record(z.enum(['AR', 'OtherCurrentAssets', 'AP', 'CreditCards', 'OtherCurrentLiabilities']), z.enum(['ar', 'inventory', 'ap', 'exclude'])).optional(),
+      section_map: z.partialRecord(z.enum(['AR', 'OtherCurrentAssets', 'AP', 'CreditCards', 'OtherCurrentLiabilities']), z.enum(['ar', 'inventory', 'ap', 'exclude'])).optional(),
       include_da: yesNo
     }),
     set: (b) => {

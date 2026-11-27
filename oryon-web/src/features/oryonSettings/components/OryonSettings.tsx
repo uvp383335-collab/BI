@@ -104,13 +104,26 @@ const Section: React.FC<{
   )
 }
 
-const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (
-  <label className="flex flex-col gap-1 text-sm text-ink-2">
-    <span className="font-medium text-ink">{label}</span>
-    {children}
-    {hint && <span className="text-xs text-ink-3">{hint}</span>}
-  </label>
-)
+/**
+ * A labelled control. `group` is for several controls (a list of tick boxes): a <label> around them would make a
+ * click on the title toggle the first box, so those get a named group instead.
+ */
+const Field: React.FC<{ label: string; hint?: string; group?: boolean; children: React.ReactNode }> = ({ label, hint, group, children }) => {
+  const inner = (
+    <>
+      <span className="font-medium text-ink">{label}</span>
+      {children}
+      {hint && <span className="text-xs text-ink-3">{hint}</span>}
+    </>
+  )
+  return group ? (
+    <div role="group" aria-label={label} className="flex flex-col gap-1 text-sm text-ink-2">
+      {inner}
+    </div>
+  ) : (
+    <label className="flex flex-col gap-1 text-sm text-ink-2">{inner}</label>
+  )
+}
 
 const NumberInput: React.FC<{ value: number; onChange: (v: number) => void; step?: number; disabled?: boolean }> = ({ value, onChange, step = 1, disabled }) => (
   <input
@@ -471,7 +484,7 @@ const CashSection: React.FC<SectionProps> = ({ data, canManage, onError }) => {
         </Field>
       </div>
       {!data.has_accounts && (
-        <Field label="Balance Sheet sections that make up cash (fallback)">
+        <Field label="Balance Sheet sections that make up cash (fallback)" group>
           <CheckList options={(data.sections_available as Rows).map((s) => s.key)} selected={v.sections} disabled={!canManage} onChange={(x) => setV({ ...v, sections: x })} />
         </Field>
       )}
@@ -509,10 +522,10 @@ const FcfSection: React.FC<SectionProps> = ({ data, canManage, onError }) => {
         />
       ) : (
         <>
-          <Field label="Capex = change in these Balance Sheet sections + D&A on them (fallback)">
+          <Field label="Capex = change in these Balance Sheet sections + D&A on them (fallback)" group>
             <CheckList options={data.sections_available} selected={capexSecs} disabled={!canManage} onChange={setCapexSecs} />
           </Field>
-          <Field label="P&L D&A charged on those assets">
+          <Field label="P&L D&A charged on those assets" group>
             <CheckList
               options={(data.fa_da_accounts as Rows).map((r) => r.id)}
               labels={Object.fromEntries((data.fa_da_accounts as Rows).map((r) => [r.id, r.name]))}
@@ -670,7 +683,7 @@ const WinRateSection: React.FC<SectionProps> = ({ data, canManage, onError }) =>
           <textarea className="form-input-dark h-20 w-full text-sm" value={v.excl} disabled={!canManage} onChange={(e) => setV({ ...v, excl: e.target.value })} />
         </Field>
       </div>
-      <Field label="Deal types counted as New Business">
+      <Field label="Deal types counted as New Business" group>
         <CheckList options={data.types} auto={data.new_business_auto} selected={v.types} disabled={!canManage} onChange={(x) => setV({ ...v, types: x })} />
       </Field>
     </Section>
@@ -727,7 +740,7 @@ const FunnelSection: React.FC<SectionProps> = ({ data, canManage, onError }) => 
       </div>
       <Check checked={v.viaMql} disabled={!canManage} onChange={(x) => setV({ ...v, viaMql: x })} label="SQL cohort = contacts with an SQL date that also have an MQL date (reproduces the Oryon report)" />
       <Check checked={v.dedupe} disabled={!canManage} onChange={(x) => setV({ ...v, dedupe: x })} label="Lead → MQL counts one contact per email address" />
-      <Field label="Original sources counted as marketing-sourced (Lead → MQL)">
+      <Field label="Original sources counted as marketing-sourced (Lead → MQL)" group>
         <CheckList options={data.sources} counts={data.source_counts} auto={data.marketing_auto} selected={v.sources} disabled={!canManage} onChange={(x) => setV({ ...v, sources: x })} />
       </Field>
       <div className="grid gap-3 sm:grid-cols-5">
@@ -853,16 +866,16 @@ const RoiSection: React.FC<SectionProps> = ({ data, canManage, onError }) => {
         </Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Marketing lead sources">
+        <Field label="Marketing lead sources" group>
           <CheckList options={data.sources} auto={data.marketing_auto} selected={v.sources} disabled={!canManage} onChange={(x) => setV({ ...v, sources: x })} />
         </Field>
-        <Field label="New-business deal types">
+        <Field label="New-business deal types" group>
           <CheckList options={data.types} auto={data.new_business_auto} selected={v.types} disabled={!canManage} onChange={(x) => setV({ ...v, types: x })} />
         </Field>
-        <Field label="Blended spend: all marketing P&L accounts">
+        <Field label="Blended spend: all marketing P&L accounts" group>
           <CheckList options={accIds} labels={accNames} auto={data.blended_auto} selected={v.blended} disabled={!canManage} onChange={(x) => setV({ ...v, blended: x })} />
         </Field>
-        <Field label="Programs spend: non-people marketing accounts">
+        <Field label="Programs spend: non-people marketing accounts" group>
           <CheckList options={accIds} labels={accNames} auto={data.programs_auto} selected={v.programs} disabled={!canManage} onChange={(x) => setV({ ...v, programs: x })} />
         </Field>
       </div>
@@ -929,10 +942,10 @@ const MspSection: React.FC<SectionProps> = ({ data, canManage, onError }) => {
         </Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Marketing lead sources">
+        <Field label="Marketing lead sources" group>
           <CheckList options={data.sources} auto={data.marketing_auto} selected={v.sources} disabled={!canManage} onChange={(x) => setV({ ...v, sources: x })} />
         </Field>
-        <Field label="New-business deal types">
+        <Field label="New-business deal types" group>
           <CheckList options={data.types} auto={data.new_business_auto} selected={v.types} disabled={!canManage} onChange={(x) => setV({ ...v, types: x })} />
         </Field>
       </div>
