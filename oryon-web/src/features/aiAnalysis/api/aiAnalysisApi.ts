@@ -98,3 +98,22 @@ export async function analyzeChartRequest(chartKey: AnalysisChartKey, refresh = 
   const res = await httpClient.post<ApiEnvelope<ChartAnalysisResult>>(`/ai-analysis/${chartKey}`, { refresh })
   return res.data.data
 }
+
+/** The drawer's current selection, sent with a metric analysis so the readout matches what is on screen. */
+export interface MetricAnalysisView {
+  asOf?: string
+  window?: 'P' | 'TTM'
+  span?: '4' | '8' | '12'
+  /** One QuickBooks item label, or omitted for all products. */
+  product?: string
+}
+
+export interface MetricAnalysisResult extends Omit<ChartAnalysisResult, 'chartKey'> {
+  chartKey: string
+  metricId: string
+}
+
+export async function analyzeMetricRequest(metricId: string, view: MetricAnalysisView, refresh = false): Promise<MetricAnalysisResult> {
+  const res = await httpClient.post<ApiEnvelope<MetricAnalysisResult>>(`/ai-analysis/metrics/${metricId}`, { refresh, view })
+  return res.data.data
+}

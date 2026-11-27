@@ -2,8 +2,8 @@ import { Request, Response } from 'express'
 import { asyncHandler } from '../../../shared/utils/asyncHandler'
 import { sendSuccess } from '../../../shared/utils/apiResponse'
 import { AppError } from '../../../shared/utils/AppError'
-import { analyzeChart, getLatestChartAnalysis } from '../service/aiAnalysis.service'
-import { AnalyzeChartBody, analysisChartParamsSchema } from '../validator/aiAnalysis.validator'
+import { analyzeChart, analyzeMetric, getLatestChartAnalysis } from '../service/aiAnalysis.service'
+import { AnalyzeChartBody, AnalyzeMetricBody, analysisChartParamsSchema, analysisMetricParamsSchema } from '../validator/aiAnalysis.validator'
 import { AnalysisChartKey } from '../service/chartDataRegistry'
 
 function parseChartKey(req: Request): AnalysisChartKey {
@@ -26,5 +26,14 @@ export const analyzeChartHandler = asyncHandler(async (req: Request, res: Respon
 export const getLatestChartAnalysisHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
   const chartKey = parseChartKey(req)
   const result = await getLatestChartAnalysis(req.auth!.orgId!, chartKey)
+  sendSuccess(res, result)
+})
+
+/** Short summary readout of one Oryon metric for the selection on screen — see aiAnalysis.service.ts's analyzeMetric. */
+export const analyzeMetricHandler = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+  const params = analysisMetricParamsSchema.safeParse(req.params)
+  if (!params.success) throw AppError.notFound('Unknown metric', 'METRIC_NOT_FOUND')
+  const { refresh, view } = req.body as AnalyzeMetricBody
+  const result = await analyzeMetric(req.auth!.orgId!, req.auth!.userId, params.data.metricId, view ?? {}, { refresh })
   sendSuccess(res, result)
 })

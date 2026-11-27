@@ -8,6 +8,7 @@ import { shown } from '../pages/Family.jsx';
 import { Link } from 'react-router-dom';
 import { PAGE_FOR_METRIC } from '../../metricPages/config';
 import { DrawerMetric } from '../../metricPages/components/DrawerMetric';
+import { MetricAnalyzeButton } from '../../aiAnalysis/components/MetricAnalyzeButton';
 
 const FAMILY_NAMES = { VC: 'Value creation', CB: 'Capital & balance sheet', CM: 'Customer & market', ER: 'Exit readiness' };
 
@@ -91,7 +92,10 @@ export default function Drawer({ companyId, meta, view, metricId, onClose }) {
             {PAGE_FOR_METRIC[metricId] && <Link to={`/metrics/${PAGE_FOR_METRIC[metricId]}`} className="note" style={{ color: 'var(--gold)', display: 'inline-block', marginBottom: 6 }}>Open as a full page →</Link>}
             {data && <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}><Pill flag={data.alert?.flag} noData={data.value == null} /><Scope scope={data.scope} quarterly={data.quarterlyInMonthlyView} quarterLabel={pLabel(data.period)} /><span className="note">{pLabel(data.period)} · {data.win}</span></div>}
           </div>
-          <button type="button" className="x" onClick={onClose} aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.6" fill="none" /></svg></button>
+          <div className="dr-acts">
+            <MetricAnalyzeButton metricId={metricId} metricName={data?.label || meta.metrics.find((m) => m.id === metricId)?.name || metricId} view={view} sources={meta.sources} />
+            <button type="button" className="x" onClick={onClose} aria-label="Close"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.6" fill="none" /></svg></button>
+          </div>
         </div>
         {body}
       </aside>

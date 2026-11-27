@@ -1,0 +1,47 @@
+/* OryonAI analysis for the portfolio metric drawer: the Analyze button and the centred readout card.
+   Copied from the Oryon reference page (OryonAI_Ridgeline_Field_Systems), with an `oa-` prefix so it never
+   collides with the dashboard chart drawer's `an-` classes (analysisDrawer.css). Uses the oryon.css tokens. */
+.dr-acts{display:flex;gap:8px;align-items:center;flex:none}
+.oa-btn{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 14px;border-radius:8px;border:1px solid color-mix(in srgb,var(--gold) 55%,transparent);background:color-mix(in srgb,var(--gold) 14%,var(--surface));color:var(--gold-ink);font:inherit;font-weight:600;cursor:pointer;white-space:nowrap}
+.oa-btn:hover{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 22%,var(--surface))}
+.oa-btn svg{flex:none}
+
+/* Oryon mark in the logo colors: light outer stars, gold center, slate line (outer stars go navy on light backgrounds) */
+:root{--om-o:#F2F4F8;--om-c:#DDB35A;--om-l:#4A5F80}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--om-o:#15202E;--om-l:#7F8BA0}}
+:root[data-theme="light"]{--om-o:#15202E;--om-l:#7F8BA0}
+svg.om{flex:none}svg.om line{stroke:var(--om-l)}svg.om circle{fill:var(--om-o)}svg.om circle.c{fill:var(--om-c)}
+
+/* instant hover label */
+.oa-btn[data-tip]{position:relative}
+.oa-btn[data-tip]::after{content:attr(data-tip);position:absolute;top:calc(100% + 8px);left:50%;transform:translate(-50%,-3px);background:var(--surface);color:var(--fg);border:1px solid var(--line2);box-shadow:var(--shadow);border-radius:6px;padding:4px 9px;font-family:var(--f-sans);font-size:12px;font-weight:500;line-height:1.3;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .12s,transform .12s;z-index:60}
+.oa-btn[data-tip]:hover::after,.oa-btn[data-tip]:focus-visible::after{opacity:1;transform:translate(-50%,0)}
+
+.oa-scrim{position:fixed;inset:0;background:rgba(5,10,18,.62);z-index:50;backdrop-filter:blur(2px)}
+.oa-card{position:fixed;z-index:51;left:50%;top:50%;transform:translate(-50%,-50%);width:min(680px,calc(100vw - 24px));max-height:min(86vh,900px);overflow-y:auto;background:var(--panel);color:var(--fg);font-family:var(--f-sans);font-size:14px;line-height:1.5;border:1px solid color-mix(in srgb,var(--gold) 40%,var(--line2));border-radius:14px;box-shadow:var(--shadow);padding:20px 22px 16px;display:flex;flex-direction:column;gap:12px;background-image:linear-gradient(180deg,color-mix(in srgb,var(--gold) 8%,transparent),transparent 140px)}
+.oa-h{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.oa-h h3{margin:2px 0 0;font-family:var(--f-display);font-weight:500;font-size:26px;line-height:1.15}
+.oa-h .crumb{color:var(--gold-ink)}
+.oa-scope{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-family:var(--f-mono);font-size:11px;letter-spacing:.03em;color:var(--faint)}
+.oa-tone{font-family:var(--f-sans);font-size:11.5px;font-weight:600;letter-spacing:0;border-radius:999px;padding:2px 10px}
+.oa-tone.dn{color:var(--bad);background:var(--bad-bg)} .oa-tone.up{color:var(--good);background:var(--good-bg)} .oa-tone.wat{color:var(--watch);background:var(--watch-bg)} .oa-tone.fl{color:var(--muted);background:var(--raise)}
+.oa-v{margin:2px 0 0;font-family:var(--f-display);font-size:19px;line-height:1.4;color:var(--fg);text-wrap:pretty}
+.oa-v b{font-weight:500;color:var(--gold-ink)}
+.oa-b{display:flex;flex-direction:column;gap:12px}
+.oa-b section{border-top:1px solid var(--line);padding-top:10px}
+.oa-b h4{margin:0 0 5px;font-family:var(--f-mono);font-size:10.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.oa-b ul{margin:0;padding:0 0 0 16px;display:flex;flex-direction:column;gap:5px;list-style:disc}
+.oa-b li,.oa-b p{font-size:13.5px;line-height:1.5;color:var(--muted);margin:0;max-width:72ch}
+.oa-b li::marker{color:var(--line2)}
+.oa-b b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
+.oa-do{background:color-mix(in srgb,var(--s1) 8%,transparent);border:1px solid color-mix(in srgb,var(--s1) 30%,var(--line))!important;border-radius:10px;padding:10px 12px!important}
+.oa-do li{color:var(--fg)}
+.oa-ask{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--s1);margin-right:8px}
+.oa-f{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px}
+.oa-copy{border:1px solid var(--line2);background:var(--surface);color:var(--fg);border-radius:8px;height:40px;padding:0 12px;cursor:pointer;font:inherit;font-weight:500;white-space:nowrap}
+.oa-copy:hover{border-color:var(--gold)}
+.oa-load{display:flex;align-items:center;gap:12px;padding:28px 6px;color:var(--muted);font-size:14px}
+.oa-spark{width:18px;height:18px;border-radius:50%;border:2px solid color-mix(in srgb,var(--gold) 30%,transparent);border-top-color:var(--gold);animation:oaspin .8s linear infinite}
+@keyframes oaspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:no-preference){.oa-card{animation:oapop .2s ease-out}@keyframes oapop{from{opacity:0;transform:translate(-50%,-48%)}to{opacity:1;transform:translate(-50%,-50%)}}}
+@media (max-width:520px){.oa-copy{font-size:12.5px;padding:0 9px}.oa-btn span{display:none}.oa-btn{padding:0 11px}.oa-card{padding:16px}.oa-h h3{font-size:22px}.oa-v{font-size:17px}}

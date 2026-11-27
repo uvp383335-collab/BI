@@ -1,4 +1,5 @@
-import { analyzeChart, renderTemplate } from './aiAnalysis.service'
+import { analyzeChart, analyzeMetric, renderTemplate } from './aiAnalysis.service'
+import { getMetric } from '../../dashboard/service/dashboard.service'
 import { analysisPromptRepository } from '../repository/analysisPrompt.repository'
 import { analysisReportRepository } from '../repository/analysisReport.repository'
 import { generateWithClaude } from '../../../shared/llm/claudeClient'
@@ -8,6 +9,7 @@ import { latestClosedMonth } from '../../metrics/service/revenueRollForward.serv
 jest.mock('../repository/analysisPrompt.repository')
 jest.mock('../repository/analysisReport.repository')
 jest.mock('../../../shared/llm/claudeClient')
+jest.mock('../../dashboard/service/dashboard.service')
 jest.mock('../../metrics/service/customerUpgradesTrend.service')
 jest.mock('../../metrics/service/cmMetrics.service')
 jest.mock('../../metrics/service/productRevenueGrowth.service')
@@ -137,5 +139,45 @@ describe('analyzeChart', () => {
 
     await expect(analyzeChart(ORG_ID, USER_ID, 'customer-churn-trend')).rejects.toMatchObject({ status: 404, code: 'ANALYSIS_PROMPT_NOT_FOUND' })
     expect(mockedGenerate).not.toHaveBeenCalled()
+  })
+})
+
+describe('analyzeMetric', () => {
+  const mockedGetMetric = getMetric as jest.Mock
+  const METRIC = {
+    id: 'VC-01', name: 'Gross revenue retention', unit: '%', dir: 'up', period: '2026-Q3', periodLabel: 'Q3 2026', window: 'P', win: 'Q3 2026',
+    value: 91.2, prev: { period: '2026-Q2', value: 92, abs: null }, series: [{ period: '2025-Q4', value: 90 }, { period: '2026-Q3', value: 91.2 }],
+    quarterlyInMonthlyView: false, alertHistory: []
+  }
+
+  beforeEach(() => {
+    jest.resetAllMocks()
+    mockedFindPrompt.mockResolvedValue({ ...prompt, chartKey: 'oryon-metric-summary' })
+    mockedGetMetric.mockResolvedValue(METRIC)
+    mockedFindByCacheKey.mockResolvedValue(null)
+    mockedCreateReport.mockImplementation((_orgId, input) => Promise.resolve({ ...input, createdAt: new Date('2026-11-12T00:00:00Z') }))
+    mockedGenerate.mockResolvedValue({ text: JSON.stringify(REPORT), model: 'claude-opus-5-5', inputTokens: 100, outputTokens: 50 })
+  })
+
+  it('analyzes the metric for the selection on screen and stores it under the metric key', async () => {
+    const view = { asOf: '2026-Q3', product: 'Platform' }
+    const result = await analyzeMetric(ORG_ID, USER_ID, 'VC-01', view)
+
+    expect(mockedFindPrompt).toHaveBeenCalledWith('oryon-metric-summary')
+    expect(mockedGetMetric).toHaveBeenCalledWith(ORG_ID, 'VC-01', view)
+    const userPrompt = mockedGenerate.mock.calls[0][0].user as string
+    expect(userPrompt).toContain('"value":91.2')
+    expect(userPrompt).toContain('product Platform')
+    expect(userPrompt).not.toContain('alertHistory')
+    expect(result).toMatchObject({ metricId: 'VC-01', chartKey: 'metric:VC-01', report: REPORT, window: { from: '2025-Q4', to: '2026-Q3' }, cached: false })
+    expect(mockedCreateReport).toHaveBeenCalledWith(ORG_ID, expect.objectContaining({ chartKey: 'metric:VC-01' }))
+  })
+
+  it('uses a different cache key for a different selection', async () => {
+    await analyzeMetric(ORG_ID, USER_ID, 'VC-01', {})
+    await analyzeMetric(ORG_ID, USER_ID, 'VC-01', { product: 'Platform' })
+
+    const [first, second] = mockedFindByCacheKey.mock.calls.map((call) => call[2])
+    expect(first).not.toBe(second)
   })
 })

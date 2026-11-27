@@ -2,7 +2,7 @@ import dotenv from 'dotenv'
 import mongoose from 'mongoose'
 import { connectDatabase } from '../database/connection'
 import { analysisPromptRepository } from '../modules/aiAnalysis/repository/analysisPrompt.repository'
-import { DEFAULT_ANALYSIS_PROMPTS, LEGACY_SHARED_SYSTEM_PROMPTS, SHARED_SYSTEM_PROMPT } from '../modules/aiAnalysis/service/defaultPrompts'
+import { DEFAULT_ANALYSIS_PROMPTS, LEGACY_SHARED_SYSTEM_PROMPTS, METRIC_SUMMARY_PROMPT, SHARED_SYSTEM_PROMPT } from '../modules/aiAnalysis/service/defaultPrompts'
 
 /**
  * Inserts the default AI analysis prompt for every chart key that doesn't
@@ -23,7 +23,7 @@ dotenv.config()
 
 async function main() {
   await connectDatabase()
-  for (const prompt of Object.values(DEFAULT_ANALYSIS_PROMPTS)) {
+  for (const prompt of [...Object.values(DEFAULT_ANALYSIS_PROMPTS), METRIC_SUMMARY_PROMPT]) {
     const inserted = await analysisPromptRepository.insertIfMissing(prompt)
     // eslint-disable-next-line no-console
     console.log(`${prompt.chartKey}: ${inserted ? 'inserted' : 'already exists, left unchanged'}`)
