@@ -117,6 +117,17 @@ const retention: PageCfg = {
     { title: 'GRR and NRR', x: (r) => r.label, yFmt: 'pct', series: () => [{ label: 'GRR', value: (r) => r.grr }, { label: 'NRR', value: (r) => r.nrr }],
       refs: () => [{ y: 90, label: 'GRR 90%' }, { y: 100, label: 'NRR 100%' }] },
     {
+      title: 'GRR and NRR bridge (% of starting MRR)',
+      sub: 'Same bridge as the ARR chart below, scaled to % of starting MRR per cohort. Blue alone = GRR (kept only). Blue + green = NRR (kept + upgrades). Yellow + red stacked on top show downgrades and churn, which together with blue sum back to 100% starting MRR.',
+      x: (r) => r.label, yFmt: 'pct1',
+      series: () => [
+        { label: 'Kept (GRR)', value: (r) => (r.K / r.S) * 100, type: 'bar', stack: 's', color: 'var(--s1)' },
+        { label: 'Upgrades', value: (r) => (r.U / r.S) * 100, type: 'bar', stack: 's', color: 'var(--good)' },
+        { label: 'Downgrades', value: (r) => (r.Dn / r.S) * 100, type: 'bar', stack: 's', color: 'var(--watch)' },
+        { label: 'Churn', value: (r) => (r.C / r.S) * 100, type: 'bar', stack: 's', color: 'var(--bad)' }
+      ]
+    },
+    {
       title: 'ARR bridge of the starting cohort', sub: 'Latest period: starting ARR → kept → ending ARR', yFmt: 'usd', x: (r) => r.step,
       rows: (p) => {
         const l = p.latest

@@ -36,7 +36,7 @@ export async function exportCustomerRetentionAdjustedDetailToExcel({ itemName, g
   workbook.created = new Date()
 
   const periodLabel = granularity === 'monthly' ? 'Month' : 'Year'
-  const title = 'Customer retention (GRR/NRR) — Adjusted' + (itemName ? ` — ${itemName}` : '')
+  const title = 'Customer retention (GRR/NRR) VC-01 VC-02 — Adjusted' + (itemName ? ` — ${itemName}` : '')
 
   const summarySheet = workbook.addWorksheet('Summary')
   summarySheet.addRow([title])
